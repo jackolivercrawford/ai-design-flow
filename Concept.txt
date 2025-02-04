@@ -5,132 +5,171 @@ Overall Concept
 2. AI-Powered Question Generation (via gpt-4-0125-preview)
     * Once the user sets their prompt and initial preferences (e.g., conflict handling), the AI dynamically generates follow-up questions.
     * It references previously provided answers and any uploaded knowledge base documents to decide which child nodes (sub-branches) to create.
-    * Early questions are intentionally basic (e.g., “Is the elevator primarily for humans or machinery?”), helping the user refine fundamental requirements.
+    * Early questions are intentionally basic (e.g., “Is the elevator primarily for humans or machinery?”), helping to clarify fundamental requirements.
 3. Breadth-First Q&A
     * The user first addresses all top-level questions (Q1, Q2, Q3, etc.), which appear as branches directly stemming from the root node.
-    * Only after these siblings are answered does the system proceed to each branch’s child nodes (Q4, Q5, etc.), visually adding deeper sub-branches to the tree.
-    * Depending on the user’s input, the AI might generate new branches, prune no longer relevant paths, or hide conflicting nodes automatically (if minor conflicts are set to auto-resolve).
+    * Only after these siblings are answered does the system proceed to each branch’s child nodes (Q4, Q5, etc.), visually and recursively adding deeper sub-branches to the tree.
+    * Depending on user input and the selected settings, the AI may:
+        * Generate one to four child nodes representing follow up questions. This can be done recursively until the AI deems that the line of questioning has been adequately covered
+        * Prune no-longer-relevant paths if a revised answer invalidates them,
+        * Hide or automatically resolve conflicts (if minor conflicts are set to auto-resolve), removing or adjusting the entire sub-branch that’s overridden.
 4. Stopping Criteria & Generation
     * The user may cap the process at a certain number of questions (e.g., 20), prompting the system to offer a mockup at that point.
     * Alternatively, the AI can decide when enough information has been gathered.
     * Once the Q&A phase ends, the system compiles a requirements document and produces React/Tailwind code for a working mockup, reflecting all branches explored in the tree.
 
 Step 1: Initial Setup & Prompt Node
-1. Enter the Prompt:
+1. Enter the Prompt
     * The user types: “Design the interface for a 1000-floor elevator.”
     * This becomes the root node on the Main Canvas (labeled “Prompt: 1000-floor elevator”).
-2. Optional Knowledge Base Upload (AI-Enhanced Auto-Population):
+2. Optional Knowledge Base Upload (AI-Enhanced Auto-Population)
     * If the user uploads relevant documents (elevator guidelines, building specs, etc.), the AI may auto-populate answers to certain questions.
     * If no knowledge base is uploaded, no auto-populate option appears.
-3. Unknown & Conflict Handling (AI Settings):
-    * Unknowns: Choose “Auto for trivial unknowns” or “Always prompt.” (Trivial unknowns can be guessed by the AI if set.)
-    * Conflicts: Choose “Auto-resolve minor conflicts” or “Manual resolution every time.”
-        * If auto-resolve is on, the AI attempts to fix minor inconsistencies behind the scenes.
-        * Major conflicts always prompt the user for input.
-4. Question Limit or AI-Determined Stop:
+3. Unknown & Conflict Handling (AI Settings)
+    * Unknowns:
+        * Auto for trivial unknowns – The AI attempts to guess if it detects a minor/low-impact gap in info. Major unknowns (e.g., crucial building specs or compliance details) always prompt the user for confirmation, even in “auto” mode.
+        * Always prompt – The user is asked every time something is unknown.
+    * Conflicts:
+        * Auto-resolve minor conflicts – The AI silently fixes small contradictions (e.g., minor design details), removing or adjusting the older/less critical node.
+        * Manual resolution – All conflicts appear in the Q&A Panel for user input (major conflicts always require confirmation regardless).
+4. Question Limit or AI-Determined Stop
     * Specify “Stop after X questions,” or
-    * Let the AI judge when sufficient requirements are gathered for a design concept.
-After these settings, the root node is finalized on the Main Canvas.
+    * Let the AI decide when sufficient requirements are gathered.
+Once these settings are confirmed, the root node is finalized on the Main Canvas.
 
 Step 2: Interactive Q&A Flow (AI-Driven)
 2.1. The Root Node & First Questions
     * Main Canvas: Shows the root node (the user’s prompt).
     * Right-Hand Q&A Panel: A “Begin Q&A” button triggers the AI (gpt-4-0125-preview).
     * AI Question Generation:
-        * The AI checks the prompt and any knowledge base data, then creates the first top-level questions.
-        * Example initial questions (Q1, Q2, Q3):
+        * The AI checks the prompt and any knowledge base data, then creates the first top-level questions (Q1, Q2, Q3).
+        * Example initial questions:
             * Q1: “Is the elevator primarily for humans or machinery?”
             * Q2: “What is the total number of floors?”
             * Q3: “Is there a known budget constraint?”
 2.2. Breadth-First Progression
 1. Answer Top-Level Questions
     * The user sees Q1 in the Right-Hand Panel.
-    * If a knowledge base is present, an “Auto-Populate” button might appear if the AI can infer an answer.
-    * After Q1 is answered, Q1’s node on the canvas changes color to “answered,” and the system moves to Q2, then Q3.
+    * If a knowledge base is present, an “Auto-Populate” button may appear if the AI can infer an answer.
+    * After Q1 is answered, Q1’s node on the canvas changes color to “answered”, and the system moves to Q2, then Q3.
 2. Generating Child Nodes
-    * If Q1 leads to follow-up questions, the AI generates children (Q4, Q5, etc.) that appear but remain locked until the system finishes the current set of siblings.
-    * Once Q2 and Q3 are answered, the system goes back to each “parent question” that has children and proceeds to Q4, Q5, etc., in a breadth-first manner.
+    * If Q1 leads to follow-up questions, the AI generates children (Q4, Q5, etc.) which appear but remain locked until all siblings (Q2, Q3) at the same level are finished.
+    * Once Q2 and Q3 are answered, the system returns to each parent question that has children, proceeding in a breadth-first manner (e.g., Q4, Q5).
 3. AI Logic at Each Step
-    * The AI uses the user’s responses to decide which follow-ups to ask.
-    * If conflicting info arises, it checks the conflict handling settings (auto vs. manual).
+    * The AI uses the user’s responses and the handling settings to:
+        * Spawn new branches if the answer raises deeper topics.
+        * Prune any branch that’s no longer valid due to a changed answer.
+        * Resolve or flag conflicts in line with the auto/manual conflict setting.
 2.3. Conflict & Unknown Resolution (AI Assistance)
-* Conflict Detection
-    * Each time the user answers, the AI checks if it contradicts:
-        * Previous answers,
-        * The knowledge base.
-    * If a minor conflict is detected and the user chose auto-resolve, the AI attempts to resolve it silently (e.g., by adjusting an earlier trivial detail).
-    * Major conflicts trigger a prompt in the Right-Hand Panel, e.g.:“Conflict detected between Q5 and Q1. Please revise or confirm which one is correct.”
-* Unknown Fields
-    * If a user doesn’t provide needed data, the AI might guess if set to “Auto for trivial unknowns.”
-    * Otherwise, it prompts again.
+1. Conflict Detection
+    * Each time the user provides a new answer, the AI checks for contradictions against:
+        1. Previous answers (e.g., Q1 vs. Q5),
+        2. The knowledge base (if uploaded).
+    * Minor Conflicts (Auto-Resolve On)
+        * If the system detects a minor conflict (e.g., color preference inconsistency, trivial design detail) and the user has enabled auto-resolve, the AI silently chooses which node to keep.
+        * Hiding Overridden Nodes:
+            * The AI either:
+                * Marks the less critical node as “auto-resolved” and hides it (plus any children that branch from it),
+                * Or adjusts one node’s answer to match the other.
+            * In either case, the affected sub-branch becomes invisible (pruned from the graph) to avoid confusion. A note or icon might remain to indicate that auto-resolution occurred.
+        * Minor Conflict Example: The user initially sets the kiosk color to “Green,” but later changes it to “Light Green.” The AI detects a small mismatch in color references and auto-resolves to “Green” or “Light Green” (depending on which is considered more recent). This is deemed minor because it’s purely aesthetic and doesn’t fundamentally alter the design.
+    * Major Conflicts (Always Prompt)
+        * If the conflict is major (e.g., a fundamental design contradiction or crucial compliance detail), the system always prompts the user in the Right-Hand Q&A Panel:“Conflict detected between Q5 and Q1. Please revise or confirm which one is correct.”
+        * User Decision:
+            * The user chooses which answer stands (or modifies both).
+            * The node (and its children) that is deemed incorrect or secondary is removed from the visible graph.
+            * This ensures the resulting tree only reflects the validated path.
+        * Major Conflict Example: The user states, “Floors above 500 must have advanced voice commands for accessibility,” but also says, “No voice recognition hardware is allowed for security reasons.” This is a major contradiction because it deals with core functionality and compliance. The system prompts the user to reconcile these statements, removing whichever branch is deemed incorrect (or forcing a revised answer).
+2. Unknown Fields
+    * When the user doesn’t provide needed data, the AI behavior depends on user settings and the importance of the unknown:
+        * Trivial Unknown (Auto-Mode):
+            * Example: Branding color or kiosk shape dimension
+            * The AI guesses and tags the node as “AI-guessed.”
+            * Child nodes can still spawn from that guess if the system deems them relevant.
+        * Major Unknown:
+            * The system must prompt the user, as it’s a crucial piece of information (e.g., building safety codes).
+            * No child nodes are generated until the user clarifies or defers the question.
+    * If the system is set to “Always prompt” for all unknowns, no auto-fills occur. The user must either provide an answer, mark it “Skipped,” or acknowledge “No Data” before the tree can continue branching.
+        * When a question is left unanswered or marked “No Data,” the system temporarily blocks child nodes from appearing under that branch. The user may continue answering other questions. However, if they later update this question with valid data, the AI can then generate any newly relevant child nodes. This approach keeps the user from getting stuck, while still preserving a place in the tree to return to when information becomes available.
 2.4. Revisiting & Editing Answers
 * Clicking an Answered Node
     * On the Main Canvas, clicking Q2 highlights it in the Right-Hand Q&A Panel.
-    * The user can change Q2’s answer, triggering the AI to reevaluate Q2’s child nodes.
-    * If the new answer invalidates those children, the system either automatically discards them (if trivial) or prompts the user to confirm.
+    * The user can change Q2’s answer, prompting the AI to re-check Q2’s child nodes.
+    * If the new answer invalidates those children, the system discards or hides them automatically if they’re trivial. If they’re major, the user is prompted to confirm.
+    * If a question was previously skipped or labeled “No Data,” the user can click on that node at any time to provide an answer. The system then updates or unlocks any child nodes that depend on this information.
 2.5. Stopping & Additional Inquiries
 1. Max Questions Reached
     * If the user set a limit (e.g., 20), the system says:“You’ve hit 20 questions. Generate a mockup now, or continue?”
 2. AI Decides
-    * If no limit is set, the AI eventually says:“We likely have enough information for a design. Would you like to generate, or request more questions?”
+    * If no limit is set, the AI eventually states:“We likely have enough information for a design. Would you like to generate, or request more questions?”
 3. User-Initiated Topics
     * At any time, the user can say:“I want more detail on accessibility features.”
-    * The AI spawns new nodes (Q21, Q22) related to that.
+    * The AI spawns new nodes (e.g., Q21, Q22) related to that request.
 
 Step 3: Consolidate & Generate
 3.1. Requirements Document
-* AI Compilation:
-    * The AI gathers all answered questions (Q1–QX), along with system assumptions, auto-resolved conflicts, and AI “best guesses.”
-* Preview & Download:
-    * The user can preview the doc in-app.
-    * Then choose to download (PDF, DOCX, or Markdown).
+    * AI Compilation:
+        * The system compiles all answered questions (Q1–QX), along with:
+            * System assumptions,
+            * Auto-resolved conflicts,
+            * AI guesses for trivial unknowns.
+    * Preview & Download:
+        * The user can preview the document in-app, then download as PDF, DOCX, or Markdown.
 3.2. Prototype UI Code (React/Tailwind)
     * Code Generation by AI:
-        * The AI (gpt-4-0125-preview) produces a sandboxed React + Tailwind (or HTML/CSS) mockup that reflects the collected requirements.
-        * The user can interactively preview the mockup within the platform (e.g., a kiosk screen for elevator floor selection, zone definitions, accessibility controls, etc.).
+        * The AI (gpt-4-0125-preview) produces a sandboxed React + Tailwind (or HTML/CSS) mockup reflecting the collected requirements.
+        * The user can preview this mockup within the platform (e.g., elevator kiosk screen with floor selection, zone definitions, accessibility controls).
     * Copy/Export:
-        * A “Copy Code” button allows the user to paste the mockup’s code into their environment.
-        * An “Export to Figma” option (via a plugin or generated tokens) can facilitate design iteration.
+        * A “Copy Code” button lets the user paste the mockup’s code into their own environment.
+        * An “Export to Figma” option (via plugin or tokens) supports further design iteration.
 3.3. Multiple Versions
     * Generate Another Version:
-        * If desired, the user can click a button to have the AI produce variations (e.g., different aesthetic, feature set, or layout).
-        * Each version can be toggled via arrow buttons to compare side-by-side.
+        * If desired, the user can click a button for alternative design versions (e.g., different styling or layouts).
+        * Can generate as many new versions as desired
+        * Can navigate back to previous versions with arrows
 
 Interface Layout Summary
 1. Main Canvas (Center)
-    * Root Node (Prompt):
-        * A single node labeled with the user’s prompt (e.g., “1000-floor elevator”) sits at the center—this is the trunk of the tree.
-    * Top-Level Questions (Q1, Q2, Q3, etc.):
-        * Each major question appears as a direct branch from the root node, forming the first layer of the tree.
-    * Child Nodes (Q4, Q5, etc.):
-        * When a parent question (e.g., Q1) leads to more detailed follow-ups, those sub-branches appear beneath it (Q4, Q5, etc.), creating additional levels in the tree. This can continue recursively to any depth needed.
+    * Root Node (Prompt): A single node labeled with the user’s prompt (e.g., “1000-floor elevator”) sits at the center—this is the trunk of the tree.
+    * Top-Level Questions (Q1, Q2, Q3, etc.): Each major question appears as a direct branch from the root node, forming the first layer of the tree.
+    * Child Nodes (Q4, Q5, etc.): When a parent question (Q1) has follow-ups, those sub-branches appear beneath it, potentially going multiple layers deep.
     * Visual Indicators:
-        * Conflict Icons: Mark major conflicts with an alert symbol, appearing on the affected node.
-        * Auto-Filled Icons: If the AI uses knowledge base data to answer a question automatically, a special icon highlights that node.
+        * Conflict Icons: Mark major conflicts with an alert symbol on the affected node.
+        * Auto-Filled Icons: If the AI uses knowledge base data or guesses an answer, a special icon highlights that node.
 2. Right-Hand Q&A Panel
-    * Always open, showing the active question.
-    * Displays AI-generated queries, conflict warnings (if manual resolution is required), and unknown prompts.
-    * “Auto-Populate” button appears if a knowledge base is present and the AI has a confident guess.
+    * Always open, displaying the active question.
+    * Shows AI-generated prompts, conflict warnings (if manual resolution is required), and unknown prompts.
+    * An “Auto-Populate” button appears if a knowledge base is present and the AI is confident in an answer.
 3. Header / Toolbar (Top)
     * Steps: (1) Setup, (2) Q&A, (3) Generate.
-    * A progress indicator, either “X / Y questions answered” or “AI confidence” meter.
+    * A progress indicator (e.g., “X / Y questions answered” or “AI confidence” meter).
     * A Knowledge Base status icon (uploaded or not).
 4. Generation/Preview Area
-    * After Q&A concludes, the user sees a Requirements Doc Preview and a React/Tailwind sandbox.
-    * Tools for downloading the doc, copying code, or importing the UI design into other platforms.
+    * After Q&A concludes, the user sees a Requirements Doc Preview and a React/Tailwind sandbox for the elevator interface.
+    * Tools for downloading the doc, copying code, or importing into other platforms.
+
+Graph Impact Summary
+1. Overridden Nodes & Children from Conflicts:
+    * In auto-resolve scenarios, a node deemed “less critical” (and its entire sub-branch) is pruned (hidden or removed).
+    * In major conflicts that require user intervention, the user decides which node (and subsequent child branches) remains visible. The losing path is removed.
+2. Unknown Answers & Children:
+    * Auto-Mode for trivial unknowns: The AI’s guess allows the tree to keep growing, but that node is clearly labeled as an AI assumption.
+    * Major Unknowns: The system locks further sub-questions until the user resolves the missing info.
 
 Why This Flow Works
 1. Root Prompt as Anchor
-    * Keeps the design context clear throughout.
+    * Ensures the user’s main goal remains clear throughout.
 2. AI in Every Step
-    * The gpt-4-0125-preview model handles question generation, unknown handling, conflict resolution (auto/manual), and final mockup/code creation.
+    * gpt-4-0125-preview handles question generation, unknown handling, conflict resolution, and final mockup/code creation.
 3. Breadth-First Flow
-    * Keeps siblings grouped, prevents the user from feeling overwhelmed by deep branching.
-4. Minor Conflict Auto-Resolution
-    * The AI can silently fix small contradictions, ensuring smoother progress.
+    * Keeps siblings grouped, preventing overwhelm from too many nested questions at once.
+4. Granular Unknown/Conflict Settings
+    * Users pick how the system handles trivial vs. major unknowns or conflicts, ensuring control where needed while streamlining minor issues.
 5. Flexible Stopping
-    * Either a specified question cap or at the AI’s discretion when it believes the design is sufficiently detailed.
+    * Either a question cap or the AI’s own judgment to determine when the design is sufficiently defined.
 6. Requirements & Live Prototype
-    * Immediate translation of the Q&A results into a functional code sandbox and requirements doc.
+    * Immediate translation of the Q&A results into a functional code sandbox and a requirements doc.
 7. Multiple Versions on Demand
-    * Easy to iterate and compare alternative UI designs without losing prior answers.
+    * Allows rapid iteration and comparison of alternative interface designs without re-answering every question.
+
+This structure provides a well-organized, adaptive approach to eliciting design requirements for a complex project (like a 1000-floor elevator), ensuring the user sees exactly how each answer affects the branching logic and final outcome.
