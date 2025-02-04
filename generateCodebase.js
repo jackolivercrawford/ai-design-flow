@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-// Directories to exclude entirely from the tree (except node_modules, which we list only as a folder)
+// Directories to exclude entirely from the tree (except node_modules and .next, which we list only as a folder)
 const excludeDirs = ['.git'];
 
 // File extensions to include for content output, plus specific files to always include
@@ -36,7 +36,7 @@ function sortItems(a, b, dir) {
  * Recursively generate a tree structure string for a given directory.
  * Uses branch characters for a tree view.
  * 
- * For the "node_modules" directory, it prints the folder name but does not traverse its contents.
+ * For the "node_modules" and ".next" directories, it prints the folder name but does not traverse its contents.
  *
  * @param {string} dir - The directory to scan.
  * @param {string} prefix - The string prefix used for indentation.
@@ -62,8 +62,8 @@ function generateTree(dir, prefix = '') {
 
     if (isDirectory) {
       const newPrefix = prefix + (index === lastIndex ? '    ' : '│   ');
-      // For "node_modules", show its name only with a placeholder
-      if (item === 'node_modules') {
+      // For "node_modules" or ".next", show its name only with a placeholder
+      if (item === 'node_modules' || item === '.next') {
         tree += newPrefix + '└── ' + '... (contents hidden)' + "\n";
       } else {
         tree += generateTree(fullPath, newPrefix);
@@ -76,7 +76,7 @@ function generateTree(dir, prefix = '') {
 /**
  * Recursively collect files (whose extension is in fileExtensionsToInclude
  * or whose basename matches one of specificFiles) in the order they appear in the tree.
- * Skips directories that are in excludeDirs and does not traverse into "node_modules".
+ * Skips directories that are in excludeDirs and does not traverse into "node_modules" or ".next".
  *
  * @param {string} dir - The directory to scan.
  * @param {string[]} collectedFiles - An array to accumulate matching file paths.
@@ -94,9 +94,9 @@ function collectFiles(dir, collectedFiles = []) {
     if (stat.isDirectory()) {
       // Skip directories that are to be excluded completely
       if (!excludeDirs.includes(item)) {
-        // For "node_modules", do not traverse further (but it appears in the tree)
-        if (item === 'node_modules') {
-          // Do nothing here; we show it in the tree but do not collect its files.
+        // For "node_modules" and ".next", do not traverse further (but they appear in the tree)
+        if (item === 'node_modules' || item === '.next') {
+          // Do nothing here; we show the folder in the tree but do not collect its files.
         } else {
           collectFiles(fullPath, collectedFiles);
         }
@@ -113,7 +113,7 @@ function collectFiles(dir, collectedFiles = []) {
 
 /**
  * Generates the codebase.txt file:
- * - Writes a tree structure of all files (showing node_modules but not its contents) with "AI-DESIGN-FLOW" at the top
+ * - Writes a tree structure of all files (showing node_modules and .next but not their contents) with "AI-DESIGN-FLOW" at the top
  * - Then appends the file paths and file contents of the specified file types,
  *   in the same order (top-to-bottom) as they appear in the tree.
  */

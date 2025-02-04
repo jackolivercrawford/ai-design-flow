@@ -1,11 +1,30 @@
 Codebase Tree Structure:
 ========================
 AI-DESIGN-FLOW
+  ├── .next
+  │   └── ... (contents hidden)
   ├── app
+  │   ├── api
+  │   │   ├── generate-mockup
+  │   │   │   └── route.ts
+  │   │   └── generate-questions
+  │   │       └── route.ts
+  │   ├── preview
+  │   │   └── page.tsx
+  │   ├── prompt
+  │   │   └── page.tsx
+  │   ├── qna
+  │   │   └── page.tsx
   │   ├── favicon.ico
   │   ├── globals.css
   │   ├── layout.tsx
   │   └── page.tsx
+  ├── components
+  │   ├── Canvas.tsx
+  │   ├── HeaderToolbar.tsx
+  │   ├── PreviewArea.tsx
+  │   ├── PromptInput.tsx
+  │   └── QAPanel.tsx
   ├── node_modules
   │   └── ... (contents hidden)
   ├── public
@@ -30,6 +49,134 @@ AI-DESIGN-FLOW
 
 File Contents:
 ==============
+
+----- /Users/jackcrawford/ai-design-flow/app/api/generate-mockup/route.ts -----
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function POST(request: NextRequest) {
+  try {
+    const { prompt, answers } = await request.json();
+
+    // TODO: Implement mockup generation logic
+    const generatedContent = {
+      requirements: '- Requirement 1\n- Requirement 2\n- Requirement 3',
+      uiCode: '<div>Sample UI Code</div>',
+    };
+
+    return NextResponse.json(generatedContent);
+  } catch (error) {
+    console.error('Error generating mockup:', error);
+    return NextResponse.json(
+      { error: 'Failed to generate mockup' },
+      { status: 500 }
+    );
+  }
+} 
+
+----- /Users/jackcrawford/ai-design-flow/app/api/generate-questions/route.ts -----
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function POST(request: NextRequest) {
+  try {
+    const { prompt, previousQuestions } = await request.json();
+
+    // TODO: Implement question generation logic
+    const generatedQuestion = "What are the key features you'd like to include?";
+
+    return NextResponse.json({ question: generatedQuestion });
+  } catch (error) {
+    console.error('Error generating questions:', error);
+    return NextResponse.json(
+      { error: 'Failed to generate questions' },
+      { status: 500 }
+    );
+  }
+} 
+
+----- /Users/jackcrawford/ai-design-flow/app/preview/page.tsx -----
+'use client';
+
+import { useState } from 'react';
+import PreviewArea from '@/components/PreviewArea';
+import HeaderToolbar from '@/components/HeaderToolbar';
+
+export default function PreviewPage() {
+  const [generatedContent, setGeneratedContent] = useState({
+    requirements: '',
+    uiCode: '',
+  });
+
+  return (
+    <div className="min-h-screen flex flex-col">
+      <HeaderToolbar />
+      <main className="flex-1 container mx-auto px-4 py-8">
+        <h1 className="text-3xl font-bold mb-8">Generated Preview</h1>
+        <PreviewArea
+          requirements={generatedContent.requirements}
+          uiCode={generatedContent.uiCode}
+        />
+      </main>
+    </div>
+  );
+} 
+
+----- /Users/jackcrawford/ai-design-flow/app/prompt/page.tsx -----
+// app/prompt/page.tsx
+'use client';
+
+import React from 'react';
+import { useRouter } from 'next/navigation';
+import PromptInput from '../../components/PromptInput';
+
+const PromptPage: React.FC = () => {
+  const router = useRouter();
+
+  // Handle the prompt submission:
+  const handlePromptSubmit = (prompt: string) => {
+    console.log("User prompt:", prompt);
+    router.push('/qna');
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <PromptInput onSubmit={handlePromptSubmit} />
+    </div>
+  );
+};
+
+export default PromptPage;
+
+
+----- /Users/jackcrawford/ai-design-flow/app/qna/page.tsx -----
+'use client';
+
+import { useState } from 'react';
+import Canvas from '@/components/Canvas';
+import QAPanel from '@/components/QAPanel';
+import HeaderToolbar from '@/components/HeaderToolbar';
+
+export default function QnAPage() {
+  const [currentQuestion, setCurrentQuestion] = useState('');
+  const [answers, setAnswers] = useState<Array<{ question: string; answer: string }>>([]);
+
+  const handleAnswer = async (answer: string) => {
+    // TODO: Handle answer submission and generate next question
+    setAnswers([...answers, { question: currentQuestion, answer }]);
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col">
+      <HeaderToolbar />
+      <main className="flex-1 grid grid-cols-[2fr,1fr] gap-4 p-4">
+        <Canvas answers={answers} />
+        <QAPanel
+          currentQuestion={currentQuestion}
+          onSubmitAnswer={handleAnswer}
+        />
+      </main>
+    </div>
+  );
+} 
 
 ----- /Users/jackcrawford/ai-design-flow/app/globals.css -----
 @tailwind base;
@@ -195,6 +342,171 @@ export default function Home() {
   );
 }
 
+
+----- /Users/jackcrawford/ai-design-flow/components/Canvas.tsx -----
+interface CanvasProps {
+  answers: Array<{ question: string; answer: string }>;
+}
+
+export default function Canvas({ answers }: CanvasProps) {
+  return (
+    <div className="bg-gray-50 rounded-lg p-6 overflow-auto">
+      <h2 className="text-xl font-semibold mb-4">Design Flow</h2>
+      <div className="space-y-4">
+        {answers.map((item, index) => (
+          <div key={index} className="bg-white p-4 rounded-lg shadow">
+            <p className="font-medium text-gray-700 mb-2">Q: {item.question}</p>
+            <p className="text-gray-600">A: {item.answer}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+} 
+
+----- /Users/jackcrawford/ai-design-flow/components/HeaderToolbar.tsx -----
+export default function HeaderToolbar() {
+  return (
+    <header className="bg-white border-b">
+      <div className="container mx-auto px-4 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <h1 className="text-xl font-bold">AI Design Flow</h1>
+            <nav className="hidden sm:flex space-x-4">
+              <a href="/prompt" className="text-gray-600 hover:text-gray-900">Prompt</a>
+              <a href="/qna" className="text-gray-600 hover:text-gray-900">Q&A</a>
+              <a href="/preview" className="text-gray-600 hover:text-gray-900">Preview</a>
+            </nav>
+          </div>
+          <div className="flex items-center space-x-4">
+            <button className="text-gray-600 hover:text-gray-900">
+              <span className="sr-only">Settings</span>
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+} 
+
+----- /Users/jackcrawford/ai-design-flow/components/PreviewArea.tsx -----
+interface PreviewAreaProps {
+  requirements: string;
+  uiCode: string;
+}
+
+export default function PreviewArea({ requirements, uiCode }: PreviewAreaProps) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="bg-white rounded-lg p-6 shadow-lg">
+        <h2 className="text-xl font-semibold mb-4">Requirements</h2>
+        <pre className="whitespace-pre-wrap font-mono text-sm bg-gray-50 p-4 rounded">
+          {requirements}
+        </pre>
+      </div>
+      <div className="bg-white rounded-lg p-6 shadow-lg">
+        <h2 className="text-xl font-semibold mb-4">Generated UI Code</h2>
+        <pre className="whitespace-pre-wrap font-mono text-sm bg-gray-50 p-4 rounded overflow-auto">
+          {uiCode}
+        </pre>
+      </div>
+    </div>
+  );
+} 
+
+----- /Users/jackcrawford/ai-design-flow/components/PromptInput.tsx -----
+// components/PromptInput.tsx
+import React, { useState } from 'react';
+
+interface PromptInputProps {
+  onSubmit: (prompt: string) => void;
+}
+
+const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
+  const [prompt, setPrompt] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (prompt.trim()) {
+      onSubmit(prompt);
+      setPrompt('');
+    }
+  };
+
+  return (
+    <div className="p-8 w-full max-w-2xl">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <label htmlFor="prompt" className="text-xl font-bold text-white">
+          Enter your design prompt:
+        </label>
+        <textarea
+          id="prompt"
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="Design the interface for a 1000-floor elevator"
+          className="border border-gray-300 p-4 rounded-lg h-48 text-gray-900 text-base resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
+        <button 
+          type="submit" 
+          className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+        >
+          Start Q&A
+        </button>
+      </form>
+    </div>
+  );
+};
+
+export default PromptInput;
+
+----- /Users/jackcrawford/ai-design-flow/components/QAPanel.tsx -----
+import { useState } from 'react';
+
+interface QAPanelProps {
+  currentQuestion: string;
+  onSubmitAnswer: (answer: string) => void;
+}
+
+export default function QAPanel({ currentQuestion, onSubmitAnswer }: QAPanelProps) {
+  const [answer, setAnswer] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (answer.trim()) {
+      onSubmitAnswer(answer);
+      setAnswer('');
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-lg p-6 shadow-lg">
+      <div className="mb-6">
+        <h3 className="text-lg font-medium mb-2">Current Question:</h3>
+        <p className="text-gray-700">{currentQuestion}</p>
+      </div>
+      <form onSubmit={handleSubmit}>
+        <div className="space-y-4">
+          <textarea
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value)}
+            className="w-full h-32 p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Type your answer..."
+          />
+          <button
+            type="submit"
+            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Submit Answer
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+} 
 
 ----- /Users/jackcrawford/ai-design-flow/.gitignore -----
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
