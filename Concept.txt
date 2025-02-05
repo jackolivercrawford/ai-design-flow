@@ -11,7 +11,7 @@ Overall Concept
     * Only after these siblings are answered does the system proceed to each branch’s child nodes (Q4, Q5, etc.), visually and recursively adding deeper sub-branches to the tree.
     * Depending on user input and the selected settings, the AI may:
         * Generate one to four child nodes representing follow-up questions, recursively, until the AI deems the line of questioning adequately covered,
-        * Prune no-longer-relevant paths if a revised answer invalidates them,
+        * Prune no-longer-relevant paths if a revised answer invalidates them
         * Hide or automatically resolve conflicts (if minor conflicts are set to auto-resolve), removing or adjusting the entire sub-branch that’s overridden.
     * New Top-Level Branches:
         * If the AI identifies a major new topic that doesn’t fit under existing questions, it can create an additional top-level question (a new sibling to Q1, Q2, Q3, etc.).
@@ -115,7 +115,12 @@ Step 2: Interactive Q&A Flow (AI-Driven)
 * Pruning and Replacing Branches:
     * Whenever a parent node is edited, the old branch may be pruned if it conflicts with the new answer.
     * If needed, the system spawns a fresh set of child questions that align with the updated parent, effectively replacing the old sub-branch.
-    * This does not apply to branches that were overridden due to other conflicting nodes (i.e., if the conflict auto-resolve removed them entirely). In that case, the user or AI has already decided on a different path.
+    * This does not apply to branches that were removed due to another node’s conflict override; in those cases, the user or AI has already chosen a different path.
+* Cross-Branch Conflicts from Edited Nodes:
+    * If editing a parent node (e.g., Q2) introduces a contradiction with another branch entirely (e.g., Q7 in a different top-level or sibling chain), the system checks whether it’s minor or major.
+        * Minor Cross-Branch Conflict (Auto-Resolve): The AI adjusts or prunes the conflicting node in the other branch if it’s deemed low-impact.
+        * Major Cross-Branch Conflict: The system prompts the user:“Your edit to Q2 now conflicts with Q7. Which should be kept?”
+        * Any conflicting nodes (and their children) are then pruned or updated to maintain a consistent overall design.
 * Skipped/No Data Questions
     * If a question was previously skipped or labeled “No Data,” the user can provide an answer any time, generating any dependent child nodes that become relevant for the new data.
 2.5. Stopping & Additional Inquiries
@@ -130,20 +135,20 @@ Step 2: Interactive Q&A Flow (AI-Driven)
 
 Step 3: Consolidate & Generate
 3.1. Requirements Document
-    * AI Compilation:
-        * The system compiles all answered questions (Q1–QX), along with:
-            * System assumptions,
-            * Auto-resolved conflicts,
-            * AI guesses for trivial unknowns.
-    * Preview & Download:
-        * The user can preview the document in-app, then download as PDF, DOCX, or Markdown.
+* AI Compilation:
+    * The system compiles all answered questions (Q1–QX), along with:
+        * System assumptions,
+        * Auto-resolved conflicts,
+        * AI guesses for trivial unknowns.
+* Preview & Download:
+    * The user can preview the document in-app, then download as PDF, DOCX, or Markdown.
 3.2. Prototype UI Code (React/Tailwind)
-    * Code Generation by AI:
-        * The AI (gpt-4-0125-preview) produces a sandboxed React + Tailwind (or HTML/CSS) mockup reflecting the collected requirements.
-        * The user can preview this mockup within the platform (e.g., elevator kiosk screen with floor selection, zone definitions, accessibility controls).
-    * Copy/Export:
-        * A “Copy Code” button lets the user paste the mockup’s code into their own environment.
-        * An “Export to Figma” option (via plugin or tokens) supports further design iteration.
+* Code Generation by AI:
+    * The AI (gpt-4-0125-preview) produces a sandboxed React + Tailwind (or HTML/CSS) mockup reflecting the collected requirements.
+    * The user can preview this mockup within the platform (e.g., elevator kiosk screen with floor selection, zone definitions, accessibility controls).
+* Copy/Export:
+    * A “Copy Code” button lets the user paste the mockup’s code into their own environment.
+    * An “Export to Figma” option (via plugin or tokens) supports further design iteration.
 3.3. Multiple Versions
 * Generate Another Version:
     * If desired, the user can click a button for alternative design versions (e.g., different styling or layouts).
@@ -179,7 +184,11 @@ Graph Impact Summary
 3. Editing a Parent Node & Pruning/Replacing Branches:
     * If a parent node is changed, old children may be pruned if they no longer match the updated answer.
     * If the new answer calls for a different path of inquiry, the system spawns fresh child questions to replace what was pruned, ensuring consistency with the revised parent node.
-    * This replacement does not apply to branches that were removed due to another node’s conflict override; in those cases, the user or AI has already chosen a different path altogether.
+    * This replacement does not apply to branches that were removed due to another node’s conflict override; in those cases, the user or AI has already chosen a different path.
+4. Cross-Branch Conflicts from Edited Nodes:
+    * If an edit in one branch (e.g., Q2) introduces a contradiction in a separate branch (e.g., Q7 in a different path), the system checks whether it’s minor or major.
+    * Minor (Auto-Resolve): The AI silently adjusts or prunes the conflicting node in the other branch if it’s deemed low-impact.
+    * Major (Manual): The user is prompted to choose which branch’s answer takes precedence, removing or updating the contradictory node(s) to maintain consistency across the entire tree.
 
 Why This Flow Works
 1. Root Prompt as Anchor
@@ -196,4 +205,4 @@ Why This Flow Works
     * Immediate translation of the Q&A results into a functional code sandbox and a requirements doc.
 7. Multiple Versions on Demand
     * Allows rapid iteration and comparison of alternative interface designs without re-answering every question.
-By preserving breadth-first logic and dynamically pruning or replacing sub-branches when parent answers change, this system maintains a clear, conflict-free requirement set. It also easily accommodates new top-level topics, ensuring a truly scalable approach to designing something as complex as a 1000-floor elevator interface.
+By accommodating cross-branch edits and selectively pruning or updating conflicting nodes, this system maintains a unified set of requirements—even for a complex scenario like designing a 1000-floor elevator. The result is a structured, conflict-free tree that cleanly incorporates all user inputs and newly discovered top-level topics.
