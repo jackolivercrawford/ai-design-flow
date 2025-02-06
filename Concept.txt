@@ -135,24 +135,44 @@ Step 2: Interactive Q&A Flow (AI-Driven)
 
 Step 3: Consolidate & Generate
 3.1. Requirements Document
-* AI Compilation:
-    * The system compiles all answered questions (Q1–QX), along with:
-        * System assumptions,
-        * Auto-resolved conflicts,
-        * AI guesses for trivial unknowns.
-* Preview & Download:
-    * The user can preview the document in-app, then download as PDF, DOCX, or Markdown.
+    * AI Compilation:
+        * The system compiles all answered questions (Q1–QX), along with:
+            * System assumptions,
+            * Auto-resolved conflicts,
+            * AI guesses for trivial unknowns.
+    * Preview & Download:
+        * The user can preview the document in-app, then download as PDF, DOCX, or Markdown.
 3.2. Prototype UI Code (React/Tailwind)
-* Code Generation by AI:
-    * The AI (gpt-4-0125-preview) produces a sandboxed React + Tailwind (or HTML/CSS) mockup reflecting the collected requirements.
-    * The user can preview this mockup within the platform (e.g., elevator kiosk screen with floor selection, zone definitions, accessibility controls).
-* Copy/Export:
-    * A “Copy Code” button lets the user paste the mockup’s code into their own environment.
-    * An “Export to Figma” option (via plugin or tokens) supports further design iteration.
+    * Code Generation by AI:
+        * The AI (gpt-4-0125-preview) produces a sandboxed React + Tailwind (or HTML/CSS) mockup reflecting the collected requirements.
+        * The user can preview this mockup within the platform (e.g., elevator kiosk screen with floor selection, zone definitions, accessibility controls).
+    * Copy/Export:
+        * A “Copy Code” button lets the user paste the mockup’s code into their own environment.
+        * An “Export to Figma” option (via plugin or tokens) supports further design iteration.
 3.3. Multiple Versions
-* Generate Another Version:
-    * If desired, the user can click a button for alternative design versions (e.g., different styling or layouts).
-    * They can generate as many new versions as desired and navigate back to previous versions with arrows.
+    * Generate Another Version:
+        * If desired, the user can click a button for alternative design versions (e.g., different styling or layouts).
+        * They can generate as many new versions as desired and navigate back to previous versions with arrows.
+3.4. Save for Later
+    * Session Preservation:
+        * Save the entire Q&A session, including the root prompt, all answers given so far, any auto-populated data, conflict resolutions, and generated design previews.
+    * Local or Server-Side Storage:
+        * Local (Browser) Save: Sessions are stored locally (e.g., in localStorage or IndexedDB) so the user can close the browser and return later without losing progress.
+        * Server-Side Option (If Implemented): With user authentication, sessions can be stored on the server under the user’s account, enabling cross-device access.
+    * Metadata & Versioning:
+        * Each saved session includes an optional custom name, a timestamp, progress indicators (e.g., "5/20 questions answered"), and possibly a version ID if multiple saves exist.
+        * The system tracks when each session was last updated.
+    * Session Management:
+        * A “My Sessions” list—accessible from the home page beneath the prompt text field—displays all saved sessions, allowing users to resume, rename, or delete them.
+    * Auto-Save & Manual Save:
+        * The system auto-saves progress periodically (e.g., every few minutes or after significant changes) to minimize data loss.
+        * A “Save” button or prompt lets users manually save at critical points.
+        * If the user navigates away without saving, the system will auto-save or warn them before leaving.
+    * Privacy & Security:
+        * Local storage keeps data accessible only from that browser (data may be lost if the cache is cleared).
+        * If implemented server-side, sessions are tied to user credentials and secured with encryption and SSL.
+        * Sensitive information (e.g., security details, budgets) is protected appropriately.
+
 
 Interface Layout Summary
 1. Main Canvas (Center)
