@@ -19,6 +19,7 @@ AI-DESIGN-FLOW
   │   └── page.tsx
   ├── components
   │   ├── Canvas.tsx
+  │   ├── CanvasTree.tsx
   │   ├── HeaderToolbar.tsx
   │   ├── PreviewArea.tsx
   │   ├── PromptInput.tsx
@@ -74,15 +75,15 @@ export async function POST(request: NextRequest) {
 } 
 
 ----- /Users/jackcrawford/ai-design-flow/app/api/generate-questions/route.ts -----
-// /app/api/generate-questions/route.ts
+// app/api/generate-questions/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { Configuration, OpenAIApi } from 'openai';
+import * as OpenAI from 'openai';
 
 // Initialize the OpenAI client with your API key
-const configuration = new Configuration({
+const configuration = new OpenAI.Configuration({
   apiKey: process.env.OPENAI_API_KEY,
 });
-const openai = new OpenAIApi(configuration);
+const openai = new OpenAI.OpenAIApi(configuration);
 
 export async function POST(request: NextRequest) {
   try {
@@ -128,10 +129,11 @@ Based on this information, generate one clear follow-up question to refine the d
   }
 }
 
+
 ----- /Users/jackcrawford/ai-design-flow/app/preview/page.tsx -----
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import PreviewArea from '@/components/PreviewArea';
 import HeaderToolbar from '@/components/HeaderToolbar';
 
@@ -140,6 +142,13 @@ export default function PreviewPage() {
     requirements: '',
     uiCode: '',
   });
+
+  useEffect(() => {
+    const storedContent = localStorage.getItem('generatedContent');
+    if (storedContent) {
+      setGeneratedContent(JSON.parse(storedContent));
+    }
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -153,77 +162,91 @@ export default function PreviewPage() {
       </main>
     </div>
   );
-} 
+}
 
 ----- /Users/jackcrawford/ai-design-flow/app/qna/page.tsx -----
 // app/qna/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
-import Canvas from '@/components/Canvas';
-import QAPanel from '@/components/QAPanel';
+import { useRouter } from 'next/navigation';
+import { v4 as uuidv4 } from 'uuid';
 import HeaderToolbar from '@/components/HeaderToolbar';
-
-interface QAItem {
-  question: string;
-  answer: string;
-}
+import QAPanel from '@/components/QAPanel';
+import CanvasTree from '@/components/CanvasTree'; // We'll create this next.
+import { QANode } from '@/types'; // If you placed your interface in a separate file.
 
 export default function QnAPage() {
+  const router = useRouter();
   const [prompt, setPrompt] = useState<string>('');
-  const [currentQuestion, setCurrentQuestion] = useState<string>('');
-  const [answers, setAnswers] = useState<QAItem[]>([]);
+  const [qaTree, setQaTree] = useState<QANode | null>(null);
+  const [currentNode, setCurrentNode] = useState<QANode | null>(null);
 
-  // Function to fetch a question from the API
-  const fetchQuestion = async (designPrompt: string, previousQuestions: QAItem[]) => {
+  // Function to fetch a question from the API and add it as a child to the given node.
+  const fetchQuestion = async (designPrompt: string, parentNode: QANode) => {
     try {
       const response = await fetch('/api/generate-questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: designPrompt,
-          previousQuestions: previousQuestions,
+          // You might want to pass a filtered history of previous Q&A from this branch.
+          previousQuestions: [] 
         }),
       });
       const data = await response.json();
-      if (data.question) {
-        setCurrentQuestion(data.question);
-      } else {
-        setCurrentQuestion('No question returned.');
-      }
+      const newChild: QANode = {
+        id: uuidv4(),
+        question: data.question || 'No question returned.',
+        children: [],
+      };
+      parentNode.children.push(newChild);
+      setCurrentNode(newChild);
+      // Force an update to the tree by cloning it.
+      setQaTree({ ...qaTree! });
     } catch (error) {
-      console.error('Error fetching question:', error);
-      setCurrentQuestion('Error fetching question.');
+      console.error("Error fetching question:", error);
     }
   };
 
-  // On mount, retrieve the prompt and fetch the initial question.
+  // On mount, retrieve the prompt and create the root node.
   useEffect(() => {
     const storedPrompt = localStorage.getItem('designPrompt');
     if (storedPrompt) {
       setPrompt(storedPrompt);
-      fetchQuestion(storedPrompt, []);
+      const rootNode: QANode = {
+        id: uuidv4(),
+        question: `Prompt: ${storedPrompt}`,
+        children: [],
+      };
+      setQaTree(rootNode);
+      setCurrentNode(rootNode);
+      // Immediately fetch the first follow-up question for the root node.
+      fetchQuestion(storedPrompt, rootNode);
     } else {
-      // If no prompt is found, redirect or handle the error accordingly.
-      setCurrentQuestion('No design prompt found.');
+      // Handle missing prompt appropriately.
+      console.error("No design prompt found.");
     }
   }, []);
 
-  // Handle the submission of an answer
+  // When the user submits an answer, attach it to the current node and then fetch a follow-up question.
   const handleAnswer = async (answer: string) => {
-    // Append the current Q&A to our state
-    const newAnswers = [...answers, { question: currentQuestion, answer }];
-    setAnswers(newAnswers);
-    // Fetch the next question using the design prompt and the updated Q&A history
-    await fetchQuestion(prompt, newAnswers);
+    if (!currentNode) return;
+    // Save the answer on the current node.
+    currentNode.answer = answer;
+    // Fetch the next question as a child of the current node.
+    await fetchQuestion(prompt, currentNode);
   };
 
   return (
     <div className="min-h-screen flex flex-col">
       <HeaderToolbar />
-      <main className="flex-1 grid grid-cols-[2fr,1fr] gap-4 p-4">
-        <Canvas answers={answers} />
-        <QAPanel currentQuestion={currentQuestion} onSubmitAnswer={handleAnswer} />
+      <main className="flex-1 grid grid-cols-1 gap-4 p-4">
+        <CanvasTree node={qaTree} />
+        <QAPanel
+          currentQuestion={currentNode ? currentNode.question : ''}
+          onSubmitAnswer={handleAnswer}
+        />
       </main>
     </div>
   );
@@ -291,30 +314,39 @@ export default function RootLayout({
 
 
 ----- /Users/jackcrawford/ai-design-flow/app/page.tsx -----
-// app/prompt/page.tsx
+// app/page.tsx
 'use client';
 
-import React from 'react';
 import { useRouter } from 'next/navigation';
-import PromptInput from '../components/PromptInput';
+import PromptInput from '@/components/PromptInput';
 
-const PromptPage: React.FC = () => {
+export default function PromptPage() {
   const router = useRouter();
 
-  // Handle the prompt submission:
   const handlePromptSubmit = (prompt: string) => {
     console.log("User prompt:", prompt);
+    // Save the prompt in localStorage so the QnA page can access it
+    localStorage.setItem('designPrompt', prompt);
     router.push('/qna');
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <PromptInput onSubmit={handlePromptSubmit} />
+    <div className="min-h-screen flex flex-col justify-center items-center bg-gray-50 px-4">
+      {/* Header */}
+      <header className="mb-8 text-center">
+        <h1 className="text-4xl font-bold text-gray-800">Welcome to AI Design Flow</h1>
+        <p className="mt-4 text-lg text-gray-600">
+          Enter your design prompt to kick off your interactive design journey.
+        </p>
+      </header>
+      
+      {/* Prompt Input */}
+      <div className="w-full max-w-2xl">
+        <PromptInput onSubmit={handlePromptSubmit} />
+      </div>
     </div>
   );
-};
-
-export default PromptPage;
+}
 
 
 ----- /Users/jackcrawford/ai-design-flow/components/Canvas.tsx -----
@@ -337,6 +369,35 @@ export default function Canvas({ answers }: CanvasProps) {
     </div>
   );
 } 
+
+----- /Users/jackcrawford/ai-design-flow/components/CanvasTree.tsx -----
+// components/CanvasTree.tsx
+import React from 'react';
+import { QANode } from '@/types'; // if you're using a separate types file
+
+interface CanvasTreeProps {
+  node: QANode | null;
+  depth?: number;
+}
+
+const CanvasTree: React.FC<CanvasTreeProps> = ({ node, depth = 0 }) => {
+  if (!node) return null;
+
+  return (
+    <div style={{ marginLeft: depth * 16 }} className="mb-4">
+      <div className="p-2 border rounded mb-2 bg-white shadow">
+        <p className="font-medium text-gray-700">{node.question}</p>
+        {node.answer && <p className="text-gray-600">Answer: {node.answer}</p>}
+      </div>
+      {node.children.map(child => (
+        <CanvasTree key={child.id} node={child} depth={depth + 1} />
+      ))}
+    </div>
+  );
+};
+
+export default CanvasTree;
+
 
 ----- /Users/jackcrawford/ai-design-flow/components/HeaderToolbar.tsx -----
 export default function HeaderToolbar() {
@@ -562,7 +623,8 @@ export default nextConfig;
     "next": "15.1.6",
     "openai": "^4.83.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "uuid": "^11.0.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

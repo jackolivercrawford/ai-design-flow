@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import PreviewArea from '@/components/PreviewArea';
 import HeaderToolbar from '@/components/HeaderToolbar';
 
@@ -9,6 +9,13 @@ export default function PreviewPage() {
     requirements: '',
     uiCode: '',
   });
+
+  useEffect(() => {
+    const storedContent = localStorage.getItem('generatedContent');
+    if (storedContent) {
+      setGeneratedContent(JSON.parse(storedContent));
+    }
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -22,4 +29,4 @@ export default function PreviewPage() {
       </main>
     </div>
   );
-} 
+}

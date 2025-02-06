@@ -19,15 +19,15 @@ export default function QAPanel({ currentQuestion, onSubmitAnswer }: QAPanelProp
   return (
     <div className="bg-white rounded-lg p-6 shadow-lg">
       <div className="mb-6">
-        <h3 className="text-lg font-medium mb-2">Current Question:</h3>
-        <p className="text-gray-700">{currentQuestion}</p>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Current Question:</h3>
+        <p className="text-gray-800">{currentQuestion}</p>
       </div>
       <form onSubmit={handleSubmit}>
         <div className="space-y-4">
           <textarea
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
-            className="w-full h-32 p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full h-32 p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
             placeholder="Type your answer..."
           />
           <button

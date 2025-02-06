@@ -1,17 +1,20 @@
+import Link from 'next/link';
+
 export default function HeaderToolbar() {
   return (
     <header className="bg-white border-b">
-      <div className="container mx-auto px-4 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <h1 className="text-xl font-bold">AI Design Flow</h1>
-            <nav className="hidden sm:flex space-x-4">
-              <a href="/prompt" className="text-gray-600 hover:text-gray-900">Prompt</a>
-              <a href="/qna" className="text-gray-600 hover:text-gray-900">Q&A</a>
-              <a href="/preview" className="text-gray-600 hover:text-gray-900">Preview</a>
+      <div className="w-2/3 pl-6">
+        <div className="flex items-center justify-between py-4">
+          <div className="flex items-center space-x-6">
+            <Link href="/" className="text-xl font-bold text-gray-900 hover:text-blue-600 transition-colors">
+              AI Design Flow
+            </Link>
+            <nav className="hidden sm:flex space-x-6">
+              <Link href="/qna" className="text-gray-600 hover:text-gray-900">Q&A</Link>
+              <Link href="/preview" className="text-gray-600 hover:text-gray-900">Preview</Link>
             </nav>
           </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center">
             <button className="text-gray-600 hover:text-gray-900">
               <span className="sr-only">Settings</span>
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
