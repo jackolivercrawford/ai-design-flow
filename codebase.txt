@@ -33,8 +33,10 @@ AI-DESIGN-FLOW
   │   ├── next.svg
   │   ├── vercel.svg
   │   └── window.svg
+  ├── .env.local
   ├── .gitignore
   ├── codebase.txt
+  ├── Concept.txt
   ├── eslint.config.mjs
   ├── generateCodebase.js
   ├── next-env.d.ts
@@ -74,14 +76,49 @@ export async function POST(request: NextRequest) {
 } 
 
 ----- /Users/jackcrawford/ai-design-flow/app/api/generate-questions/route.ts -----
+// /app/api/generate-questions/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { Configuration, OpenAIApi } from 'openai';
+
+// Initialize the OpenAI client with your API key
+const configuration = new Configuration({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+const openai = new OpenAIApi(configuration);
 
 export async function POST(request: NextRequest) {
   try {
     const { prompt, previousQuestions } = await request.json();
 
-    // TODO: Implement question generation logic
-    const generatedQuestion = "What are the key features you'd like to include?";
+    // Construct a context message for GPT-4
+    const messages = [
+      {
+        role: 'system',
+        content:
+          'You are an expert design assistant that helps generate follow-up questions for a design prompt. Your questions are clear, concise, and focused on gathering detailed design requirements.',
+      },
+      {
+        role: 'user',
+        content: `The design prompt is: "${prompt}". 
+Previous Q&A history: ${JSON.stringify(previousQuestions)}.
+Based on this information, generate one clear follow-up question to refine the design requirements.`,
+      },
+    ];
+
+    // Call the OpenAI API using the GPT-4 model
+    const completion = await openai.createChatCompletion({
+      model: 'gpt-4',
+      messages,
+      max_tokens: 100, // Adjust as needed for question length
+    });
+
+    // Extract the generated question from the response
+    const generatedQuestion =
+      completion.data.choices[0].message?.content.trim();
+
+    if (!generatedQuestion) {
+      throw new Error('No question generated.');
+    }
 
     return NextResponse.json({ question: generatedQuestion });
   } catch (error) {
@@ -91,7 +128,7 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-} 
+}
 
 ----- /Users/jackcrawford/ai-design-flow/app/preview/page.tsx -----
 'use client';
@@ -508,6 +545,9 @@ export default function QAPanel({ currentQuestion, onSubmitAnswer }: QAPanelProp
   );
 } 
 
+----- /Users/jackcrawford/ai-design-flow/.env.local -----
+OPENAI_API_KEY=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 
+
 ----- /Users/jackcrawford/ai-design-flow/.gitignore -----
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
@@ -582,20 +622,21 @@ export default nextConfig;
     "lint": "next lint"
   },
   "dependencies": {
+    "next": "15.1.6",
+    "openai": "^4.83.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "next": "15.1.6"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@eslint/eslintrc": "^3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "postcss": "^8",
-    "tailwindcss": "^3.4.1",
     "eslint": "^9",
     "eslint-config-next": "15.1.6",
-    "@eslint/eslintrc": "^3"
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
   }
 }
 

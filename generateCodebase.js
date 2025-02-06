@@ -8,10 +8,10 @@ const excludeDirs = ['.git'];
 
 // File extensions to include for content output, plus specific files to always include
 const fileExtensionsToInclude = ['.tsx', '.ts', '.html', '.css'];
-const specificFiles = ['.gitignore', 'tsconfig.json', 'package.json', '.env'];
+const specificFiles = ['.gitignore', 'tsconfig.json', 'package.json', '.env', '.env.local'];
 
 /**
- * Custom sort function to mimic Cursor’s left-hand file explorer ordering:
+ * Custom sort function to mimic Cursor's left-hand file explorer ordering:
  * - Directories come first, then files, both sorted alphabetically.
  *
  * @param {string} a - The first file or folder name.
