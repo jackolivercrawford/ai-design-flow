@@ -14,14 +14,20 @@ export async function POST(request: NextRequest) {
       {
         role: 'system' as const,
         content:
-          'You are an expert design assistant that helps generate follow-up questions for a design prompt. Your questions are clear, concise, and focused on gathering detailed design requirements.',
+          'You are an expert design assistant that helps generate follow-up questions for a design prompt. Your questions should be clear, concise, and focus on gathering detailed design requirements. When previous Q&A is provided, reference those answers to ask more specific, probing questions rather than generic ones.'
       },
       {
         role: 'user' as const,
         content: `The design prompt is: "${prompt}".
-Previous Q&A history: ${JSON.stringify(previousQuestions)}.
-Based on this information, generate up to three clear follow-up questions as a JSON array.
-For example: ["Is the elevator primarily for humans or machinery?", "What is the total number of floors?", "Is there a known budget constraint?"]`,
+Previous Q&A: ${JSON.stringify(previousQuestions)}.
+Based on this information, generate up to three specific follow-up questions that build on the provided answers. Avoid broad or repetitive questions. 
+Return your questions as a JSON array.
+For example: 
+[
+  "How will you implement ADA compliance in the interface based on your requirements?",
+  "What specific features will you add to enhance user safety during emergencies?",
+  "How do you plan to integrate voice activation with the building's existing systems?"
+]`
       },
     ];
 

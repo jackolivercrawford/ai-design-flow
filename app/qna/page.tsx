@@ -13,64 +13,41 @@ export default function QnAPage() {
   const router = useRouter();
   const [prompt, setPrompt] = useState<string>('');
   const [qaTree, setQaTree] = useState<QANode | null>(null);
-  const [currentNode, setCurrentNode] = useState<QANode | null>(null);
-  // Store the array of nodes at the current level and an index pointer
   const [currentLevelNodes, setCurrentLevelNodes] = useState<QANode[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
+  const [currentNode, setCurrentNode] = useState<QANode | null>(null);
 
-  // Fetch multiple questions for a given parent node and update its children
-  // /app/qna/page.tsx
-// /app/qna/page.tsx (updated fetchQuestions function)
-const fetchQuestions = async (designPrompt: string, parentNode: QANode) => {
-  try {
-    const response = await fetch('/api/generate-questions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: designPrompt,
-        previousQuestions: [] // Optionally, pass parent-specific history here
-      }),
-    });
-    const data = await response.json();
-    
-    // Extract the first question from the returned array.
-    const questionText =
-      data.questions && data.questions.length > 0
-        ? data.questions[0]
-        : 'No question returned.';
-    
-    const newChild: QANode = {
-      id: uuidv4(),
-      question: questionText,
-      children: [],
-    };
+  // Helper: fetch multiple child nodes for a given parent node.
+  const fetchQuestionsForNode = async (designPrompt: string, parentNode: QANode): Promise<QANode[]> => {
+    try {
+      // Build previous Q&A context for this parent node.
+      const previousQA = parentNode.answer
+        ? [{ question: parentNode.question, answer: parentNode.answer }]
+        : [];
+      
+      const response = await fetch('/api/generate-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: designPrompt,
+          previousQuestions: previousQA,
+        }),
+      });
+      const data = await response.json();
+      // Create a child for each question returned.
+      const children: QANode[] = data.questions.map((q: string) => ({
+        id: uuidv4(),
+        question: q,
+        children: [],
+      }));
+      return children;
+    } catch (error) {
+      console.error("Error in fetchQuestionsForNode:", error);
+      return [];
+    }
+  };
 
-    // Helper function to immutably update the tree.
-    const updateTree = (node: QANode): QANode => {
-      // If this is the node we're targeting, add the new child.
-      if (node.id === parentNode.id) {
-        return {
-          ...node,
-          children: [...node.children, newChild],
-        };
-      }
-      // Otherwise, update any children recursively.
-      return {
-        ...node,
-        children: node.children.map(child => updateTree(child)),
-      };
-    };
-
-    // Use the functional state updater to get the latest tree.
-    setQaTree((prevTree) => (prevTree ? updateTree(prevTree) : prevTree));
-    setCurrentNode(newChild);
-  } catch (error) {
-    console.error("Error fetching questions:", error);
-  }
-};
-
-
-  // On mount: load the stored prompt, create the root node, and fetch top-level questions.
+  // On mount: load the prompt, create the root node, and fetch top-level questions.
   useEffect(() => {
     const storedPrompt = localStorage.getItem('designPrompt');
     if (storedPrompt) {
@@ -81,26 +58,57 @@ const fetchQuestions = async (designPrompt: string, parentNode: QANode) => {
         children: [],
       };
       setQaTree(rootNode);
-      // Fetch top-level (sibling) questions for the root node
-      fetchQuestions(storedPrompt, rootNode);
+      // Fetch top-level (sibling) questions for the root node.
+      fetchQuestionsForNode(storedPrompt, rootNode).then((children) => {
+        rootNode.children = children;
+        // Update the tree immutably.
+        setQaTree({ ...rootNode });
+        setCurrentLevelNodes(children);
+        if (children.length > 0) {
+          setCurrentNode(children[0]);
+          setCurrentIndex(0);
+        }
+      });
     } else {
       console.error("No design prompt found.");
       router.push('/');
     }
-  }, []);
+  }, [router]);
 
-  // Handle answer submission for the current question.
+  // When the user submits an answer.
   const handleAnswer = async (answer: string) => {
     if (!currentNode) return;
-
-    // Save the answer on the current node
+    // Record the answer.
     currentNode.answer = answer;
+    // Update the tree state (a shallow copy is enough here because we update the current level separately).
+    setQaTree((prevTree) => (prevTree ? { ...prevTree } : prevTree));
 
-    // Update the tree state first
-    setQaTree({ ...qaTree! });
-
-    // Fetch the next question for this node
-    await fetchQuestions(prompt, currentNode);
+    // If there are more siblings in this level, move to the next one.
+    if (currentIndex < currentLevelNodes.length - 1) {
+      const newIndex = currentIndex + 1;
+      setCurrentIndex(newIndex);
+      setCurrentNode(currentLevelNodes[newIndex]);
+    } else {
+      // All nodes in the current level have been answered.
+      // For each node in the current level, fetch its children.
+      let nextLevelNodes: QANode[] = [];
+      for (const node of currentLevelNodes) {
+        const children = await fetchQuestionsForNode(prompt, node);
+        // Attach the fetched children to this node.
+        node.children = children;
+        nextLevelNodes = nextLevelNodes.concat(children);
+      }
+      // Update the tree immutably.
+      setQaTree((prevTree) => (prevTree ? { ...prevTree } : prevTree));
+      if (nextLevelNodes.length > 0) {
+        setCurrentLevelNodes(nextLevelNodes);
+        setCurrentIndex(0);
+        setCurrentNode(nextLevelNodes[0]);
+      } else {
+        // No further questions: the Q&A session is complete.
+        setCurrentNode(null);
+      }
+    }
   };
 
   return (
@@ -114,7 +122,6 @@ const fetchQuestions = async (designPrompt: string, parentNode: QANode) => {
             <CanvasTree node={qaTree} />
           </div>
         </div>
-        
         {/* Right: Q&A Panel */}
         <div className="w-1/3 p-6 overflow-auto border-l border-gray-200">
           <QAPanel
