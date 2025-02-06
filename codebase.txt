@@ -32,6 +32,8 @@ AI-DESIGN-FLOW
   │   ├── next.svg
   │   ├── vercel.svg
   │   └── window.svg
+  ├── types
+  │   └── index.ts
   ├── .env.local
   ├── .gitignore
   ├── codebase.txt
@@ -77,13 +79,12 @@ export async function POST(request: NextRequest) {
 ----- /Users/jackcrawford/ai-design-flow/app/api/generate-questions/route.ts -----
 // app/api/generate-questions/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import * as OpenAI from 'openai';
+import OpenAI from 'openai';
 
 // Initialize the OpenAI client with your API key
-const configuration = new OpenAI.Configuration({
+const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-const openai = new OpenAI.OpenAIApi(configuration);
 
 export async function POST(request: NextRequest) {
   try {
@@ -92,12 +93,12 @@ export async function POST(request: NextRequest) {
     // Construct a context message for GPT-4
     const messages = [
       {
-        role: 'system',
+        role: 'system' as const,
         content:
           'You are an expert design assistant that helps generate follow-up questions for a design prompt. Your questions are clear, concise, and focused on gathering detailed design requirements.',
       },
       {
-        role: 'user',
+        role: 'user' as const,
         content: `The design prompt is: "${prompt}". 
 Previous Q&A history: ${JSON.stringify(previousQuestions)}.
 Based on this information, generate one clear follow-up question to refine the design requirements.`,
@@ -105,15 +106,14 @@ Based on this information, generate one clear follow-up question to refine the d
     ];
 
     // Call the OpenAI API using the GPT-4 model
-    const completion = await openai.createChatCompletion({
+    const completion = await openai.chat.completions.create({
       model: 'gpt-4',
       messages,
       max_tokens: 100, // Adjust as needed for question length
     });
 
     // Extract the generated question from the response
-    const generatedQuestion =
-      completion.data.choices[0].message?.content.trim();
+    const generatedQuestion = completion.choices[0].message.content?.trim();
 
     if (!generatedQuestion) {
       throw new Error('No question generated.');
@@ -198,7 +198,7 @@ export default function QnAPage() {
       const newChild: QANode = {
         id: uuidv4(),
         question: data.question || 'No question returned.',
-        children: [],
+        children: [], // Initialize with empty children array
       };
       parentNode.children.push(newChild);
       setCurrentNode(newChild);
@@ -217,7 +217,7 @@ export default function QnAPage() {
       const rootNode: QANode = {
         id: uuidv4(),
         question: `Prompt: ${storedPrompt}`,
-        children: [],
+        children: [], // Initialize with empty children array
       };
       setQaTree(rootNode);
       setCurrentNode(rootNode);
@@ -226,6 +226,7 @@ export default function QnAPage() {
     } else {
       // Handle missing prompt appropriately.
       console.error("No design prompt found.");
+      router.push('/prompt');
     }
   }, []);
 
@@ -239,14 +240,24 @@ export default function QnAPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-gray-100">
       <HeaderToolbar />
-      <main className="flex-1 grid grid-cols-1 gap-4 p-4">
-        <CanvasTree node={qaTree} />
-        <QAPanel
-          currentQuestion={currentNode ? currentNode.question : ''}
-          onSubmitAnswer={handleAnswer}
-        />
+      <main className="flex-1 flex">
+        {/* Left side - Canvas (2/3) */}
+        <div className="w-2/3 p-6 overflow-auto">
+          <div className="bg-white rounded-lg shadow-lg p-6 min-h-full">
+            <h2 className="text-2xl font-bold mb-6 text-gray-900">Question Tree</h2>
+            <CanvasTree node={qaTree} />
+          </div>
+        </div>
+        
+        {/* Right side - Q&A Panel (1/3) */}
+        <div className="w-1/3 p-6 overflow-auto border-l border-gray-200">
+          <QAPanel
+            currentQuestion={currentNode ? currentNode.question : ''}
+            onSubmitAnswer={handleAnswer}
+          />
+        </div>
       </main>
     </div>
   );
@@ -386,10 +397,10 @@ const CanvasTree: React.FC<CanvasTreeProps> = ({ node, depth = 0 }) => {
   return (
     <div style={{ marginLeft: depth * 16 }} className="mb-4">
       <div className="p-2 border rounded mb-2 bg-white shadow">
-        <p className="font-medium text-gray-700">{node.question}</p>
-        {node.answer && <p className="text-gray-600">Answer: {node.answer}</p>}
+        <p className="font-medium text-gray-900">{node.question}</p>
+        {node.answer && <p className="text-gray-800">Answer: {node.answer}</p>}
       </div>
-      {node.children.map(child => (
+      {node.children?.map((child: QANode) => (
         <CanvasTree key={child.id} node={child} depth={depth + 1} />
       ))}
     </div>
@@ -400,20 +411,23 @@ export default CanvasTree;
 
 
 ----- /Users/jackcrawford/ai-design-flow/components/HeaderToolbar.tsx -----
+import Link from 'next/link';
+
 export default function HeaderToolbar() {
   return (
     <header className="bg-white border-b">
-      <div className="container mx-auto px-4 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <h1 className="text-xl font-bold">AI Design Flow</h1>
-            <nav className="hidden sm:flex space-x-4">
-              <a href="/prompt" className="text-gray-600 hover:text-gray-900">Prompt</a>
-              <a href="/qna" className="text-gray-600 hover:text-gray-900">Q&A</a>
-              <a href="/preview" className="text-gray-600 hover:text-gray-900">Preview</a>
+      <div className="w-2/3 pl-6">
+        <div className="flex items-center justify-between py-4">
+          <div className="flex items-center space-x-6">
+            <Link href="/" className="text-xl font-bold text-gray-900 hover:text-blue-600 transition-colors">
+              AI Design Flow
+            </Link>
+            <nav className="hidden sm:flex space-x-6">
+              <Link href="/qna" className="text-gray-600 hover:text-gray-900">Q&A</Link>
+              <Link href="/preview" className="text-gray-600 hover:text-gray-900">Preview</Link>
             </nav>
           </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center">
             <button className="text-gray-600 hover:text-gray-900">
               <span className="sr-only">Settings</span>
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -520,15 +534,15 @@ export default function QAPanel({ currentQuestion, onSubmitAnswer }: QAPanelProp
   return (
     <div className="bg-white rounded-lg p-6 shadow-lg">
       <div className="mb-6">
-        <h3 className="text-lg font-medium mb-2">Current Question:</h3>
-        <p className="text-gray-700">{currentQuestion}</p>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Current Question:</h3>
+        <p className="text-gray-800">{currentQuestion}</p>
       </div>
       <form onSubmit={handleSubmit}>
         <div className="space-y-4">
           <textarea
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
-            className="w-full h-32 p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full h-32 p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
             placeholder="Type your answer..."
           />
           <button
@@ -541,6 +555,14 @@ export default function QAPanel({ currentQuestion, onSubmitAnswer }: QAPanelProp
       </form>
     </div>
   );
+} 
+
+----- /Users/jackcrawford/ai-design-flow/types/index.ts -----
+export interface QANode {
+  id: string;
+  question: string;
+  answer?: string;
+  children: QANode[];
 } 
 
 ----- /Users/jackcrawford/ai-design-flow/.env.local -----
