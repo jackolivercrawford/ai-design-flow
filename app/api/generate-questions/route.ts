@@ -1,8 +1,7 @@
-// app/api/generate-questions/route.ts
+// /app/api/generate-questions/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
-// Initialize the OpenAI client with your API key
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -11,7 +10,6 @@ export async function POST(request: NextRequest) {
   try {
     const { prompt, previousQuestions } = await request.json();
 
-    // Construct a context message for GPT-4
     const messages = [
       {
         role: 'system' as const,
@@ -20,27 +18,37 @@ export async function POST(request: NextRequest) {
       },
       {
         role: 'user' as const,
-        content: `The design prompt is: "${prompt}". 
+        content: `The design prompt is: "${prompt}".
 Previous Q&A history: ${JSON.stringify(previousQuestions)}.
-Based on this information, generate one clear follow-up question to refine the design requirements.`,
+Based on this information, generate up to three clear follow-up questions as a JSON array.
+For example: ["Is the elevator primarily for humans or machinery?", "What is the total number of floors?", "Is there a known budget constraint?"]`,
       },
     ];
 
-    // Call the OpenAI API using the GPT-4 model
     const completion = await openai.chat.completions.create({
       model: 'gpt-4',
       messages,
-      max_tokens: 100, // Adjust as needed for question length
+      max_tokens: 150,
     });
 
-    // Extract the generated question from the response
-    const generatedQuestion = completion.choices[0].message.content?.trim();
+    const content = completion.choices[0].message.content?.trim();
+    let questions: string[] = [];
 
-    if (!generatedQuestion) {
-      throw new Error('No question generated.');
+    try {
+      questions = JSON.parse(content!);
+      if (!Array.isArray(questions)) {
+        throw new Error("Output is not an array");
+      }
+    } catch (jsonError) {
+      // Fallback: if JSON parsing fails, split by newline
+      questions = content?.split('\n').filter((line) => line.trim() !== '') || [];
     }
 
-    return NextResponse.json({ question: generatedQuestion });
+    if (!questions || questions.length === 0) {
+      throw new Error('No questions generated.');
+    }
+
+    return NextResponse.json({ questions });
   } catch (error) {
     console.error('Error generating questions:', error);
     return NextResponse.json(
