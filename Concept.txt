@@ -1,6 +1,5 @@
 Overall Concept
-
-1. 1. Root Node (User Prompt)
+1. Root Node (User Prompt)
     * The user begins by typing a prompt (e.g., “Design the interface for a 1000-floor elevator”).
     * This prompt becomes the root node on the Main Canvas, the trunk of a tree from which all subsequent branches (questions) extend.
 2. AI-Powered Question Generation (via gpt-4-0125-preview)
@@ -14,10 +13,13 @@ Overall Concept
     * Sequential Question Generation:
         * In either mode, only one question is shown at a time, and a new question (sibling or child) appears only after the user answers the current question.
     * Pruning & Conflict Resolution: If an updated answer invalidates certain paths, the AI prunes them. It may silently fix minor conflicts if auto-resolve is on.
-4. Stopping Criteria & Generation
-    * The user can cap the total number of questions (e.g., “Stop after 20”), triggering a mockup.
-    * Alternatively, the AI decides when enough info is gathered.
-    * Once the Q&A phase ends, the system creates a requirements doc and React/Tailwind code for a working prototype.
+4. On-Demand Generation
+    * Single Path to Generate: At any time, the user can click “Generate” to produce a partial or full mockup and requirements doc based on all answers so far.
+    * Filling Gaps: If the user has unanswered questions, the system either:
+        * Guesses (if trivial unknown auto-mode is on), or
+        * Leaves placeholders / annotated TODOs for major unknowns.
+    * Requirements & Mockup Availability: The system compiles a requirements doc and produces React/Tailwind code whenever requested—no need to wait for all questions to be answered.
+    * Version Browsing & Restoration: Each generation is saved as a version the user can preview later, restore the Q&A tree to that state, or compare changes over time.
 
 Step 1: Initial Setup & Prompt Node
 1. Enter the Prompt
@@ -36,9 +38,7 @@ Step 1: Initial Setup & Prompt Node
 4. Breadth-First or Depth-First Q&A Selection
     * Breadth-First: Complete all top-level siblings (like Q1, Q2, Q3 in BFS image) before showing their children.
     * Depth-First: As soon as Q1 is answered, show Q1’s children, postponing Q2 and Q3 until Q1’s subtree is done (like DFS image).
-5. Question Limit or AI-Determined Stop
-    * The user can limit total questions (e.g., 20) or let the AI decide.
-    * Once these settings are confirmed, the root node is finalized.
+5. Once these settings are confirmed, the root node is finalized.
 
 Step 2: Interactive Q&A Flow (AI-Driven)
 2.1. The Root Node & First Questions
@@ -170,40 +170,40 @@ Key Differences:
 * Cross-Branch Conflicts
     * If changing Q2 conflicts with Q7 in another branch, the system either auto-fixes (if minor) or prompts for user choice (if major).
 
-2.5. Stopping & Additional Inquiries
-1. Max Questions Reached
-    * If the user set “Stop after 20,” the system says, “20 questions reached—generate a mockup now or continue?”
-2. AI Decides
-    * If no cap, once the AI believes it has enough data, it asks if the user wants to finalize or keep going.
-3. User-Initiated Topics
+2.5. User-Initiated Topics
     * The user can say, “Give me more detail on accessibility,” spawning new nodes or top-level Q’s if it’s a major domain.
 
 Step 3: Consolidate & Generate
-3.1. Requirements Document
-* AI Compilation:
-    * The system compiles all final answers (Q1–QX), assumptions, auto-resolved conflicts, and “AI-guessed” unknowns.
-* Preview & Download:
-    * The user can see this document onscreen and export it (PDF, DOCX, Markdown).
-3.2. Prototype UI Code (React/Tailwind)
-* Code Generation:
-    * The AI produces a sandboxed React + Tailwind (or HTML/CSS) mockup reflecting the final Q&A data.
-    * The user previews an elevator kiosk or panel design with the specified features.
-* Copy/Export:
-    * A “Copy Code” button for quick integration elsewhere.
-    * An “Export to Figma” option for design iteration.
-3.3. Multiple Versions
-* Generate Another Version:
-    * Users can request alternative designs (styling/layout).
-    * They can produce multiple versions and flip between them for comparison.
-3.4. Save for Later
-* Session Preservation:
-    * The system can save the entire Q&A session (root prompt, answers, conflicts, design previews).
-* Local vs. Server:
-    * Data might be stored locally (localStorage) or on a server if user accounts exist.
-* Metadata & Session Management:
-    * Each session has a name, timestamp, progress indicator. A “My Sessions” page lets users resume, rename, or delete.
-* Auto-Save & Manual Save:
-    * The system auto-saves periodically; a “Save” button also exists. If the user leaves, it warns or auto-saves.
+3.1. On-Demand Generation
+* User Triggered
+    * At any point, the user can click a “Generate Now” (or “Preview Mockup”) button to produce a partial or complete design.
+    * No Formal End: There is no separate “end” to the Q&A phase; the user can continue answering more questions or revising old answers after generating if they wish.
+* Filling Gaps
+    * If some questions remain unanswered:
+        * Trivial Unknowns (auto-mode) are guessed by the AI, labeled as “AI-guessed.”
+        * Major Unknowns appear as placeholders or “TODO” notes in the requirements doc and code.
+* Requirements Doc Preview
+    * Right after generation, the system shows a requirements document (partial or complete), noting any unanswered or major unknown fields.
+    * The user can download this doc (PDF, DOCX, Markdown) or simply preview it in-app.
+* Prototype UI Code (React/Tailwind)
+    * The AI produces a sandboxed React + Tailwind (or HTML/CSS) mockup that reflects all answered questions so far.
+    * If large sections are unknown, code placeholders or “TODO” markers appear.
+    * A “Copy Code” button is always available, plus “Export to Figma” for design iteration.
+* Multiple Versions & Version Browsing
+    * Each on-demand generation creates a new version stored in the system. The user can:
+        * Preview any previously generated version,
+        * Restore the Q&A tree to that version’s state,
+        * Compare versions side by side.
+3.2. Save for Later
+* Session Preservation
+    * The system can save the entire Q&A session—including prompt, answers, conflicts, design previews—under a named session.
+* Local vs. Server
+    * If user accounts exist (server-side), sessions can be shared or accessed across devices. Otherwise, localStorage (browser) is used.
+* Metadata & Session Management
+    * Each session has a timestamp, progress indicator, and optional custom name. A “My Sessions” screen lets users resume, rename, or delete sessions.
+* Auto-Save & Manual Save
+    * The system periodically auto-saves. A “Save” button also exists for manual checkpoints.
+    * If the user tries to leave without saving, the system warns or auto-saves.
 
 Interface Layout Summary
 1. Main Canvas (Center)
@@ -219,7 +219,8 @@ Interface Layout Summary
     * A progress bar (e.g., “X / Y answered”).
     * Knowledge Base status icon (uploaded or not).
 4. Generation/Preview Area
-    * After Q&A, the user sees a Requirements Doc Preview and a React/Tailwind sandbox.
+    * A "Generate Mockup” button is consistently available
+    * The user sees a Requirements Doc Preview and a React/Tailwind sandbox.
     * Tools for doc download, code copying, or exporting to design software.
 
 Graph Impact Summary
@@ -253,10 +254,8 @@ Why This Flow Works
   * User-driven resolution for major decisions
   * Clear separation between AI-assisted and user-required choices
 
-5. Flexible Stopping
-  * User can set specific question limit
-  * AI can suggest when enough data is gathered
-  * Ensures comprehensive requirements without excess
+5. On-Demand Generation
+  *The user can see a partial or complete design whenever they want, with guesses or placeholders for unanswered data.
 
 6. Requirements & Live Prototype
   * Immediate generation of functional React/Tailwind concept
@@ -267,3 +266,5 @@ Why This Flow Works
   * Rapid iteration on different interface styles
   * Option to pause and resume at any time
   * Preserves exploration while allowing refinement
+
+By making generation fully on-demand, users can produce and preview a design at any stage of Q&A. Unanswered data is filled in automatically (if minor) or flagged as incomplete. This approach preserves your BFS/DFS flow for question ordering, while granting users immediate partial prototypes and letting them iterate or revert to past versions as they refine the elevator interface’s requirements.
