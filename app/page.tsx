@@ -3,14 +3,17 @@
 
 import { useRouter } from 'next/navigation';
 import PromptInput from '@/components/PromptInput';
+import { QASettings } from '@/types/settings';
 
 export default function PromptPage() {
   const router = useRouter();
 
-  const handlePromptSubmit = (prompt: string) => {
+  const handlePromptSubmit = (prompt: string, settings: QASettings) => {
     console.log("User prompt:", prompt);
-    // Save the prompt in localStorage so the QnA page can access it
+    console.log("Settings:", settings);
+    // Save both prompt and settings in localStorage
     localStorage.setItem('designPrompt', prompt);
+    localStorage.setItem('qaSettings', JSON.stringify(settings));
     router.push('/qna');
   };
 

@@ -8,22 +8,158 @@ import HeaderToolbar from '../../components/HeaderToolbar';
 import QAPanel from '../../components/QAPanel';
 import CanvasTree from '../../components/CanvasTree';
 import { QANode } from '../../types';
+import { QASettings } from '@/types/settings';
 
 export default function QnAPage() {
   const router = useRouter();
   const [prompt, setPrompt] = useState<string>('');
+  const [settings, setSettings] = useState<QASettings | null>(null);
   const [qaTree, setQaTree] = useState<QANode | null>(null);
-  const [currentLevelNodes, setCurrentLevelNodes] = useState<QANode[]>([]);
-  const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [currentNode, setCurrentNode] = useState<QANode | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingNextQuestion, setIsLoadingNextQuestion] = useState(false);
+  const [questionCount, setQuestionCount] = useState(0);
 
-  // Helper: fetch multiple child nodes for a given parent node.
-  const fetchQuestionsForNode = async (designPrompt: string, parentNode: QANode): Promise<QANode[]> => {
+  // Helper: Get the next question based on traversal mode
+  const getNextQuestion = async (node: QANode): Promise<QANode | null> => {
+    const isDFS = settings?.traversalMode === 'dfs';
+    
+    if (isDFS) {
+      // DFS: Try to go deeper first
+      if (node.answer) {
+        // If this node has an answer, try to generate its first child
+        const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(prompt, node);
+        
+        // If we should stop this branch or no children were generated, move to siblings
+        if (!shouldStopBranch && children.length > 0) {
+          node.children = children;
+          return children[0];
+        }
+      }
+      
+      // If we can't go deeper, find the next sibling by traversing up
+      let current: QANode | null = node;
+      let parent = findParentNode(qaTree!, node);
+      
+      while (parent) {
+        const siblings = parent.children;
+        const currentIndex = siblings.indexOf(current!);
+        
+        if (currentIndex < siblings.length - 1) {
+          // Return next sibling
+          return siblings[currentIndex + 1];
+        }
+        
+        // Move up to try next level's sibling
+        current = parent;
+        parent = findParentNode(qaTree!, parent);
+      }
+      
+      return null; // No more questions
+    } else {
+      // BFS: Complete current level before going deeper
+      // Find all nodes at the current level
+      const currentLevel = findNodesAtSameLevel(qaTree!, node);
+      const currentIndex = currentLevel.indexOf(node);
+      
+      if (currentIndex < currentLevel.length - 1) {
+        // Return next sibling in current level
+        return currentLevel[currentIndex + 1];
+      }
+      
+      // If we've completed the current level, start the next level
+      const nextLevelStart = findFirstUnansweredChild(qaTree!);
+      if (nextLevelStart) {
+        return nextLevelStart;
+      }
+      
+      // If no unanswered children found, generate new ones for the first node that can have children
+      const nodeForChildren = findFirstNodeForChildren(qaTree!);
+      if (nodeForChildren) {
+        const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(prompt, nodeForChildren);
+        if (!shouldStopBranch && children.length > 0) {
+          nodeForChildren.children = children;
+          return children[0];
+        }
+      }
+      
+      return null; // No more questions
+    }
+  };
+
+  // Helper: Find parent node
+  const findParentNode = (root: QANode | null, target: QANode): QANode | null => {
+    if (!root) return null;
+    if (root.children.includes(target)) return root;
+    for (const child of root.children) {
+      const found = findParentNode(child, target);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  // Helper: Find all nodes at the same level as the target node
+  const findNodesAtSameLevel = (root: QANode | null, target: QANode): QANode[] => {
+    if (!root) return [];
+    const parent = findParentNode(root, target);
+    if (!parent) return root.children; // If no parent, must be root level
+    return parent.children;
+  };
+
+  // Helper: Find the first unanswered child in the tree (BFS)
+  const findFirstUnansweredChild = (root: QANode | null): QANode | null => {
+    if (!root) return null;
+    const queue: QANode[] = [root];
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      // Skip the root node when looking for unanswered questions
+      if (node.children.length > 0) {
+        for (const child of node.children) {
+          if (!child.answer) return child;
+          queue.push(child);
+        }
+      } else if (!node.answer && node.question !== `Prompt: ${prompt}`) {
+        return node;
+      }
+    }
+    return null;
+  };
+
+  // Helper: Find the first node that can have children (has answer but no children)
+  const findFirstNodeForChildren = (root: QANode | null): QANode | null => {
+    if (!root) return null;
+    const queue: QANode[] = [root];
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      // Skip the root node when looking for nodes that can have children
+      if (node.answer && node.children.length === 0 && node.question !== `Prompt: ${prompt}`) {
+        return node;
+      }
+      queue.push(...node.children);
+    }
+    return null;
+  };
+
+  // Helper: fetch questions for a node
+  const fetchQuestionsForNode = async (designPrompt: string, parentNode: QANode): Promise<{ nodes: QANode[], shouldStopBranch: boolean, stopReason: string }> => {
     try {
-      // Build previous Q&A context for this parent node.
-      const previousQA = parentNode.answer
-        ? [{ question: parentNode.question, answer: parentNode.answer }]
-        : [];
+      // Build the previous Q&A chain up to the root
+      const previousQA: Array<{ question: string; answer?: string; parent?: any }> = [];
+      let current: QANode | null = parentNode;
+      
+      while (current) {
+        // Don't include the root prompt node in the Q&A chain
+        if (current.answer && current.question !== `Prompt: ${prompt}`) {
+          previousQA.unshift({
+            question: current.question,
+            answer: current.answer,
+            parent: previousQA[0] || undefined
+          });
+        }
+        const parent = findParentNode(qaTree, current);
+        if (!parent || parent === current) break;
+        current = parent;
+      }
       
       const response = await fetch('/api/generate-questions', {
         method: 'POST',
@@ -31,95 +167,119 @@ export default function QnAPage() {
         body: JSON.stringify({
           prompt: designPrompt,
           previousQuestions: previousQA,
+          traversalMode: settings?.traversalMode,
         }),
       });
       const data = await response.json();
-      // Create a child for each question returned.
-      const children: QANode[] = data.questions.map((q: string) => ({
+      
+      // Create a single child node
+      const nodes: QANode[] = data.questions.slice(0, 1).map((q: string) => ({
         id: uuidv4(),
         question: q,
         children: [],
       }));
-      return children;
+      
+      return {
+        nodes,
+        shouldStopBranch: data.shouldStopBranch,
+        stopReason: data.stopReason
+      };
     } catch (error) {
       console.error("Error in fetchQuestionsForNode:", error);
-      return [];
+      return { nodes: [], shouldStopBranch: true, stopReason: "Error generating questions" };
     }
   };
 
-  // On mount: load the prompt, create the root node, and fetch top-level questions.
+  // On mount: load the prompt and settings
   useEffect(() => {
     const storedPrompt = localStorage.getItem('designPrompt');
-    if (storedPrompt) {
+    const storedSettings = localStorage.getItem('qaSettings');
+    
+    if (storedPrompt && storedSettings) {
+      const parsedSettings = JSON.parse(storedSettings);
       setPrompt(storedPrompt);
+      setSettings(parsedSettings);
+      
+      // Create and set up root node
       const rootNode: QANode = {
         id: uuidv4(),
         question: `Prompt: ${storedPrompt}`,
         children: [],
       };
       setQaTree(rootNode);
-      // Fetch top-level (sibling) questions for the root node.
-      fetchQuestionsForNode(storedPrompt, rootNode).then((children) => {
-        rootNode.children = children;
-        // Update the tree immutably.
-        setQaTree({ ...rootNode });
-        setCurrentLevelNodes(children);
+      
+      // Generate first question
+      fetchQuestionsForNode(storedPrompt, rootNode).then(({ nodes: children }) => {
         if (children.length > 0) {
+          rootNode.children = children;
+          setQaTree({ ...rootNode });
           setCurrentNode(children[0]);
-          setCurrentIndex(0);
+          setQuestionCount(1);
         }
+        setIsLoading(false);
       });
     } else {
-      console.error("No design prompt found.");
+      console.error("No design prompt or settings found.");
       router.push('/');
     }
   }, [router]);
 
-  // When the user submits an answer.
+  // When the user submits an answer
   const handleAnswer = async (answer: string) => {
-    if (!currentNode) return;
-    // Record the answer.
-    currentNode.answer = answer;
-    // Update the tree state (a shallow copy is enough here because we update the current level separately).
-    setQaTree((prevTree) => (prevTree ? { ...prevTree } : prevTree));
-
-    // If there are more siblings in this level, move to the next one.
-    if (currentIndex < currentLevelNodes.length - 1) {
-      const newIndex = currentIndex + 1;
-      setCurrentIndex(newIndex);
-      setCurrentNode(currentLevelNodes[newIndex]);
-    } else {
-      // All nodes in the current level have been answered.
-      // For each node in the current level, fetch its children.
-      let nextLevelNodes: QANode[] = [];
-      for (const node of currentLevelNodes) {
-        const children = await fetchQuestionsForNode(prompt, node);
-        // Attach the fetched children to this node.
-        node.children = children;
-        nextLevelNodes = nextLevelNodes.concat(children);
-      }
-      // Update the tree immutably.
-      setQaTree((prevTree) => (prevTree ? { ...prevTree } : prevTree));
-      if (nextLevelNodes.length > 0) {
-        setCurrentLevelNodes(nextLevelNodes);
-        setCurrentIndex(0);
-        setCurrentNode(nextLevelNodes[0]);
-      } else {
-        // No further questions: the Q&A session is complete.
-        setCurrentNode(null);
-      }
+    if (!currentNode || !settings) return;
+    
+    setIsLoadingNextQuestion(true);
+    
+    // Check if we've hit the question limit
+    if (settings.maxQuestions && questionCount >= settings.maxQuestions) {
+      setCurrentNode(null); // End the Q&A session
+      setIsLoadingNextQuestion(false);
+      return;
     }
+    
+    // Record the answer
+    currentNode.answer = answer;
+    
+    // Get the next question based on traversal mode
+    const nextNode = await getNextQuestion(currentNode);
+    
+    if (nextNode) {
+      setCurrentNode(nextNode);
+      setQuestionCount(prev => prev + 1);
+    } else {
+      setCurrentNode(null); // No more questions
+    }
+    
+    // Update the tree state
+    setQaTree(prev => prev ? { ...prev } : prev);
+    setIsLoadingNextQuestion(false);
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
       <HeaderToolbar />
+      <div className="py-2 px-6 bg-white border-b border-gray-200">
+        <div className="flex justify-between items-center">
+          <div className="text-sm text-gray-600">
+            Questions: {questionCount}{settings?.maxQuestions ? ` / ${settings.maxQuestions}` : ''}
+          </div>
+          <div className="text-sm text-gray-600">
+            Mode: {settings?.traversalMode === 'dfs' ? 'Depth-First' : 'Breadth-First'}
+          </div>
+        </div>
+      </div>
       <main className="flex-1 flex">
         {/* Left: Canvas Tree view */}
         <div className="w-2/3 p-6 overflow-auto">
           <div className="bg-white rounded-lg shadow-lg p-6 min-h-full">
             <h2 className="text-2xl font-bold mb-6 text-gray-900">Question Tree</h2>
-            <CanvasTree node={qaTree} />
+            {isLoading ? (
+              <div className="flex items-center justify-center h-32">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : (
+              <CanvasTree node={qaTree} />
+            )}
           </div>
         </div>
         {/* Right: Q&A Panel */}
@@ -131,6 +291,7 @@ export default function QnAPage() {
                 : "No more questions. Q&A complete."
             }
             onSubmitAnswer={handleAnswer}
+            isLoading={isLoading || isLoadingNextQuestion}
           />
         </div>
       </main>
