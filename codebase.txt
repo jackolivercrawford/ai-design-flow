@@ -94,7 +94,7 @@ const openai = new OpenAI({
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, previousQuestions, traversalMode, knowledgeBase, isAutoPopulate, currentQuestion, depth } = await request.json();
+    const { prompt, previousQuestions, traversalMode, knowledgeBase, isAutoPopulate, currentQuestion, depth, parentContext } = await request.json();
     console.log('API received knowledge base:', knowledgeBase);
 
     // Calculate current depth by counting parents in previousQuestions
@@ -155,69 +155,101 @@ Guidelines for suggesting answers:
 10. If no relevant information exists, provide a reasonable suggestion based on UX best practices`
           : `You are an expert UX design assistant that helps generate follow-up questions for a design prompt. Your questions should follow a clear progression based on the traversal mode.
 
+${parentContext ? `
+Current Parent Question Context:
+- Parent Question: "${parentContext.parentQuestion}"
+- Parent Answer: "${parentContext.parentAnswer}"
+- Parent Topics: ${JSON.stringify(parentContext.parentTopics)}
+
+CRITICAL: Any generated question MUST:
+1. Be more specific than the parent question
+2. Focus on a specific aspect mentioned in the parent's answer
+3. Not repeat information already covered in the parent's answer
+4. Ask for implementation details or specific requirements about topics mentioned in the parent's answer
+` : ''}
+
 Follow these guidelines:
 1. Question Progression Levels:
    Current Depth: ${depth}/5
    
    BFS Mode Levels:
-   - Level 0: Root/Prompt
-   - Level 1 (Basic Needs): Fundamental requirements, target audience, core purpose
-   - Level 2 (Features): Specific features, functionality, key interactions
-   - Level 3 (Details): Implementation specifics, technical requirements
-   - Level 4 (Refinements): Edge cases, optimizations, advanced features
-   - Level 5 (Polish): Final touches, minor improvements
+   - Level 1 (Basic Needs): Broad, fundamental questions about purpose, audience, and core requirements
+     Example: "What is the fundamental purpose of the portfolio website?"
+   - Level 2 (Features): Main sections and key features, but not specifics yet
+     Example: "What main sections should be included in the navigation?"
+   - Level 3 (Details): Specific details about each feature/section identified in level 2
+     Example: "What project details should be displayed in each portfolio item?"
+   - Level 4 (Refinements): Technical specifications and implementation details
+     Example: "What image formats and sizes should be supported for project thumbnails?"
+   - Level 5 (Polish): Edge cases and final refinements
+     Example: "How should the portfolio handle projects with missing images?"
 
-   DFS Mode Topics:
-   - Start with a main topic (e.g., "load capacity")
-   - Explore all aspects of that topic before moving to siblings
-   - Go as deep as needed within a topic before switching
+2. Child Question Generation Rules:
+   - Child questions MUST be more specific than their parent question
+   - Child questions MUST explore a specific aspect mentioned in the parent's answer
+   - NEVER ask the same question as the parent with slightly different wording
    - Example progression:
-     * Main topic → Specific feature → Technical details → Edge cases
+     Parent Q: "What sections should the portfolio include?"
+     Parent A: "The portfolio should include a projects section, about me, skills, and contact."
+     Valid child Q: "What specific project details should be displayed in the projects section?"
+     Invalid child Q: "What content should be included in the portfolio?"
 
-2. Traversal Rules (${traversalMode}):
+3. Traversal Rules (${traversalMode}):
    ${traversalMode === 'bfs' 
      ? `BFS Guidelines:
-        - Generate questions that belong at the current depth (${depth})
-        - Each question should cover a different aspect at this level
-        - Do not go deeper until all aspects at this level are covered
-        - Questions should be numbered sequentially within each layer
-        - Example: At depth 1, cover all main topics before details`
+        - At Level 1: Generate at least 3-4 broad, fundamental questions before going deeper
+        - Each level should be more specific than the last
+        - Questions at the same level should cover different aspects
+        - Example progression:
+          Level 1: "Who is the target audience?"
+          Level 2: "What main navigation sections are needed?"
+          Level 3: "What information should appear in the project cards?"
+          Level 4: "What should happen when a project card is clicked?"`
      : `DFS Guidelines:
-        - Generate questions that explore the current topic deeper
-        - Stay focused on the current topic until fully explored
-        - Only suggest moving to a sibling topic when current is complete
-        - Questions should be numbered in exploration order
-        - Example: Explore all load capacity features before moving to floor input`
+        - Start with a broad topic
+        - Each follow-up should be more specific about that topic
+        - Example progression:
+          Q1: "What project showcase features are needed?"
+          Q2: "How should individual project details be displayed?"
+          Q3: "What specific project metrics should be highlighted?"
+          Q4: "How should project success metrics be visualized?"`
    }
 
-3. Topic Management:
-   - Track the current topic and its subtopics
-   - Ensure new questions maintain proper topic hierarchy
-   - In BFS: Different aspects at same depth
-   - In DFS: Deeper exploration of current topic
+4. Topic Management:
+   - Each level should be distinctly more specific than the previous
+   - Questions should build upon previous answers
+   - Avoid repeating topics already covered
+   - Use previous answers to inform specificity
+   - Child questions must explore specific aspects mentioned in parent's answer
 
-4. Question Generation:
+5. Question Generation:
    - Questions must be specific and focused
    - Include clear parent-child relationships
    - Maintain proper depth progression
    - Follow numbering conventions per mode
+   - For child questions:
+     * Extract key topics/features from parent's answer
+     * Ask about specific implementation details of those topics
+     * Focus on one specific aspect rather than broad concepts
+     * Ensure the question couldn't be answered by the parent's answer
 
-5. Stopping Criteria:
+6. Stopping Criteria:
    - Stop current branch if:
      * Topic is fully explored (all aspects covered)
      * Further questions would be too specific
      * A different topic needs attention
      * Knowledge base provides sufficient information
+     * The question would be redundant with parent's answer
 
-6. Knowledge Base Context:
+7. Knowledge Base Context:
 ${knowledgeBaseContext}
 
-7. Previous Questions Already Asked:
+8. Previous Questions Already Asked:
 ${previousQuestions.map((q: { question: string; answer: string }, index: number) => 
   `${index + 1}. Q: ${q.question}\n   A: ${q.answer}`
 ).join('\n')}
 
-8. Response Format:
+9. Response Format:
    {
      "questions": ["Next question to ask"],
      "shouldStopBranch": boolean,
@@ -230,7 +262,7 @@ ${previousQuestions.map((q: { question: string; answer: string }, index: number)
      "subtopics": ["Potential child topics for this question"]
    }
 
-9. Answer Generation Guidelines:
+10. Answer Generation Guidelines:
    - Write answers in third person, making definitive statements
    - Avoid second person pronouns (your, you, yours) entirely
    - State suggestions as definitive facts that can be modified
@@ -887,9 +919,6 @@ export default function QnAPage() {
       const currentIndex = currentLevelNodes.indexOf(node);
       const currentDepth = getNodeDepth(node);
       
-      // Check if all nodes at current level are answered
-      const allCurrentLevelAnswered = currentLevelNodes.every(n => n.answer);
-      
       // Build question history for current level
       const levelHistory: QuestionHistoryItem[] = currentLevelNodes.map(n => ({
         question: n.question,
@@ -897,8 +926,24 @@ export default function QnAPage() {
         topics: extractTopics(n.question)
       }));
       
-      // If this was the last answered node in its level, try to generate a new sibling
-      if (currentIndex === currentLevelNodes.length - 1 && node.answer && !allCurrentLevelAnswered) {
+      // Check if all nodes at current level are answered
+      const allCurrentLevelAnswered = currentLevelNodes.every(n => n.answer);
+      
+      // If there are existing unanswered siblings, move to the next one
+      if (currentIndex < currentLevelNodes.length - 1) {
+        return currentLevelNodes[currentIndex + 1];
+      }
+      
+      // For top level (depth 1), ensure we have enough broad coverage before going deeper
+      // We want at least 3-4 high-level questions answered before considering going deeper
+      const isTopLevel = currentDepth === 1;
+      const shouldGenerateMoreSiblings = isTopLevel ? 
+        currentLevelNodes.length < 4 : // At top level, always try to get at least 4 questions
+        !allCurrentLevelAnswered;      // At other levels, generate siblings until all are answered
+      
+      // Only try to generate new siblings if we haven't completed the current level
+      // or if we need more top-level coverage
+      if (shouldGenerateMoreSiblings) {
         const { nodes: newSiblings, shouldStopBranch } = await fetchQuestionsForNode(
           prompt,
           parent,
@@ -912,15 +957,12 @@ export default function QnAPage() {
           parent.children = [...currentLevelNodes, ...newSiblings];
           return newSiblings[0];
         }
-      } 
-      // If there are existing unanswered siblings, move to the next one
-      else if (currentIndex < currentLevelNodes.length - 1) {
-        return currentLevelNodes[currentIndex + 1];
       }
       
-      // If all nodes at current level are answered, start going deeper
-      if (allCurrentLevelAnswered) {
-        // Try to generate children for each answered node at this level in order
+      // Only if ALL nodes at current level are answered AND we have enough top-level coverage,
+      // start going deeper
+      if (allCurrentLevelAnswered && (!isTopLevel || currentLevelNodes.length >= 3)) {
+        // Find the first answered node that doesn't have children yet
         for (const sibling of currentLevelNodes) {
           if (sibling.answer && sibling.children.length === 0) {
             const siblingHistory = levelHistory.filter(h => 
@@ -1019,6 +1061,13 @@ export default function QnAPage() {
     try {
       console.log('Fetching questions with knowledge base:', settings?.knowledgeBase);
       
+      // Get parent context for child questions
+      const parentContext = parentNode.question !== `Prompt: ${designPrompt}` ? {
+        parentQuestion: parentNode.question,
+        parentAnswer: parentNode.answer,
+        parentTopics: extractTopics(parentNode.question)
+      } : null;
+      
       const response = await fetch('/api/generate-questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1027,7 +1076,8 @@ export default function QnAPage() {
           previousQuestions: questionHistory,
           traversalMode: settings?.traversalMode,
           knowledgeBase: settings?.knowledgeBase,
-          depth: depth
+          depth: depth,
+          parentContext: parentContext // Add parent context to help generate more specific child questions
         }),
       });
 
@@ -1269,16 +1319,15 @@ export default function QnAPage() {
       if (nextNode) {
         // Verify this question hasn't been asked before
         if (!askedQuestions.has(nextNode.question)) {
-          // Find the parent node where we should add the new question
-          const parent = findParentNode(qaTree!, currentNode) || qaTree;
-          if (parent) {
-            // Add the new question to the parent's children
-            parent.children.push(nextNode);
-            setCurrentNode(nextNode);
-            setQuestionCount(prev => prev + 1);
-            // Update the tree state to trigger re-render
-            setQaTree(prev => prev ? { ...prev } : prev);
-          }
+          // Add the question to the set of asked questions
+          setAskedQuestions(prev => new Set(prev).add(nextNode.question));
+          
+          // In BFS mode, the next node should already be properly placed by getNextQuestion
+          // We don't need to add it to any parent's children here as that's handled in getNextQuestion
+          setCurrentNode(nextNode);
+          setQuestionCount(prev => prev + 1);
+          // Update the tree state to trigger re-render
+          setQaTree(prev => prev ? { ...prev } : prev);
         } else {
           console.warn('Duplicate question detected:', nextNode.question);
           setCurrentNode(null);
