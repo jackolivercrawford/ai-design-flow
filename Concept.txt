@@ -56,54 +56,91 @@ Step 2: Interactive Q&A Flow (AI-Driven)
 * The system only generates the next question after the user answers the current one
 * New questions (whether siblings or children) appear sequentially, never simultaneously
 
-2.2.2. Breadth-First Mode
-1. Level-by-Level Traversal
+2.2. Q&A Progression (Breadth vs. Depth)
+
+2.2.1. One Question at a Time
+* System shows exactly one question at a time
+* Next question appears only after current question is answered
+* All questions come sequentially, regardless of mode
+
+2.2.2. Breadth-First Mode (Layer-by-Layer)
+1. Traversal Pattern:
    Layer 0 (Root):
-   * The prompt question appears and must be answered first
+   * Q0: "Design elevator interface" (Initial Prompt)
    
-   Layer 1 (Direct Follow-ups):
-   * After prompt, system shows follow-up questions sequentially
-   * Must complete ALL questions at this layer before going deeper
+   Layer 1 (Main Topics):
+   * Q1: "What is the maximum load capacity?"
+   * Q2: "How will users input floor numbers?"
+   * Q3: "What safety features are required?"
+   * Complete ALL Layer 1 before going deeper
    
-   Layer 2 (Detailed Questions):
-   * Only after completing all Layer 1, system shows:
-       - More specific questions based on previous answers
-       - Each parent question may spawn multiple child questions
-   * Complete ALL questions in this layer before proceeding
+   Layer 2 (Topic Details):
+   * Under Load Capacity (Q1):
+     - Q4: "How will capacity be monitored?"
+     - Q5: "What alerts for overload?"
+   * Under Floor Input (Q2):
+     - Q6: "Keypad layout preferences?"
+     - Q7: "Screen display needs?"
+   * Under Safety Features (Q3):
+     - Q8: "Emergency protocols?"
+     - Q9: "Security requirements?"
+   * Complete ALL Layer 2 before proceeding
    
-   Layer 3 (Further Details):
-   * Each answered question may lead to more specific inquiries
-   * Process continues for as many layers as needed to fully explore the topic
+   Layer 3 (Specific Features):
+   * Under Capacity Monitoring (Q4):
+     - Q10: "Visual indicator type?"
+     - Q11: "Sensor placement?"
+   * Under Overload Alerts (Q5):
+     - Q12: "Audio warning system?"
+     - Q13: "Visual warning display?"
+   * (Similar branching for Q6-Q9)
+   * Process continues for any number of layers
 
 2. Key BFS Characteristics
-   * Questions follow a logical progression from general to specific
-   * Complete all questions at current level before going deeper
-   * Maintains organized topic exploration
+   * Completes each entire layer before going deeper
+   * All related questions at same depth are handled together
+   * Questions numbered sequentially within layers
+   * Example: All monitoring systems before exploring specific alert types
 
-2.2.3. Depth-First Mode
-1. Deep Topic Exploration
-   Start:
-   * Initial question appears and must be answered
+2.2.3. Depth-First Mode (Complete Topics)
+1. Traversal Pattern:
+   Start (Root):
+   * Q0: "Design elevator interface" (Initial Prompt)
    
-   First Branch:
-   * System immediately follows up with related detailed questions
-   * Explores all aspects of current topic before moving to new topics
-   * Example: Fully explore load capacity warnings before moving to floor input methods
+   Load Capacity Branch:
+   * Q1: "What is the maximum load capacity?"
+      * Q2: "How will capacity be monitored?"
+         * Q3: "Visual indicator type?"
+         * Q4: "Sensor placement?"
+      * Q5: "What alerts for overload?"
+         * Q6: "Audio warning system?"
+         * Q7: "Visual warning display?"
    
-   Next Topics:
-   * Only after completely exploring one topic:
-       - System moves to next major topic
-       - Explores all its related questions
-   * Complete each topic's questions before moving to new topics
+   Floor Input Branch (only after completing Load Capacity):
+   * Q8: "How will users input floor numbers?"
+      * Q9: "Keypad layout preferences?"
+         * Q10: "Button arrangement?"
+         * Q11: "Tactile feedback?"
+      * (Continues exploring all interface aspects)
 
 2. Key DFS Characteristics
-   * Questions explore one topic exhaustively before moving to others
-   * Follow-ups appear immediately based on current answer
-   * Related questions stay grouped together
+   * Fully explores each topic before moving to next
+   * Questions numbered in exact exploration order
+   * Can go arbitrarily deep in any branch
+   * Example: Complete all capacity monitoring features before touching floor input
 
-Key Difference:
-- BFS maintains consecutive numbering within layers (Q1, Q2, Q3)
-- DFS numbers based on exploration order (Q2's sibling might become Q5)
+Key Differences:
+1. Question Order:
+   * BFS: Handles all topics at one depth (Q1,Q2,Q3) before going deeper
+   * DFS: Completes one topic entirely before moving to next
+
+2. Numbering:
+   * BFS: Sequential within layers (Q0 → Q1,Q2,Q3 → Q4,Q5,Q6,Q7,Q8,Q9 → Q10,Q11,Q12,Q13)
+   * DFS: Based on exploration order (Q0 → Q1 → Q2 → Q3,Q4 → Q5 → Q6,Q7 → Q8)
+
+3. Topic Coverage:
+   * BFS: Broad overview of all topics first, then details
+   * DFS: Complete topic details before new topics
 2.2.4. New Top-Level Branches
 * The AI can discover (or user can request) a new major domain mid-flow.
 * Three ways new top-level Q’s appear:
