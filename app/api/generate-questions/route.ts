@@ -10,6 +10,7 @@ const openai = new OpenAI({
 export async function POST(request: NextRequest) {
   try {
     const { prompt, previousQuestions, traversalMode, knowledgeBase } = await request.json();
+    console.log('API received knowledge base:', knowledgeBase);
 
     // Calculate current depth by counting parents in previousQuestions
     let currentDepth = 0;
@@ -40,6 +41,8 @@ Use this information to:
 - Highlight any conflicts between different sources`
       : 'No knowledge base provided.';
 
+    console.log('Formatted knowledge base context:', knowledgeBaseContext);
+
     const messages = [
       {
         role: 'system' as const,
@@ -61,32 +64,79 @@ Follow these guidelines:
      * Further questions would be too specific or redundant
 
 3. Traversal Mode: ${traversalMode}
-   - BFS: Focus on getting a complete picture at the current level before going deeper
-   - DFS: Thoroughly explore one aspect before moving to siblings
+   BFS Guidelines:
+   - Complete all questions at the current level before going deeper
+   - Each level should cover different aspects of the design, not repeat topics
+   - Level 1 topics: Target audience, Core purpose, Main content types
+   - Level 2 topics: Visual style, Navigation structure, Key features
+   - Level 3 topics: Interaction patterns, Content organization, Technical requirements
+   - Ensure each sibling question explores a DIFFERENT aspect of the design
+   - NEVER ask about a topic that's been covered in a previous question
 
-4. Knowledge Base Context:
+4. Question Generation Rules:
+   - CRITICAL: Before generating a new question, check if its topic or theme has been covered in ANY previous question
+   - If a similar topic has been asked about, choose a completely different topic from the current level
+   - Each new question must explore an entirely new aspect not yet discussed
+   - For BFS mode, ensure siblings explore different aspects while staying at the same level
+   - Track and avoid ALL previously discussed topics, including:
+     * Direct topic matches (e.g., "target audience")
+     * Similar themes (e.g., "users", "audience", "visitors")
+     * Related concepts (e.g., if we asked about "visual style", don't ask about "color scheme")
+
+5. Knowledge Base Context:
 ${knowledgeBaseContext}
 
-5. Response Format:
-   Return a JSON object with:
+6. Previous Questions Already Asked:
+${previousQuestions.map((q: { question: string; answer: string }, index: number) => 
+  `${index + 1}. Q: ${q.question}\n   A: ${q.answer}`
+).join('\n')}
+
+7. Response Format:
    {
      "questions": ["Next question to ask"],
      "shouldStopBranch": boolean,
      "stopReason": "string explaining why we should stop (if shouldStopBranch is true)",
-     "suggestedAnswer": "string with auto-populated answer based on knowledge base (if applicable)",
-     "sourceReferences": ["array of source indices that contributed to the suggested answer"]
-   }`
+     "suggestedAnswer": "string with best guess answer based on knowledge base (REQUIRED)",
+     "sourceReferences": [array of source indices that contributed to the suggested answer],
+     "confidence": "high" | "medium" | "low",
+     "topicsCovered": ["list of topics this question relates to"]
+   }
+
+8. Answer Generation Guidelines:
+   - Write answers in third person, making definitive statements
+   - Avoid second person pronouns (your, you, yours) entirely
+   - State suggestions as definitive facts that can be modified
+   - Avoid hedging words like "might", "could", "probably", "likely", "maybe"
+   - Make clear, direct suggestions even with low confidence`
       },
       {
         role: 'user' as const,
         content: `The design prompt is: "${prompt}".
-Previous Q&A: ${JSON.stringify(previousQuestions, null, 2)}
+Previous Q&A History:
+${JSON.stringify(previousQuestions, null, 2)}
 
-Based on this context:
-1. Generate the next most appropriate question for the current depth level
-2. Determine if we should stop this line of questioning
-3. If possible, suggest an answer based on the knowledge base (cite sources)
-4. Return in the specified JSON format`
+Current Question: ${previousQuestions[previousQuestions.length - 1]?.question || 'Initial question'}
+
+CRITICAL REQUIREMENTS:
+1. Review ALL previous questions and their topics carefully
+2. Generate a question that explores a COMPLETELY DIFFERENT aspect not covered in ANY previous question
+3. For BFS mode, ensure the new question:
+   - Stays at the same level
+   - Covers a new topic not related to any previous questions
+   - Follows the level-specific topic guidelines
+4. Provide a suggested answer following the guidelines
+
+Topics already covered (DO NOT ask about these or related topics):
+${previousQuestions.map((q: { question: string }, index: number) => 
+  `${index + 1}. ${q.question}`
+).join('\n')}
+
+Remember:
+- NEVER repeat a topic that's been covered in previous questions
+- Each new question must explore a different aspect of the design
+- In BFS mode, stay at the current level but explore new topics
+- Make clear, direct statements in suggested answers
+- Never use second person pronouns`
       },
     ];
 
@@ -94,39 +144,86 @@ Based on this context:
       model: 'gpt-4',
       messages,
       temperature: 0.7,
-      max_tokens: 150,
-      response_format: { type: "json_object" }
+      max_tokens: 500
     });
 
     const content = completion.choices[0].message.content?.trim();
+    if (!content) {
+      throw new Error('Empty response from OpenAI');
+    }
+
+    console.log('Raw OpenAI response:', content);
+
     let response: {
       questions: string[];
       shouldStopBranch: boolean;
       stopReason: string;
       suggestedAnswer: string | null;
       sourceReferences: number[];
-    } = { 
-      questions: [], 
-      shouldStopBranch: false, 
-      stopReason: '',
-      suggestedAnswer: null,
-      sourceReferences: []
+      confidence?: 'high' | 'medium' | 'low';
+      topicsCovered: string[];
     };
 
     try {
-      response = JSON.parse(content!);
+      response = JSON.parse(content);
+      console.log('Initial parsed response:', response);
+      
+      // Ensure we always have a suggested answer
+      if (!response.suggestedAnswer) {
+        console.log('No suggested answer provided, creating a default one');
+        response.suggestedAnswer = "Based on general UX principles, a reasonable approach would be...";
+        response.confidence = 'low';
+        response.sourceReferences = [];
+      }
+      
       if (!Array.isArray(response.questions)) {
         throw new Error("Questions is not an array");
+      }
+      
+      // Clean up questions to ensure they're plain text
+      response.questions = response.questions.map((q: any) => {
+        if (typeof q === 'string') {
+          // Try to parse if it looks like JSON
+          try {
+            const parsed = JSON.parse(q);
+            return parsed.question || parsed.text || q;
+          } catch {
+            return q;
+          }
+        }
+        return q.question || q.text || JSON.stringify(q);
+      });
+      
+      // Ensure suggestedAnswer has the required format
+      if (response.suggestedAnswer) {
+        console.log('Found suggested answer:', response.suggestedAnswer);
+        
+        // Make sure suggestedAnswer is a string
+        const suggestedAnswerText = typeof response.suggestedAnswer === 'object' 
+          ? (response.suggestedAnswer as { text?: string }).text || JSON.stringify(response.suggestedAnswer)
+          : response.suggestedAnswer;
+        
+        response = {
+          ...response,
+          suggestedAnswer: suggestedAnswerText,
+          confidence: response.confidence || 'high',  // Default to high if we have a suggestion
+          sourceReferences: response.sourceReferences || []
+        };
+        console.log('Formatted response with suggestion:', response);
+      } else {
+        console.log('No suggested answer in response');
       }
     } catch (jsonError) {
       console.error("Error parsing API response:", jsonError);
       // Fallback: extract questions from text
       response = {
-        questions: content?.split('\n').filter((line) => line.trim() !== '') || [],
+        questions: [content], // Use the entire content as a single question
         shouldStopBranch: false,
         stopReason: '',
         suggestedAnswer: null,
-        sourceReferences: []
+        sourceReferences: [],
+        confidence: 'low',
+        topicsCovered: []
       };
     }
 

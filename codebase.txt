@@ -7,7 +7,11 @@ AI-DESIGN-FLOW
   │   ├── api
   │   │   ├── generate-mockup
   │   │   │   └── route.ts
-  │   │   └── generate-questions
+  │   │   ├── generate-questions
+  │   │   │   └── route.ts
+  │   │   ├── process-knowledge-base
+  │   │   │   └── route.ts
+  │   │   └── update-requirements
   │   │       └── route.ts
   │   ├── preview
   │   │   └── page.tsx
@@ -34,6 +38,7 @@ AI-DESIGN-FLOW
   │   └── window.svg
   ├── types
   │   ├── index.ts
+  │   ├── pdf-parse.d.ts
   │   └── settings.ts
   ├── .env.local
   ├── .gitignore
@@ -81,6 +86,7 @@ export async function POST(request: NextRequest) {
 // /app/api/generate-questions/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { KnowledgeBaseSource } from '@/types/settings';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -88,7 +94,7 @@ const openai = new OpenAI({
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, previousQuestions, traversalMode } = await request.json();
+    const { prompt, previousQuestions, traversalMode, knowledgeBase } = await request.json();
 
     // Calculate current depth by counting parents in previousQuestions
     let currentDepth = 0;
@@ -97,6 +103,27 @@ export async function POST(request: NextRequest) {
       currentDepth++;
       currentParent = currentParent.parent;
     }
+
+    // Format knowledge base content for the prompt
+    const knowledgeBaseContext = knowledgeBase?.length 
+      ? `The following information is available from multiple knowledge base sources:
+
+${knowledgeBase.map((source: KnowledgeBaseSource, index: number) => `
+Source ${index + 1} (${source.type === 'file' ? 'File' : 'Text'}: ${source.name}):
+Requirements: ${JSON.stringify(source.processedContent?.requirements || [])}
+Technical Specs: ${JSON.stringify(source.processedContent?.technicalSpecifications || [])}
+Design Guidelines: ${JSON.stringify(source.processedContent?.designGuidelines || [])}
+User Preferences: ${JSON.stringify(source.processedContent?.userPreferences || [])}
+Industry Standards: ${JSON.stringify(source.processedContent?.industryStandards || [])}
+`).join('\n')}
+
+Use this information to:
+- Auto-populate answers when confident (especially when multiple sources agree)
+- Guide question generation based on available information
+- Identify gaps that need to be filled
+- Validate answers against known constraints
+- Highlight any conflicts between different sources`
+      : 'No knowledge base provided.';
 
     const messages = [
       {
@@ -122,12 +149,17 @@ Follow these guidelines:
    - BFS: Focus on getting a complete picture at the current level before going deeper
    - DFS: Thoroughly explore one aspect before moving to siblings
 
-4. Response Format:
+4. Knowledge Base Context:
+${knowledgeBaseContext}
+
+5. Response Format:
    Return a JSON object with:
    {
      "questions": ["Next question to ask"],
-     "shouldStopBranch": boolean, // true if this line of questioning is complete
-     "stopReason": "string explaining why we should stop (if shouldStopBranch is true)"
+     "shouldStopBranch": boolean,
+     "stopReason": "string explaining why we should stop (if shouldStopBranch is true)",
+     "suggestedAnswer": "string with auto-populated answer based on knowledge base (if applicable)",
+     "sourceReferences": ["array of source indices that contributed to the suggested answer"]
    }`
       },
       {
@@ -138,7 +170,8 @@ Previous Q&A: ${JSON.stringify(previousQuestions, null, 2)}
 Based on this context:
 1. Generate the next most appropriate question for the current depth level
 2. Determine if we should stop this line of questioning
-3. Return in the specified JSON format`
+3. If possible, suggest an answer based on the knowledge base (cite sources)
+4. Return in the specified JSON format`
       },
     ];
 
@@ -147,10 +180,23 @@ Based on this context:
       messages,
       temperature: 0.7,
       max_tokens: 150,
+      response_format: { type: "json_object" }
     });
 
     const content = completion.choices[0].message.content?.trim();
-    let response = { questions: [], shouldStopBranch: false, stopReason: '' };
+    let response: {
+      questions: string[];
+      shouldStopBranch: boolean;
+      stopReason: string;
+      suggestedAnswer: string | null;
+      sourceReferences: number[];
+    } = { 
+      questions: [], 
+      shouldStopBranch: false, 
+      stopReason: '',
+      suggestedAnswer: null,
+      sourceReferences: []
+    };
 
     try {
       response = JSON.parse(content!);
@@ -163,7 +209,9 @@ Based on this context:
       response = {
         questions: content?.split('\n').filter((line) => line.trim() !== '') || [],
         shouldStopBranch: false,
-        stopReason: ''
+        stopReason: '',
+        suggestedAnswer: null,
+        sourceReferences: []
       };
     }
 
@@ -177,6 +225,232 @@ Based on this context:
   }
 }
 
+
+----- /Users/jackcrawford/ai-design-flow/app/api/process-knowledge-base/route.ts -----
+import { NextRequest } from 'next/server';
+import OpenAI from 'openai';
+import pdfParse from 'pdf-parse';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+async function extractTextFromPDF(buffer: Buffer): Promise<string> {
+  try {
+    const data = await pdfParse(buffer);
+    return data.text;
+  } catch (error) {
+    console.error('Error extracting text from PDF:', error);
+    throw new Error('Failed to extract text from PDF');
+  }
+}
+
+async function processContent(content: string) {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        {
+          role: "system",
+          content: `You are a knowledge base processor. Extract key information from the provided document that would be relevant for the design process. Focus on:
+1. Requirements and constraints
+2. Technical specifications
+3. Design guidelines
+4. User preferences or patterns
+5. Industry standards or best practices
+
+Return your response in this exact JSON format:
+{
+  "requirements": [],
+  "technicalSpecifications": [],
+  "designGuidelines": [],
+  "userPreferences": [],
+  "industryStandards": []
+}`
+        },
+        {
+          role: "user",
+          content
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 2000
+    });
+
+    const responseContent = completion.choices[0].message.content;
+    if (!responseContent) {
+      throw new Error('Empty response from OpenAI');
+    }
+
+    try {
+      return JSON.parse(responseContent);
+    } catch (parseError) {
+      console.error('Error parsing OpenAI response:', parseError);
+      throw new Error('Failed to parse OpenAI response');
+    }
+  } catch (error) {
+    console.error('Error processing content with OpenAI:', error);
+    throw new Error('Failed to process content');
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const formData = await request.formData();
+    const sourceType = formData.get('type');
+    const file = formData.get('file');
+    const textContent = formData.get('content');
+
+    if (!sourceType) {
+      return new Response(JSON.stringify({ error: 'Source type is required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    let content: string;
+
+    if (sourceType === 'file' && file) {
+      // Check if the file has arrayBuffer method (indicating it's a File or Blob)
+      const fileObject = file as { arrayBuffer(): Promise<ArrayBuffer>; type?: string; name?: string };
+      
+      if ('arrayBuffer' in fileObject && typeof fileObject.arrayBuffer === 'function') {
+        const buffer = Buffer.from(await fileObject.arrayBuffer());
+        
+        // Check file type using the file's type property or name
+        const fileType = fileObject.type || '';
+        const fileName = fileObject.name || '';
+        
+        if (fileType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf')) {
+          content = await extractTextFromPDF(buffer);
+        } else {
+          // For text files, convert buffer to string
+          content = buffer.toString('utf-8');
+        }
+      } else {
+        throw new Error('Invalid file format');
+      }
+    } else if (sourceType === 'text' && typeof textContent === 'string') {
+      content = textContent;
+    } else {
+      return new Response(JSON.stringify({ error: 'Invalid input' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const processedContent = await processContent(content);
+
+    return new Response(JSON.stringify({ success: true, processedContent }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+  } catch (error: unknown) {
+    console.error('Error in API route:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    return new Response(JSON.stringify({ error: 'Internal server error', details: errorMessage }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+} 
+
+----- /Users/jackcrawford/ai-design-flow/app/api/update-requirements/route.ts -----
+import { NextRequest, NextResponse } from 'next/server';
+import OpenAI from 'openai';
+import { RequirementsDocument, QANode } from '@/types';
+import { KnowledgeBaseSource } from '@/types/settings';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+function findNodeById(root: QANode | null, id: string): QANode | null {
+  if (!root) return null;
+  if (root.id === id) return root;
+  for (const child of root.children) {
+    const found = findNodeById(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const { qaTree, currentNodeId, knowledgeBase, existingDocument } = await request.json();
+    
+    // Find the current node that was just answered
+    const currentNode = currentNodeId ? findNodeById(qaTree, currentNodeId) : null;
+    
+    // Format the Q&A history and knowledge base for the AI
+    const qaContext = JSON.stringify(qaTree, null, 2);
+    const knowledgeBaseContext = knowledgeBase?.length
+      ? knowledgeBase.map((source: KnowledgeBaseSource, index: number) => `
+Source ${index + 1} (${source.type}): ${source.name}
+${Object.entries(source.processedContent || {}).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n')}
+`).join('\n')
+      : 'No knowledge base provided';
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        {
+          role: "system",
+          content: `You are a requirements analyst that helps maintain and update a product requirements document based on Q&A sessions and knowledge base information.
+
+The requirements document is organized into categories:
+1. Basic Needs - Fundamental user needs and target audience
+2. Functional Requirements - Core features and functionality
+3. User Experience - UX patterns, accessibility, and user interactions
+4. Implementation - Technical specifications and UI elements
+5. Refinements - Edge cases and detailed behaviors
+6. Constraints - Limitations and restrictions
+
+For each requirement, you should:
+- Determine the appropriate category
+- Set priority (high/medium/low)
+- Assign relevant tags
+- Categorize type (functional/technical/ux/accessibility/security/performance)
+- Track the source (user-qa or knowledge-base)
+
+Your task is to:
+1. Analyze the new answer and knowledge base
+2. Update or add requirements based on new information
+3. Ensure consistency across requirements
+4. Return the updated document in the specified format`
+        },
+        {
+          role: "user",
+          content: `Current Q&A Tree: ${qaContext}
+
+Knowledge Base Information:
+${knowledgeBaseContext}
+
+Current Requirements Document:
+${JSON.stringify(existingDocument || {}, null, 2)}
+
+Latest Answer: ${currentNode ? `
+Question: ${currentNode.question}
+Answer: ${currentNode.answer}` : 'No new answer'}
+
+Please update the requirements document and return it in JSON format.`
+        }
+      ],
+      response_format: { type: "json_object" }
+    });
+
+    const updatedDocument = JSON.parse(completion.choices[0].message.content!);
+
+    return NextResponse.json(updatedDocument);
+  } catch (error) {
+    console.error('Error updating requirements:', error);
+    return NextResponse.json(
+      { error: 'Failed to update requirements' },
+      { status: 500 }
+    );
+  }
+} 
 
 ----- /Users/jackcrawford/ai-design-flow/app/preview/page.tsx -----
 'use client';
@@ -222,7 +496,7 @@ import { v4 as uuidv4 } from 'uuid';
 import HeaderToolbar from '../../components/HeaderToolbar';
 import QAPanel from '../../components/QAPanel';
 import CanvasTree from '../../components/CanvasTree';
-import { QANode } from '../../types';
+import { QANode, RequirementsDocument } from '@/types';
 import { QASettings } from '@/types/settings';
 
 interface SavedProgress {
@@ -231,6 +505,7 @@ interface SavedProgress {
   questionCount: number;
   prompt: string;
   settings: QASettings;
+  requirementsDoc: RequirementsDocument;
 }
 
 export default function QnAPage() {
@@ -242,6 +517,8 @@ export default function QnAPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingNextQuestion, setIsLoadingNextQuestion] = useState(false);
   const [questionCount, setQuestionCount] = useState(0);
+  const [suggestedAnswer, setSuggestedAnswer] = useState<string | null>(null);
+  const [requirementsDoc, setRequirementsDoc] = useState<RequirementsDocument | null>(null);
 
   // Helper: Get the next question based on traversal mode
   const getNextQuestion = async (node: QANode): Promise<QANode | null> => {
@@ -416,9 +693,13 @@ export default function QnAPage() {
           prompt: designPrompt,
           previousQuestions: previousQA,
           traversalMode: settings?.traversalMode,
+          knowledgeBase: settings?.knowledgeBase
         }),
       });
       const data = await response.json();
+      
+      // Set suggested answer if available
+      setSuggestedAnswer(data.suggestedAnswer);
       
       // Create a single child node with the next question number
       const nextQuestionNumber = questionCount + 1;
@@ -451,6 +732,34 @@ export default function QnAPage() {
     return null;
   };
 
+  // Helper: Update requirements document
+  const updateRequirements = async (nodeId: string | null) => {
+    try {
+      const response = await fetch('/api/update-requirements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          qaTree,
+          currentNodeId: nodeId,
+          knowledgeBase: settings?.knowledgeBase,
+          existingDocument: requirementsDoc
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update requirements');
+      }
+
+      const updatedDoc = await response.json();
+      setRequirementsDoc(updatedDoc);
+      
+      // Save progress including requirements
+      saveProgress();
+    } catch (error) {
+      console.error('Error updating requirements:', error);
+    }
+  };
+
   // Helper: Save current progress to localStorage
   const saveProgress = () => {
     if (!qaTree || !settings) return;
@@ -460,7 +769,8 @@ export default function QnAPage() {
       currentNodeId: currentNode?.id || null,
       questionCount,
       prompt,
-      settings
+      settings,
+      requirementsDoc: requirementsDoc!
     };
     
     localStorage.setItem('qaProgress', JSON.stringify(progress));
@@ -487,6 +797,7 @@ export default function QnAPage() {
         setSettings(progress.settings);
         setQaTree(progress.qaTree);
         setQuestionCount(progress.questionCount);
+        setRequirementsDoc(progress.requirementsDoc);
         if (progress.currentNodeId) {
           const node = findNodeById(progress.qaTree, progress.currentNodeId);
           setCurrentNode(node);
@@ -512,6 +823,22 @@ export default function QnAPage() {
         children: [],
       };
       setQaTree(rootNode);
+      
+      // Initialize requirements document
+      const initialRequirementsDoc: RequirementsDocument = {
+        id: uuidv4(),
+        prompt: storedPrompt,
+        lastUpdated: new Date().toISOString(),
+        categories: {
+          basicNeeds: { title: 'Basic Needs', requirements: [] },
+          functionalRequirements: { title: 'Functional Requirements', requirements: [] },
+          userExperience: { title: 'User Experience', requirements: [] },
+          implementation: { title: 'Implementation', requirements: [] },
+          refinements: { title: 'Refinements', requirements: [] },
+          constraints: { title: 'Constraints', requirements: [] }
+        }
+      };
+      setRequirementsDoc(initialRequirementsDoc);
       
       // Generate first question
       fetchQuestionsForNode(storedPrompt, rootNode).then(({ nodes: children }) => {
@@ -545,6 +872,9 @@ export default function QnAPage() {
     // Record the answer
     currentNode.answer = answer;
     
+    // Update requirements document with new answer
+    await updateRequirements(currentNode.id);
+    
     // Get the next question based on traversal mode
     const nextNode = await getNextQuestion(currentNode);
     
@@ -553,6 +883,8 @@ export default function QnAPage() {
       setQuestionCount(prev => prev + 1);
     } else {
       setCurrentNode(null); // No more questions
+      // Final requirements update with no current node
+      await updateRequirements(null);
     }
     
     // Update the tree state
@@ -597,6 +929,7 @@ export default function QnAPage() {
             }
             onSubmitAnswer={handleAnswer}
             isLoading={isLoading || isLoadingNextQuestion}
+            suggestedAnswer={suggestedAnswer}
           />
         </div>
       </main>
@@ -898,7 +1231,8 @@ export default function PreviewArea({ requirements, uiCode }: PreviewAreaProps) 
 ----- /Users/jackcrawford/ai-design-flow/components/PromptInput.tsx -----
 // components/PromptInput.tsx
 import React, { useState, ChangeEvent } from 'react';
-import { QASettings } from '@/types/settings';
+import { QASettings, KnowledgeBaseSource } from '@/types/settings';
+import { v4 as uuidv4 } from 'uuid';
 
 interface PromptInputProps {
   onSubmit: (prompt: string, settings: QASettings) => void;
@@ -910,8 +1244,11 @@ const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
   const [settings, setSettings] = useState<QASettings>({
     traversalMode: 'bfs',
     unknownHandling: 'auto',
-    conflictResolution: 'auto'
+    conflictResolution: 'auto',
+    knowledgeBase: []
   });
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const [pastedContent, setPastedContent] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -924,9 +1261,70 @@ const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
     onSubmit(prompt, settings);
   };
 
+  const processKnowledgeBase = async (type: 'file' | 'text', data: File | string, name: string) => {
+    try {
+      setIsProcessingFile(true);
+      const formData = new FormData();
+      formData.append('type', type);
+      
+      if (type === 'file') {
+        formData.append('file', data as File);
+      } else {
+        formData.append('content', data as string);
+      }
+
+      const response = await fetch('/api/process-knowledge-base', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to process knowledge base');
+      }
+
+      const result = await response.json();
+      
+      const newSource: KnowledgeBaseSource = {
+        id: uuidv4(),
+        type,
+        name,
+        ...(type === 'file' ? { file: data as File } : { content: data as string }),
+        processedContent: result.processedContent
+      };
+
+      setSettings(prev => ({
+        ...prev,
+        knowledgeBase: [...(prev.knowledgeBase || []), newSource]
+      }));
+    } catch (error) {
+      console.error('Error processing knowledge base:', error);
+      // You might want to show an error message to the user here
+    } finally {
+      setIsProcessingFile(false);
+    }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    await processKnowledgeBase('file', file, file.name);
+  };
+
+  const handleTextAdd = async () => {
+    if (pastedContent.trim()) {
+      await processKnowledgeBase('text', pastedContent, `Pasted content ${new Date().toLocaleString()}`);
+      setPastedContent('');
+    }
+  };
+
+  const removeKnowledgeSource = (id: string) => {
+    setSettings(prev => ({
+      ...prev,
+      knowledgeBase: prev.knowledgeBase?.filter(source => source.id !== id)
+    }));
+  };
+
   const handleSettingChange = (
     setting: keyof QASettings,
-    value: string | number | File | undefined
+    value: string | number | { file: File; processedContent: any } | undefined
   ) => {
     setSettings(prev => ({
       ...prev,
@@ -1022,17 +1420,82 @@ const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Knowledge Base (Optional)
+              Knowledge Base Sources
             </label>
-            <input
-              type="file"
-              className="w-full text-gray-900 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              accept=".pdf,.doc,.docx,.txt"
-              onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                const file = e.target.files?.[0];
-                handleSettingChange('knowledgeBase', file);
-              }}
-            />
+            <div className="space-y-4">
+              {/* File Upload */}
+              <div className="space-y-2">
+                <input
+                  type="file"
+                  className="w-full text-gray-900 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                  accept=".pdf,.doc,.docx,.txt"
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      handleFileUpload(file);
+                    }
+                  }}
+                  disabled={isProcessingFile}
+                />
+                <p className="text-xs text-gray-500">
+                  Supported formats: PDF, DOC, DOCX, TXT
+                </p>
+              </div>
+
+              {/* Text Input */}
+              <div className="space-y-2">
+                <textarea
+                  value={pastedContent}
+                  onChange={(e) => setPastedContent(e.target.value)}
+                  placeholder="Paste additional content here..."
+                  className="w-full h-32 p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                  disabled={isProcessingFile}
+                />
+                <button
+                  onClick={handleTextAdd}
+                  disabled={!pastedContent.trim() || isProcessingFile}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400"
+                >
+                  Add Text Content
+                </button>
+              </div>
+
+              {/* Processing Indicator */}
+              {isProcessingFile && (
+                <div className="flex items-center space-x-2 text-sm text-gray-600">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                  <span>Processing content...</span>
+                </div>
+              )}
+
+              {/* Knowledge Base List */}
+              {settings.knowledgeBase && settings.knowledgeBase.length > 0 && (
+                <div className="mt-4">
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">Added Sources:</h4>
+                  <div className="space-y-2">
+                    {settings.knowledgeBase.map((source) => (
+                      <div
+                        key={source.id}
+                        className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm text-gray-600">
+                            {source.type === 'file' ? '📄' : '📝'}
+                          </span>
+                          <span className="text-sm text-gray-800">{source.name}</span>
+                        </div>
+                        <button
+                          onClick={() => removeKnowledgeSource(source.id)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <button
@@ -1079,9 +1542,10 @@ interface QAPanelProps {
   currentQuestion: string;
   onSubmitAnswer: (answer: string) => void;
   isLoading: boolean;
+  suggestedAnswer?: string | null;
 }
 
-export default function QAPanel({ currentQuestion, onSubmitAnswer, isLoading }: QAPanelProps) {
+export default function QAPanel({ currentQuestion, onSubmitAnswer, isLoading, suggestedAnswer }: QAPanelProps) {
   const [answer, setAnswer] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -1089,6 +1553,12 @@ export default function QAPanel({ currentQuestion, onSubmitAnswer, isLoading }: 
     if (answer.trim()) {
       onSubmitAnswer(answer);
       setAnswer('');
+    }
+  };
+
+  const handleUseSuggestion = () => {
+    if (suggestedAnswer) {
+      setAnswer(suggestedAnswer);
     }
   };
 
@@ -1105,6 +1575,24 @@ export default function QAPanel({ currentQuestion, onSubmitAnswer, isLoading }: 
           <p className="text-gray-800">{currentQuestion}</p>
         )}
       </div>
+
+      {suggestedAnswer && (
+        <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
+          <div className="flex justify-between items-start">
+            <div>
+              <h4 className="text-sm font-medium text-blue-900 mb-1">Suggested Answer:</h4>
+              <p className="text-sm text-blue-800">{suggestedAnswer}</p>
+            </div>
+            <button
+              onClick={handleUseSuggestion}
+              className="ml-4 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+            >
+              Use Suggestion
+            </button>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit}>
         <div className="space-y-4">
           <textarea
@@ -1138,15 +1626,77 @@ export interface QANode {
   answer?: string;
   children: QANode[];
   questionNumber?: number;
+}
+
+export interface RequirementCategory {
+  title: string;
+  requirements: Array<{
+    id: string;
+    text: string;
+    source: 'user-qa' | 'knowledge-base';
+    sourceDetails?: {
+      questionId?: string;
+      knowledgeBaseIndex?: number;
+    };
+    priority: 'high' | 'medium' | 'low';
+    category: 'functional' | 'technical' | 'ux' | 'accessibility' | 'security' | 'performance';
+    tags: string[];
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+
+export interface RequirementsDocument {
+  id: string;
+  prompt: string;
+  lastUpdated: string;
+  categories: {
+    basicNeeds: RequirementCategory;
+    functionalRequirements: RequirementCategory;
+    userExperience: RequirementCategory;
+    implementation: RequirementCategory;
+    refinements: RequirementCategory;
+    constraints: RequirementCategory;
+  };
+} 
+
+----- /Users/jackcrawford/ai-design-flow/types/pdf-parse.d.ts -----
+declare module 'pdf-parse' {
+  interface PDFData {
+    text: string;
+    numpages: number;
+    info: any;
+    metadata: any;
+    version: string;
+  }
+
+  function PDFParse(dataBuffer: Buffer, options?: any): Promise<PDFData>;
+  export = PDFParse;
 } 
 
 ----- /Users/jackcrawford/ai-design-flow/types/settings.ts -----
+export interface KnowledgeBaseSource {
+  id: string;
+  type: 'file' | 'text';
+  name: string;
+  content?: string;
+  file?: File;
+  processedContent?: {
+    requirements?: string[];
+    technicalSpecifications?: string[];
+    designGuidelines?: string[];
+    userPreferences?: string[];
+    industryStandards?: string[];
+    [key: string]: any;
+  };
+}
+
 export interface QASettings {
   traversalMode: 'bfs' | 'dfs';
   unknownHandling: 'auto' | 'prompt';
   conflictResolution: 'auto' | 'manual';
   maxQuestions?: number;
-  knowledgeBase?: File;
+  knowledgeBase?: KnowledgeBaseSource[];
 } 
 
 ----- /Users/jackcrawford/ai-design-flow/.env.local -----
@@ -1208,7 +1758,12 @@ next-env.d.ts
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '2mb'
+    }
+  },
+  serverExternalPackages: ['pdf-parse']
 };
 
 export default nextConfig;
@@ -1220,14 +1775,18 @@ export default nextConfig;
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
+    "@langchain/community": "^0.3.29",
+    "@langchain/openai": "^0.4.2",
+    "langchain": "^0.3.15",
     "next": "15.1.6",
     "openai": "^4.83.0",
+    "pdf-parse": "^1.1.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "uuid": "^11.0.5"

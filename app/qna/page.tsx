@@ -19,6 +19,12 @@ interface SavedProgress {
   requirementsDoc: RequirementsDocument;
 }
 
+interface QuestionHistoryItem {
+  question: string;
+  answer?: string;
+  topics: string[];
+}
+
 export default function QnAPage() {
   const router = useRouter();
   const [prompt, setPrompt] = useState<string>('');
@@ -28,98 +34,89 @@ export default function QnAPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingNextQuestion, setIsLoadingNextQuestion] = useState(false);
   const [questionCount, setQuestionCount] = useState(0);
-  const [suggestedAnswer, setSuggestedAnswer] = useState<string | null>(null);
+  const [suggestedAnswer, setSuggestedAnswer] = useState<{
+    text: string;
+    confidence: 'high' | 'medium' | 'low';
+    sourceReferences: number[];
+  } | null>(null);
   const [requirementsDoc, setRequirementsDoc] = useState<RequirementsDocument | null>(null);
+  const [askedQuestions, setAskedQuestions] = useState<Set<string>>(new Set());
+  const [askedTopics, setAskedTopics] = useState<Set<string>>(new Set());
+
+  // Helper: Extract topics from a question
+  const extractTopics = (question: string): string[] => {
+    const topics = [];
+    // Common topic indicators in questions
+    if (question.toLowerCase().includes('audience') || 
+        question.toLowerCase().includes('user') || 
+        question.toLowerCase().includes('visitor')) {
+      topics.push('audience');
+    }
+    if (question.toLowerCase().includes('purpose') || 
+        question.toLowerCase().includes('goal')) {
+      topics.push('purpose');
+    }
+    // Add more topic extractors as needed
+    return topics;
+  };
 
   // Helper: Get the next question based on traversal mode
   const getNextQuestion = async (node: QANode): Promise<QANode | null> => {
     const isDFS = settings?.traversalMode === 'dfs';
     
-    if (isDFS) {
-      // DFS: Try to go deeper first
-      if (node.answer) {
-        // If this node has an answer, try to generate its first child
-        const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(prompt, node);
+    // Build complete question history including topics
+    const questionHistory: QuestionHistoryItem[] = [];
+    const collectHistory = (n: QANode) => {
+      if (n.question !== `Prompt: ${prompt}`) {
+        questionHistory.push({
+          question: n.question,
+          answer: n.answer,
+          topics: extractTopics(n.question)
+        });
+      }
+      n.children.forEach(collectHistory);
+    };
+    collectHistory(qaTree!);
+
+    try {
+      const response = await fetch('/api/generate-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          previousQuestions: questionHistory,
+          traversalMode: settings?.traversalMode,
+          knowledgeBase: settings?.knowledgeBase,
+          askedQuestions: Array.from(askedQuestions),
+          askedTopics: Array.from(askedTopics)
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch next question');
+      }
+
+      const data = await response.json();
+      
+      if (data.questions?.[0]) {
+        // Update tracking sets
+        setAskedQuestions(prev => new Set([...prev, data.questions[0]]));
+        const newTopics = extractTopics(data.questions[0]);
+        setAskedTopics(prev => new Set([...prev, ...newTopics]));
         
-        // If we should stop this branch or no children were generated, move to siblings
-        if (!shouldStopBranch && children.length > 0) {
-          node.children = children;
-          return children[0];
-        }
+        // Create new node
+        return {
+          id: uuidv4(),
+          question: data.questions[0],
+          children: [],
+          questionNumber: questionCount + 1,
+        };
       }
       
-      // If we can't go deeper, find the next sibling by traversing up
-      let current: QANode | null = node;
-      let parent = findParentNode(qaTree!, node);
-      
-      while (parent) {
-        const siblings = parent.children;
-        const currentIndex = siblings.indexOf(current!);
-        
-        if (currentIndex < siblings.length - 1) {
-          // Return next sibling
-          return siblings[currentIndex + 1];
-        }
-        
-        // Move up to try next level's sibling
-        current = parent;
-        parent = findParentNode(qaTree!, parent);
-      }
-      
-      return null; // No more questions
-    } else {
-      // BFS: Complete current level before going deeper
-      const parent = findParentNode(qaTree!, node);
-      if (!parent) return null; // Safety check
-      
-      // First, try to generate siblings at the current level
-      const currentLevelNodes = parent.children;
-      const currentIndex = currentLevelNodes.indexOf(node);
-      
-      // If this was the last answered node in its level, try to generate a new sibling
-      if (currentIndex === currentLevelNodes.length - 1 && node.answer) {
-        const { nodes: newSiblings, shouldStopBranch } = await fetchQuestionsForNode(prompt, parent);
-        if (!shouldStopBranch && newSiblings.length > 0) {
-          parent.children = [...currentLevelNodes, ...newSiblings];
-          return newSiblings[0];
-        }
-      } 
-      // If there are existing unanswered siblings, move to the next one
-      else if (currentIndex < currentLevelNodes.length - 1) {
-        return currentLevelNodes[currentIndex + 1];
-      }
-      
-      // If we can't generate more siblings or move to next sibling,
-      // look for the first answered node without children at the current level
-      for (const sibling of currentLevelNodes) {
-        if (sibling.answer && sibling.children.length === 0) {
-          const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(prompt, sibling);
-          if (!shouldStopBranch && children.length > 0) {
-            sibling.children = children;
-            return children[0];
-          }
-        }
-      }
-      
-      // If we can't go deeper at this level, move to the next level
-      const nextLevelStart = findFirstUnansweredChild(qaTree!);
-      if (nextLevelStart) {
-        return nextLevelStart;
-      }
-      
-      // If no existing unanswered nodes, try to start a new level
-      // Find the first node at the current level that can have children
-      for (const sibling of currentLevelNodes) {
-        if (sibling.answer && sibling.children.length === 0) {
-          const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(prompt, sibling);
-          if (!shouldStopBranch && children.length > 0) {
-            sibling.children = children;
-            return children[0];
-          }
-        }
-      }
-      
-      return null; // No more questions at this level or deeper
+      return null;
+    } catch (error) {
+      console.error('Error getting next question:', error);
+      return null;
     }
   };
 
@@ -184,7 +181,6 @@ export default function QnAPage() {
       let current: QANode | null = parentNode;
       
       while (current) {
-        // Don't include the root prompt node in the Q&A chain
         if (current.answer && current.question !== `Prompt: ${prompt}`) {
           previousQA.unshift({
             question: current.question,
@@ -196,6 +192,8 @@ export default function QnAPage() {
         if (!parent || parent === current) break;
         current = parent;
       }
+
+      console.log('Fetching questions with knowledge base:', settings?.knowledgeBase);
       
       const response = await fetch('/api/generate-questions', {
         method: 'POST',
@@ -207,10 +205,36 @@ export default function QnAPage() {
           knowledgeBase: settings?.knowledgeBase
         }),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        throw new Error(`API request failed: ${errorData.error || response.statusText}`);
+      }
+
       const data = await response.json();
+      console.log('Received API response with suggested answer:', data.suggestedAnswer);
       
+      if (!data || !Array.isArray(data.questions) || data.questions.length === 0) {
+        throw new Error('Invalid response format or no questions received');
+      }
+
       // Set suggested answer if available
-      setSuggestedAnswer(data.suggestedAnswer);
+      if (data.suggestedAnswer) {
+        console.log('Setting suggested answer:', {
+          text: data.suggestedAnswer,
+          confidence: data.confidence || 'low',
+          sourceReferences: data.sourceReferences || []
+        });
+        
+        setSuggestedAnswer({
+          text: data.suggestedAnswer,
+          confidence: data.confidence || 'low',
+          sourceReferences: data.sourceReferences || []
+        });
+      } else {
+        console.log('Clearing suggested answer');
+        setSuggestedAnswer(null);
+      }
       
       // Create a single child node with the next question number
       const nextQuestionNumber = questionCount + 1;
@@ -223,12 +247,23 @@ export default function QnAPage() {
       
       return {
         nodes,
-        shouldStopBranch: data.shouldStopBranch,
-        stopReason: data.stopReason
+        shouldStopBranch: data.shouldStopBranch || false,
+        stopReason: data.stopReason || 'No more questions needed'
       };
     } catch (error) {
       console.error("Error in fetchQuestionsForNode:", error);
-      return { nodes: [], shouldStopBranch: true, stopReason: "Error generating questions" };
+      // Return a default error question node
+      const errorNode: QANode = {
+        id: uuidv4(),
+        question: "Failed to generate question. Please try again or refresh the page.",
+        children: [],
+        questionNumber: questionCount + 1,
+      };
+      return { 
+        nodes: [errorNode], 
+        shouldStopBranch: true, 
+        stopReason: error instanceof Error ? error.message : "Error generating questions" 
+      };
     }
   };
 
@@ -246,6 +281,11 @@ export default function QnAPage() {
   // Helper: Update requirements document
   const updateRequirements = async (nodeId: string | null) => {
     try {
+      if (!qaTree || !requirementsDoc) {
+        console.warn('Missing qaTree or requirementsDoc, skipping requirements update');
+        return;
+      }
+
       const response = await fetch('/api/update-requirements', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -258,16 +298,22 @@ export default function QnAPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update requirements');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        throw new Error(`API request failed: ${errorData.error || response.statusText}`);
       }
 
       const updatedDoc = await response.json();
+      if (!updatedDoc || !updatedDoc.categories) {
+        throw new Error('Invalid requirements document received');
+      }
+
       setRequirementsDoc(updatedDoc);
       
       // Save progress including requirements
       saveProgress();
     } catch (error) {
       console.error('Error updating requirements:', error);
+      // Don't throw the error, just log it and continue
     }
   };
 
@@ -304,6 +350,7 @@ export default function QnAPage() {
       // Load saved progress
       try {
         const progress: SavedProgress = JSON.parse(savedProgress);
+        console.log('Loaded settings with knowledge base:', progress.settings.knowledgeBase);
         setPrompt(progress.prompt);
         setSettings(progress.settings);
         setQaTree(progress.qaTree);
@@ -317,13 +364,13 @@ export default function QnAPage() {
         return;
       } catch (error) {
         console.error("Error loading saved progress:", error);
-        // If loading saved progress fails, fall back to new session
       }
     }
     
     // Start new session
     if (storedPrompt && storedSettings) {
       const parsedSettings = JSON.parse(storedSettings);
+      console.log('Starting new session with knowledge base:', parsedSettings.knowledgeBase);
       setPrompt(storedPrompt);
       setSettings(parsedSettings);
       
@@ -372,35 +419,105 @@ export default function QnAPage() {
     if (!currentNode || !settings) return;
     
     setIsLoadingNextQuestion(true);
+    setSuggestedAnswer(null);
     
     // Check if we've hit the question limit
     if (settings.maxQuestions && questionCount >= settings.maxQuestions) {
-      setCurrentNode(null); // End the Q&A session
+      setCurrentNode(null);
       setIsLoadingNextQuestion(false);
       return;
     }
     
-    // Record the answer
-    currentNode.answer = answer;
-    
-    // Update requirements document with new answer
-    await updateRequirements(currentNode.id);
-    
-    // Get the next question based on traversal mode
-    const nextNode = await getNextQuestion(currentNode);
-    
-    if (nextNode) {
-      setCurrentNode(nextNode);
-      setQuestionCount(prev => prev + 1);
-    } else {
-      setCurrentNode(null); // No more questions
-      // Final requirements update with no current node
-      await updateRequirements(null);
+    try {
+      // Record the answer
+      currentNode.answer = answer;
+      
+      // Update requirements document with new answer
+      await updateRequirements(currentNode.id);
+      
+      // Get the next question based on traversal mode
+      const nextNode = await getNextQuestion(currentNode);
+      
+      if (nextNode) {
+        // Verify this question hasn't been asked before
+        if (!askedQuestions.has(nextNode.question)) {
+          setCurrentNode(nextNode);
+          setQuestionCount(prev => prev + 1);
+        } else {
+          console.warn('Duplicate question detected:', nextNode.question);
+          // Try to get another question or end if no valid questions remain
+          setCurrentNode(null);
+        }
+      } else {
+        setCurrentNode(null); // No more questions
+        // Final requirements update with no current node
+        await updateRequirements(null);
+      }
+      
+      // Update the tree state
+      setQaTree(prev => prev ? { ...prev } : prev);
+    } catch (error) {
+      console.error('Error in handleAnswer:', error);
+    } finally {
+      setIsLoadingNextQuestion(false);
     }
-    
-    // Update the tree state
-    setQaTree(prev => prev ? { ...prev } : prev);
-    setIsLoadingNextQuestion(false);
+  };
+
+  const handleAutoPopulate = async (): Promise<string | null> => {
+    try {
+      const response = await fetch('/api/generate-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          previousQuestions: [],  // We don't need previous questions for auto-populate
+          traversalMode: settings?.traversalMode,
+          knowledgeBase: settings?.knowledgeBase,
+          currentQuestion: currentNode?.question
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate answer');
+      }
+
+      const data = await response.json();
+      console.log('Auto-populate response:', data);
+      
+      // Return the suggestedAnswer text if it exists
+      if (data.suggestedAnswer) {
+        return data.suggestedAnswer;
+      }
+      
+      // If we have questions but no suggested answer, try to use the first question as context
+      if (data.questions?.[0]) {
+        const contextResponse = await fetch('/api/generate-questions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt,
+            previousQuestions: [{
+              question: currentNode?.question || '',
+              answer: data.questions[0]
+            }],
+            traversalMode: settings?.traversalMode,
+            knowledgeBase: settings?.knowledgeBase
+          }),
+        });
+
+        if (contextResponse.ok) {
+          const contextData = await contextResponse.json();
+          if (contextData.suggestedAnswer) {
+            return contextData.suggestedAnswer;
+          }
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error auto-populating answer:', error);
+      return null;
+    }
   };
 
   return (
@@ -440,7 +557,8 @@ export default function QnAPage() {
             }
             onSubmitAnswer={handleAnswer}
             isLoading={isLoading || isLoadingNextQuestion}
-            suggestedAnswer={suggestedAnswer}
+            hasKnowledgeBase={Boolean(settings?.knowledgeBase?.length)}
+            onAutoPopulate={handleAutoPopulate}
           />
         </div>
       </main>

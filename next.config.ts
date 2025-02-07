@@ -1,13 +1,12 @@
 import type { NextConfig } from "next";
 
-const nextConfig = {
-  webpack: (config) => {
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      'pdfjs-dist': false,
-    };
-    return config;
+const nextConfig: NextConfig = {
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '2mb'
+    }
   },
-} satisfies NextConfig;
+  serverExternalPackages: ['pdf-parse']
+};
 
 export default nextConfig;

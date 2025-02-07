@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import OpenAI from 'openai';
 import pdfParse from 'pdf-parse';
 
@@ -6,10 +6,8 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-async function extractTextFromPDF(file: File): Promise<string> {
+async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
     const data = await pdfParse(buffer);
     return data.text;
   } catch (error) {
@@ -19,79 +17,112 @@ async function extractTextFromPDF(file: File): Promise<string> {
 }
 
 async function processContent(content: string) {
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4",
-    messages: [
-      {
-        role: "system",
-        content: `You are a knowledge base processor. Extract key information from the provided document that would be relevant for the design process. Focus on:
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        {
+          role: "system",
+          content: `You are a knowledge base processor. Extract key information from the provided document that would be relevant for the design process. Focus on:
 1. Requirements and constraints
 2. Technical specifications
 3. Design guidelines
 4. User preferences or patterns
 5. Industry standards or best practices
 
-Format the output as a JSON object with these categories.`
-      },
-      {
-        role: "user",
-        content
-      }
-    ],
-    response_format: { type: "json_object" }
-  });
+Return your response in this exact JSON format:
+{
+  "requirements": [],
+  "technicalSpecifications": [],
+  "designGuidelines": [],
+  "userPreferences": [],
+  "industryStandards": []
+}`
+        },
+        {
+          role: "user",
+          content
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 2000
+    });
 
-  return completion.choices[0].message.content;
+    const responseContent = completion.choices[0].message.content;
+    if (!responseContent) {
+      throw new Error('Empty response from OpenAI');
+    }
+
+    try {
+      return JSON.parse(responseContent);
+    } catch (parseError) {
+      console.error('Error parsing OpenAI response:', parseError);
+      throw new Error('Failed to parse OpenAI response');
+    }
+  } catch (error) {
+    console.error('Error processing content with OpenAI:', error);
+    throw new Error('Failed to process content');
+  }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const sourceType = formData.get('type') as string;
+    const sourceType = formData.get('type');
+    const file = formData.get('file');
+    const textContent = formData.get('content');
+
+    if (!sourceType) {
+      return new Response(JSON.stringify({ error: 'Source type is required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     let content: string;
 
-    if (sourceType === 'file') {
-      const file = formData.get('file') as File;
-      if (!file) {
-        return NextResponse.json(
-          { error: 'No file provided' },
-          { status: 400 }
-        );
-      }
-
-      // Extract text based on file type
-      if (file.type === 'application/pdf') {
-        content = await extractTextFromPDF(file);
+    if (sourceType === 'file' && file) {
+      // Check if the file has arrayBuffer method (indicating it's a File or Blob)
+      const fileObject = file as { arrayBuffer(): Promise<ArrayBuffer>; type?: string; name?: string };
+      
+      if ('arrayBuffer' in fileObject && typeof fileObject.arrayBuffer === 'function') {
+        const buffer = Buffer.from(await fileObject.arrayBuffer());
+        
+        // Check file type using the file's type property or name
+        const fileType = fileObject.type || '';
+        const fileName = fileObject.name || '';
+        
+        if (fileType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf')) {
+          content = await extractTextFromPDF(buffer);
+        } else {
+          // For text files, convert buffer to string
+          content = buffer.toString('utf-8');
+        }
       } else {
-        content = await file.text();
+        throw new Error('Invalid file format');
       }
-    } else if (sourceType === 'text') {
-      content = formData.get('content') as string;
-      if (!content) {
-        return NextResponse.json(
-          { error: 'No content provided' },
-          { status: 400 }
-        );
-      }
+    } else if (sourceType === 'text' && typeof textContent === 'string') {
+      content = textContent;
     } else {
-      return NextResponse.json(
-        { error: 'Invalid source type' },
-        { status: 400 }
-      );
+      return new Response(JSON.stringify({ error: 'Invalid input' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     const processedContent = await processContent(content);
 
-    return NextResponse.json({
-      success: true,
-      processedContent
+    return new Response(JSON.stringify({ success: true, processedContent }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
     });
 
-  } catch (error) {
-    console.error('Error processing knowledge base:', error);
-    return NextResponse.json(
-      { error: 'Failed to process knowledge base' },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    console.error('Error in API route:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    return new Response(JSON.stringify({ error: 'Internal server error', details: errorMessage }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 } 
