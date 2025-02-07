@@ -1,184 +1,185 @@
 Overall Concept
-1. Root Node (User Prompt)
-    * The user starts by typing a prompt (e.g., “Design the interface for a 1000-floor elevator”).
+
+1. 1. Root Node (User Prompt)
+    * The user begins by typing a prompt (e.g., “Design the interface for a 1000-floor elevator”).
     * This prompt becomes the root node on the Main Canvas, the trunk of a tree from which all subsequent branches (questions) extend.
 2. AI-Powered Question Generation (via gpt-4-0125-preview)
-    * After initial preferences (like conflict and unknown handling) are set, the AI dynamically generates follow-up questions.
+    * After initial preferences (e.g., conflict and unknown handling) are set, the AI dynamically generates follow-up questions.
     * It references prior answers and any uploaded knowledge base (elevator guidelines, building specs) to decide which child nodes (sub-branches) to create.
     * Early questions are intentionally basic—“Is the elevator primarily for humans or for machinery?”—to clarify fundamental requirements before diving deeper.
 3. Breadth-First or Depth-First Q&A
-    * The user chooses one of two traversal modes:
-        1. Breadth-First: The system completes all siblings at the current “layer” before revealing children.
-        2. Depth-First: The system immediately drills down into child nodes of the just-answered question, postponing siblings until that branch is finished.
-    * Sequential Question Generation: In either mode, a new question (whether a sibling or child) is generated only after the user answers the current question.
-    * Pruning & Conflict Resolution: The AI may prune paths if an updated answer invalidates them or silently fix minor conflicts if auto-resolve is chosen.
+    * The user chooses one of two traversal modes (matching your diagrams):
+        1. Breadth-First: The system completes all siblings at the current “layer” (as in layer 1 → layer 2 → layer 3 in your BFS image) before revealing children of those siblings.
+        2. Depth-First: The system immediately drills down into child nodes of the just-answered question (as in your DFS image), postponing siblings until that branch is fully explored.
+    * Sequential Question Generation:
+        * In either mode, only one question is shown at a time, and a new question (sibling or child) appears only after the user answers the current question.
+    * Pruning & Conflict Resolution: If an updated answer invalidates certain paths, the AI prunes them. It may silently fix minor conflicts if auto-resolve is on.
 4. Stopping Criteria & Generation
-    * The user can cap the total number of questions (e.g., “Stop after 20”), prompting a mockup.
-    * Alternatively, the AI decides when it has enough info to produce a final design.
-    * Upon Q&A completion, the system consolidates everything into a requirements doc and React/Tailwind code for a working prototype.
+    * The user can cap the total number of questions (e.g., “Stop after 20”), triggering a mockup.
+    * Alternatively, the AI decides when enough info is gathered.
+    * Once the Q&A phase ends, the system creates a requirements doc and React/Tailwind code for a working prototype.
 
 Step 1: Initial Setup & Prompt Node
 1. Enter the Prompt
     * The user types: “Design the interface for a 1000-floor elevator.”
     * Labeled on the Main Canvas as “Prompt: 1000-floor elevator” (the root node).
 2. Optional Knowledge Base Upload
-    * If users upload relevant documents (building specs, guidelines), the AI may auto-populate certain answers.
-    * No knowledge base = no auto-populate option.
+    * If the user uploads relevant documents (e.g., building specs), the AI may auto-populate answers it’s confident about.
+    * No knowledge base = no auto-populate.
 3. Unknown & Conflict Handling (AI Settings)
     * Unknowns:
-        * Auto (trivial): The AI guesses minor data gaps (e.g., kiosk color).
-        * Always prompt: The user addresses every unknown. Major unknowns (like safety codes) always require explicit confirmation.
+        * Auto (trivial) – The AI guesses minor data gaps (like kiosk color).
+        * Always prompt – The user explicitly addresses each unknown; major unknowns (like compliance codes) always need confirmation.
     * Conflicts:
-        * Auto-resolve minor: The AI quietly fixes small contradictions by pruning the less critical node.
-        * Manual resolution: All conflicts appear in the Q&A Panel. Major ones always prompt the user.
+        * Auto-resolve minor – The AI quietly fixes small contradictions.
+        * Manual resolution – All conflicts appear in the Q&A Panel; major ones always prompt the user.
 4. Breadth-First or Depth-First Q&A Selection
-    * The user picks which traversal method:
-        * Breadth-First: Finish all top-level siblings before revealing child nodes.
-        * Depth-First: Immediately dive into a parent’s children (recursively) before returning to siblings.
+    * Breadth-First: Complete all top-level siblings (like Q1, Q2, Q3 in BFS image) before showing their children.
+    * Depth-First: As soon as Q1 is answered, show Q1’s children, postponing Q2 and Q3 until Q1’s subtree is done (like DFS image).
 5. Question Limit or AI-Determined Stop
     * The user can limit total questions (e.g., 20) or let the AI decide.
-    * Once confirmed, the root node is finalized on the Main Canvas.
+    * Once these settings are confirmed, the root node is finalized.
 
 Step 2: Interactive Q&A Flow (AI-Driven)
 2.1. The Root Node & First Questions
-* Main Canvas: Shows the root node (user’s prompt).
-* Right-Hand Q&A Panel: A “Begin Q&A” button triggers gpt-4-0125-preview.
+* Main Canvas: Displays the root node (the user’s prompt).
+* Right-Hand Q&A Panel: “Begin Q&A” triggers gpt-4-0125-preview.
 * AI Question Generation:
-    * The AI spawns initial top-level questions (e.g., Q1, Q2, Q3) based on the user’s prompt/knowledge base.
+    * The AI spawns the first top-level questions (Q1, Q2, Q3), referencing the prompt/knowledge base.
     * For example:
         * Q1: “Is the elevator primarily for humans or machinery?”
         * Q2: “What is the total number of floors?”
         * Q3: “Any known budget constraints?”
 2.2. Q&A Progression (Breadth vs. Depth)
 2.2.1. One Question at a Time
-* The system never shows the next question until the current one is answered.
-* Child nodes (e.g., Q4, Q5) appear only after the user finishes Q1.
+* The system only generates the next question after the user answers the current one.
+* If Q1 leads to children (Q4, Q5), those appear only upon finishing Q1.
 2.2.2. Breadth-First Mode (Example)
 1. Layer-by-Layer
-    * Suppose the system’s first top-level set is Q1, Q2, Q3. The user answers them in order (Q1 → Q2 → Q3).
-    * Only after Q1, Q2, Q3 are done do their children appear:
-        * Q4, Q5 might be children of Q1,
-        * Q6, Q7 might be children of Q2,
-        * Q8 might be a child of Q3.
-2. Recursive BFS
-    * After finishing Q4, Q5 (children of Q1), the system moves to Q6, Q7 (children of Q2), then Q8 (child of Q3).
-    * If Q4 spawns more children (Q9, Q10), those appear in the same BFS layer, after Q4 is answered but before moving on to Q2’s children.
-    * The important point is siblings are always handled at the same layer—before revealing the next layer’s children.
-    * Example BFS-Like Numbering: Q1, Q2, Q3 as siblings. Then Q4, Q5 (children of Q1), Q6, Q7 (children of Q2), Q8 (child of Q3). Next, Q9, Q10 (children of Q4), Q11, Q12 (children of Q5), etc.
+    * If the user has top-level Q1, Q2, Q3, they see them in that order.
+    * Only after Q1, Q2, Q3 are completed does the system reveal their children:
+        * Q4, Q5 (children of Q1),
+        * Q6, Q7 (children of Q2),
+        * Q8 (child of Q3).
+2. Sequential BFS
+    * The user finishes Q4, Q5 (children of Q1), then Q6, Q7 (children of Q2), then Q8 (child of Q3).
+    * If Q4 spawns more children (Q9, Q10), those appear at the same BFS layer as any Q5 children.
+    * Sibling numbering is consecutive within the same layer—like in the BFS image: (Layer 0: Q1, Q2, Q3), (Layer 1: Q4, Q5, Q6, Q7), (Layer 2: Q8, Q9, etc.).
 2.2.3. Depth-First Mode (Example)
 1. Go Deep Immediately
-    * The user answers Q1 first.
-    * Instead of seeing Q2 and Q3 (siblings) right away, the system spawns Q1’s children (Q4, Q5).
-    * Q2 might not appear until much later—potentially labeled something like Q17 by the time we return to the “root” level.
-2. Fully Exploring Each Branch
-    * After answering Q4, if Q4 spawns Q6, Q7, you finish those. Then move on to Q5 (the other child of Q1).
-    * Only after completing the entire subtree under Q1 does the system “come back up” to show Q2.
-    * Example DFS-Like Numbering: Q1 → Q4, Q5 (children of Q1). Q4 might spawn Q6, Q7. That entire chain is resolved before Q5. Once Q5 is done, we finally see Q2 (which could be Q17 if the AI introduced many nodes under Q4, Q5 first).
-3. Recursive DFS
-    * Each node’s children appear immediately after that node is answered, exploring that branch first.
-    * Siblings (like “Q2 and Q3 at the root level”) might appear later or have a higher question label if the system introduced many child nodes in between.
+    * After answering Q1, the system spawns Q1’s children (e.g., Q4, Q5).
+    * Q2 (the next “root-level sibling” in BFS) might not appear until Q1’s entire subtree is fully explored, akin to the DFS image.
+2. Recursive DFS
+    * The user completes Q4. If Q4 has more children (Q6, Q7), those come next.
+    * Then Q5, possibly with Q8, Q9 as children, etc.
+    * Only after Q1’s entire subtree is done does the system “come back up” to reveal Q2. By that time, Q2 might not literally be labeled “Q2”—it could become Q17 or Q25 if many questions were introduced under Q1’s branch first.
+    * This parallels the DFS diagram: you follow one path down to the “leaf” nodes, then backtrack to handle siblings.
+Key difference: In BFS, siblings at the same layer stay consecutive (like Q1, Q2, Q3), while in DFS a “sibling” from BFS might not appear until much later (with a higher question ID), because the user is going “deep” on Q1’s children first.
 2.2.4. New Top-Level Branches
-* If the AI uncovers (or the user requests) a new major domain mid-flow, it creates a new top-level node.
-* Three ways these arise:
-    1. User-Initiated: “What about signage?”
+* The AI can discover (or user can request) a new major domain mid-flow.
+* Three ways new top-level Q’s appear:
+    1. User-Initiated: “What about elevator signage?”
     2. AI-Detected: The AI sees advanced security is needed.
     3. Post-Completion: A final check after all known Q’s.
-* By default, these new top-level Q’s are queued until the current layer or branch is done—unless deemed urgent by user/AI.
+* By default, these new top-level Q’s remain queued until the user completes the current BFS layer or DFS branch—unless flagged urgent.
 
 2.3. Conflict & Unknown Resolution (AI Assistance)
 1. Conflict Detection
-    * Each new answer is checked for contradictions vs. previous answers or knowledge-base references.
+    * Each new answer is checked against previous answers and knowledge-base data.
 2. Minor Conflicts (Auto-Resolve)
-    * If enabled, trivial mismatches (e.g., color preferences) are silently fixed.
+    * Trivial inconsistencies (e.g., color mismatch) are silently fixed if auto-resolve is on.
 3. Major Conflicts (Always Prompt)
-    * If a conflict is fundamental (e.g., code compliance), the system prompts the user to reconcile.
+    * If fundamental (e.g., code compliance), the system asks the user to reconcile.
+    * Example: “Floors above 500 need advanced voice commands, but voice hardware is disallowed.”
 4. Unknown Fields
-    * Trivial Unknown (Auto): The AI guesses, labeling it “AI-guessed.”
-    * Major Unknown: The user must supply data; child nodes won’t appear until resolved.
-    * “Always prompt” means no auto-fills occur.
+    * Trivial Unknown (Auto): AI guesses, labeling it “AI-guessed.”
+    * Major Unknown: The user must confirm. No children appear until it’s resolved.
+    * “Always prompt” means the user addresses all unknowns manually.
 
 2.4. Revisiting & Editing Answers
 * Clicking an Answered Node
-    * The user can revisit, say Q2, and change its answer. The system re-checks Q2’s children or conflicts.
+    * The user can revisit Q2, changing its answer. The system re-checks Q2’s children for validity.
 * Pruning & Replacement
-    * If a new parent answer invalidates old children, they’re pruned. If the updated logic triggers new children, they appear.
+    * If a new answer invalidates existing children, those sub-branches are pruned. If the new logic calls for different questions, they appear.
 * Cross-Branch Conflicts
-    * If changing Q2 contradicts Q7 in a different branch, the system checks if it’s minor or major. Minor = silent fix (if enabled), major = user picks which node stands.
+    * If changing Q2 conflicts with Q7 in another branch, the system either auto-fixes (if minor) or prompts for user choice (if major).
 
 2.5. Stopping & Additional Inquiries
 1. Max Questions Reached
-    * If the user set “Stop after 20,” the system says, “20 questions reached—generate a mockup or continue?”
+    * If the user set “Stop after 20,” the system says, “20 questions reached—generate a mockup now or continue?”
 2. AI Decides
-    * If no limit, once the AI believes enough data is collected, it asks if the user wants to finalize.
+    * If no cap, once the AI believes it has enough data, it asks if the user wants to finalize or keep going.
 3. User-Initiated Topics
-    * At any time, the user can say “Explain accessibility in detail,” spawning new nodes or top-level questions if needed.
+    * The user can say, “Give me more detail on accessibility,” spawning new nodes or top-level Q’s if it’s a major domain.
 
 Step 3: Consolidate & Generate
 3.1. Requirements Document
 * AI Compilation:
-    * The system compiles all final answers (Q1–QX), plus assumptions, conflicts, and AI guesses.
+    * The system compiles all final answers (Q1–QX), assumptions, auto-resolved conflicts, and “AI-guessed” unknowns.
 * Preview & Download:
-    * The user can see the doc on-screen, then export as PDF, DOCX, or Markdown.
+    * The user can see this document onscreen and export it (PDF, DOCX, Markdown).
 3.2. Prototype UI Code (React/Tailwind)
 * Code Generation:
-    * The AI outputs React + Tailwind (or HTML/CSS), letting the user preview an elevator kiosk/panel with specified features.
+    * The AI produces a sandboxed React + Tailwind (or HTML/CSS) mockup reflecting the final Q&A data.
+    * The user previews an elevator kiosk or panel design with the specified features.
 * Copy/Export:
-    * A “Copy Code” button enables quick integration.
-    * “Export to Figma” for design iteration.
+    * A “Copy Code” button for quick integration elsewhere.
+    * An “Export to Figma” option for design iteration.
 3.3. Multiple Versions
 * Generate Another Version:
-    * If desired, the user can create alternative design styles or layouts.
-    * They can produce multiple versions and toggle among them.
+    * Users can request alternative designs (styling/layout).
+    * They can produce multiple versions and flip between them for comparison.
 3.4. Save for Later
 * Session Preservation:
-    * The system saves the entire Q&A (root prompt, answers, conflicts, design previews).
+    * The system can save the entire Q&A session (root prompt, answers, conflicts, design previews).
 * Local vs. Server:
-    * Data can be stored locally or on a server if user accounts exist.
+    * Data might be stored locally (localStorage) or on a server if user accounts exist.
 * Metadata & Session Management:
-    * Each session has a name, timestamp, and progress. A “My Sessions” list lets users resume, rename, or delete.
+    * Each session has a name, timestamp, progress indicator. A “My Sessions” page lets users resume, rename, or delete.
 * Auto-Save & Manual Save:
-    * The system auto-saves periodically; a manual “Save” is available. If the user leaves, it warns or auto-saves.
+    * The system auto-saves periodically; a “Save” button also exists. If the user leaves, it warns or auto-saves.
 
 Interface Layout Summary
 1. Main Canvas (Center)
-    * Root Node (Prompt): “1000-floor elevator,” from which top-level questions branch.
-    * Child Nodes (Q4, Q5, etc.): Appear beneath each answered parent.
-    * Visual Indicators: Conflict icons, auto-fill icons for knowledge-base guesses.
+    * Root Node (Prompt): “1000-floor elevator.”
+    * Child Nodes (Q4, Q5, etc.): Appear under each parent upon completion.
+    * Visual Indicators: Conflict icons for major issues, auto-fill icons for knowledge-base guesses.
 2. Right-Hand Q&A Panel
     * Always open, showing the current question.
-    * Displays AI-generated prompts, conflicts/unknown alerts, resolution options.
-    * “Auto-Populate” if relevant knowledge base data exists.
+    * AI-generated prompts, conflicts/unknown alerts, resolution options.
+    * “Auto-Populate” if knowledge-base data suggests an answer.
 3. Header / Toolbar (Top)
     * Steps: (1) Setup, (2) Q&A, (3) Generate.
     * A progress bar (e.g., “X / Y answered”).
-    * Knowledge Base status icon.
+    * Knowledge Base status icon (uploaded or not).
 4. Generation/Preview Area
-    * After Q&A, shows a Requirements Doc Preview and a React/Tailwind sandbox.
-    * Tools for doc download, copying code, or exporting to design platforms.
+    * After Q&A, the user sees a Requirements Doc Preview and a React/Tailwind sandbox.
+    * Tools for doc download, code copying, or exporting to design software.
 
 Graph Impact Summary
 1. Overridden Nodes & Children from Conflicts
-    * Auto-resolve minor conflicts prunes/adjusts. Major prompts user choice.
+    * Auto-resolve minor conflicts prunes or adjusts. Major conflicts prompt user choice.
 2. Unknown Answers & Children
-    * Auto-mode guesses trivial unknowns. Major unknowns block child nodes until resolved.
+    * Auto-mode guesses trivial unknowns (“AI-guessed”).
+    * Major unknowns block children until user input.
 3. Editing a Parent Node & Branch Replacement
-    * Updating a parent’s answer can prune old children, possibly spawning fresh ones.
-    * Branches removed by conflict override only reappear if the relevant answer changes again.
+    * Changing a parent’s answer prunes invalid children and may spawn new ones.
 4. Cross-Branch Conflicts
-    * If Q2’s edit contradicts Q7 in another branch, minor=auto-fix if enabled, major=user must choose.
+    * Minor → silent fix if enabled, major → user must reconcile.
 
 Why This Flow Works
 1. Prompt as Anchor
-    * Keeps the user’s main design goal—like a 1000-floor elevator—central.
+    * Keeps the user’s primary goal—designing a 1000-floor elevator—front and center.
 2. Configurable Q&A Traversal
-    * Users pick breadth-first (Q2 is truly a top-level sibling) or depth-first (Q2 might become a “child” or appear later, say Q17), ensuring each path is traversed recursively in a structured manner.
+    * Breadth-First matches the left BFS example: nodes at each layer are completed before moving down.
+    * Depth-First matches the right DFS example: children appear as soon as the parent is answered, so “siblings” might not appear until much later (and could have higher question IDs).
 3. Sequential Question Generation
-    * The system spawns each new question only after the current one is answered, preventing user overload.
+    * Only one question at a time—no overload or confusion.
 4. Granular Unknown/Conflict Settings
-    * Minor issues are auto-fixed if desired; major ones always prompt user choice.
+    * Minor issues can be auto-handled, major ones prompt user input.
 5. Flexible Stopping
-    * Either a question cap or the AI’s sense of “enough data” triggers final mockup generation.
+    * Either a question cap or AI-based sense of completeness.
 6. Requirements & Live Prototype
-    * Produces a comprehensive requirements document and a functional React/Tailwind mockup.
+    * Results in a thorough doc plus a React/Tailwind mockup derived from the final Q&A.
 7. Multiple Versions & Saved Sessions
-    * Allows iterative design changes and the ability to pause/resume Q&A at will.
+    * Allows iterative design changes and the option to pause/resume Q&A at any point.
