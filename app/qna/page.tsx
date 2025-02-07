@@ -374,11 +374,12 @@ export default function QnAPage() {
       setPrompt(storedPrompt);
       setSettings(parsedSettings);
       
-      // Create and set up root node
+      // Create and set up root node (Q0)
       const rootNode: QANode = {
         id: uuidv4(),
         question: `Prompt: ${storedPrompt}`,
         children: [],
+        questionNumber: 0, // Explicitly set prompt as Q0
       };
       setQaTree(rootNode);
       
@@ -398,9 +399,11 @@ export default function QnAPage() {
       };
       setRequirementsDoc(initialRequirementsDoc);
       
-      // Generate first question
+      // Generate first question (Q1)
       fetchQuestionsForNode(storedPrompt, rootNode).then(({ nodes: children }) => {
         if (children.length > 0) {
+          // Set first actual question as Q1
+          children[0].questionNumber = 1;
           rootNode.children = children;
           setQaTree({ ...rootNode });
           setCurrentNode(children[0]);
@@ -441,11 +444,18 @@ export default function QnAPage() {
       if (nextNode) {
         // Verify this question hasn't been asked before
         if (!askedQuestions.has(nextNode.question)) {
-          setCurrentNode(nextNode);
-          setQuestionCount(prev => prev + 1);
+          // Find the parent node where we should add the new question
+          const parent = findParentNode(qaTree!, currentNode) || qaTree;
+          if (parent) {
+            // Add the new question to the parent's children
+            parent.children.push(nextNode);
+            setCurrentNode(nextNode);
+            setQuestionCount(prev => prev + 1);
+            // Update the tree state to trigger re-render
+            setQaTree(prev => prev ? { ...prev } : prev);
+          }
         } else {
           console.warn('Duplicate question detected:', nextNode.question);
-          // Try to get another question or end if no valid questions remain
           setCurrentNode(null);
         }
       } else {
@@ -453,9 +463,6 @@ export default function QnAPage() {
         // Final requirements update with no current node
         await updateRequirements(null);
       }
-      
-      // Update the tree state
-      setQaTree(prev => prev ? { ...prev } : prev);
     } catch (error) {
       console.error('Error in handleAnswer:', error);
     } finally {
@@ -520,9 +527,66 @@ export default function QnAPage() {
     }
   };
 
+  const handleRestart = () => {
+    // Set loading state
+    setIsLoading(true);
+    setIsLoadingNextQuestion(true);
+    
+    // Create new root node (Q0)
+    const rootNode: QANode = {
+      id: uuidv4(),
+      question: `Prompt: ${prompt}`,
+      children: [],
+      questionNumber: 0, // Explicitly set prompt as Q0
+    };
+    
+    // Reset all states
+    setQaTree(rootNode);
+    setQuestionCount(0);
+    setCurrentNode(null);
+    setAskedQuestions(new Set());
+    setAskedTopics(new Set());
+    
+    // Reset requirements document
+    const initialRequirementsDoc: RequirementsDocument = {
+      id: uuidv4(),
+      prompt: prompt,
+      lastUpdated: new Date().toISOString(),
+      categories: {
+        basicNeeds: { title: 'Basic Needs', requirements: [] },
+        functionalRequirements: { title: 'Functional Requirements', requirements: [] },
+        userExperience: { title: 'User Experience', requirements: [] },
+        implementation: { title: 'Implementation', requirements: [] },
+        refinements: { title: 'Refinements', requirements: [] },
+        constraints: { title: 'Constraints', requirements: [] }
+      }
+    };
+    setRequirementsDoc(initialRequirementsDoc);
+    
+    // Generate first question (Q1)
+    fetchQuestionsForNode(prompt, rootNode)
+      .then(({ nodes: children }) => {
+        if (children.length > 0) {
+          // Set first actual question as Q1
+          children[0].questionNumber = 1;
+          rootNode.children = children;
+          setQaTree({ ...rootNode });
+          setCurrentNode(children[0]);
+          setQuestionCount(1);
+        }
+      })
+      .catch(error => {
+        console.error('Error generating first question:', error);
+      })
+      .finally(() => {
+        setIsLoading(false);
+        setIsLoadingNextQuestion(false);
+      });
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
-      <HeaderToolbar />
+      <HeaderToolbar onRestart={handleRestart} showRestartButton={!isLoading} />
       <div className="py-2 px-6 bg-white border-b border-gray-200">
         <div className="flex justify-between items-center">
           <div className="text-sm text-gray-600">
