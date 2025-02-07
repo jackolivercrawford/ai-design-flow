@@ -1,6 +1,7 @@
 // /app/api/generate-questions/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { KnowledgeBaseSource } from '@/types/settings';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -8,7 +9,7 @@ const openai = new OpenAI({
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, previousQuestions, traversalMode } = await request.json();
+    const { prompt, previousQuestions, traversalMode, knowledgeBase } = await request.json();
 
     // Calculate current depth by counting parents in previousQuestions
     let currentDepth = 0;
@@ -17,6 +18,27 @@ export async function POST(request: NextRequest) {
       currentDepth++;
       currentParent = currentParent.parent;
     }
+
+    // Format knowledge base content for the prompt
+    const knowledgeBaseContext = knowledgeBase?.length 
+      ? `The following information is available from multiple knowledge base sources:
+
+${knowledgeBase.map((source: KnowledgeBaseSource, index: number) => `
+Source ${index + 1} (${source.type === 'file' ? 'File' : 'Text'}: ${source.name}):
+Requirements: ${JSON.stringify(source.processedContent?.requirements || [])}
+Technical Specs: ${JSON.stringify(source.processedContent?.technicalSpecifications || [])}
+Design Guidelines: ${JSON.stringify(source.processedContent?.designGuidelines || [])}
+User Preferences: ${JSON.stringify(source.processedContent?.userPreferences || [])}
+Industry Standards: ${JSON.stringify(source.processedContent?.industryStandards || [])}
+`).join('\n')}
+
+Use this information to:
+- Auto-populate answers when confident (especially when multiple sources agree)
+- Guide question generation based on available information
+- Identify gaps that need to be filled
+- Validate answers against known constraints
+- Highlight any conflicts between different sources`
+      : 'No knowledge base provided.';
 
     const messages = [
       {
@@ -42,12 +64,17 @@ Follow these guidelines:
    - BFS: Focus on getting a complete picture at the current level before going deeper
    - DFS: Thoroughly explore one aspect before moving to siblings
 
-4. Response Format:
+4. Knowledge Base Context:
+${knowledgeBaseContext}
+
+5. Response Format:
    Return a JSON object with:
    {
      "questions": ["Next question to ask"],
-     "shouldStopBranch": boolean, // true if this line of questioning is complete
-     "stopReason": "string explaining why we should stop (if shouldStopBranch is true)"
+     "shouldStopBranch": boolean,
+     "stopReason": "string explaining why we should stop (if shouldStopBranch is true)",
+     "suggestedAnswer": "string with auto-populated answer based on knowledge base (if applicable)",
+     "sourceReferences": ["array of source indices that contributed to the suggested answer"]
    }`
       },
       {
@@ -58,7 +85,8 @@ Previous Q&A: ${JSON.stringify(previousQuestions, null, 2)}
 Based on this context:
 1. Generate the next most appropriate question for the current depth level
 2. Determine if we should stop this line of questioning
-3. Return in the specified JSON format`
+3. If possible, suggest an answer based on the knowledge base (cite sources)
+4. Return in the specified JSON format`
       },
     ];
 
@@ -67,10 +95,23 @@ Based on this context:
       messages,
       temperature: 0.7,
       max_tokens: 150,
+      response_format: { type: "json_object" }
     });
 
     const content = completion.choices[0].message.content?.trim();
-    let response = { questions: [], shouldStopBranch: false, stopReason: '' };
+    let response: {
+      questions: string[];
+      shouldStopBranch: boolean;
+      stopReason: string;
+      suggestedAnswer: string | null;
+      sourceReferences: number[];
+    } = { 
+      questions: [], 
+      shouldStopBranch: false, 
+      stopReason: '',
+      suggestedAnswer: null,
+      sourceReferences: []
+    };
 
     try {
       response = JSON.parse(content!);
@@ -83,7 +124,9 @@ Based on this context:
       response = {
         questions: content?.split('\n').filter((line) => line.trim() !== '') || [],
         shouldStopBranch: false,
-        stopReason: ''
+        stopReason: '',
+        suggestedAnswer: null,
+        sourceReferences: []
       };
     }
 

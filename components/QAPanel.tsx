@@ -4,9 +4,10 @@ interface QAPanelProps {
   currentQuestion: string;
   onSubmitAnswer: (answer: string) => void;
   isLoading: boolean;
+  suggestedAnswer?: string | null;
 }
 
-export default function QAPanel({ currentQuestion, onSubmitAnswer, isLoading }: QAPanelProps) {
+export default function QAPanel({ currentQuestion, onSubmitAnswer, isLoading, suggestedAnswer }: QAPanelProps) {
   const [answer, setAnswer] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -14,6 +15,12 @@ export default function QAPanel({ currentQuestion, onSubmitAnswer, isLoading }: 
     if (answer.trim()) {
       onSubmitAnswer(answer);
       setAnswer('');
+    }
+  };
+
+  const handleUseSuggestion = () => {
+    if (suggestedAnswer) {
+      setAnswer(suggestedAnswer);
     }
   };
 
@@ -30,6 +37,24 @@ export default function QAPanel({ currentQuestion, onSubmitAnswer, isLoading }: 
           <p className="text-gray-800">{currentQuestion}</p>
         )}
       </div>
+
+      {suggestedAnswer && (
+        <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
+          <div className="flex justify-between items-start">
+            <div>
+              <h4 className="text-sm font-medium text-blue-900 mb-1">Suggested Answer:</h4>
+              <p className="text-sm text-blue-800">{suggestedAnswer}</p>
+            </div>
+            <button
+              onClick={handleUseSuggestion}
+              className="ml-4 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+            >
+              Use Suggestion
+            </button>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit}>
         <div className="space-y-4">
           <textarea

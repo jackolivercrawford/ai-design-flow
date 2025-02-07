@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import HeaderToolbar from '../../components/HeaderToolbar';
 import QAPanel from '../../components/QAPanel';
 import CanvasTree from '../../components/CanvasTree';
-import { QANode } from '../../types';
+import { QANode, RequirementsDocument } from '@/types';
 import { QASettings } from '@/types/settings';
 
 interface SavedProgress {
@@ -16,6 +16,7 @@ interface SavedProgress {
   questionCount: number;
   prompt: string;
   settings: QASettings;
+  requirementsDoc: RequirementsDocument;
 }
 
 export default function QnAPage() {
@@ -27,6 +28,8 @@ export default function QnAPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingNextQuestion, setIsLoadingNextQuestion] = useState(false);
   const [questionCount, setQuestionCount] = useState(0);
+  const [suggestedAnswer, setSuggestedAnswer] = useState<string | null>(null);
+  const [requirementsDoc, setRequirementsDoc] = useState<RequirementsDocument | null>(null);
 
   // Helper: Get the next question based on traversal mode
   const getNextQuestion = async (node: QANode): Promise<QANode | null> => {
@@ -201,9 +204,13 @@ export default function QnAPage() {
           prompt: designPrompt,
           previousQuestions: previousQA,
           traversalMode: settings?.traversalMode,
+          knowledgeBase: settings?.knowledgeBase
         }),
       });
       const data = await response.json();
+      
+      // Set suggested answer if available
+      setSuggestedAnswer(data.suggestedAnswer);
       
       // Create a single child node with the next question number
       const nextQuestionNumber = questionCount + 1;
@@ -236,6 +243,34 @@ export default function QnAPage() {
     return null;
   };
 
+  // Helper: Update requirements document
+  const updateRequirements = async (nodeId: string | null) => {
+    try {
+      const response = await fetch('/api/update-requirements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          qaTree,
+          currentNodeId: nodeId,
+          knowledgeBase: settings?.knowledgeBase,
+          existingDocument: requirementsDoc
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update requirements');
+      }
+
+      const updatedDoc = await response.json();
+      setRequirementsDoc(updatedDoc);
+      
+      // Save progress including requirements
+      saveProgress();
+    } catch (error) {
+      console.error('Error updating requirements:', error);
+    }
+  };
+
   // Helper: Save current progress to localStorage
   const saveProgress = () => {
     if (!qaTree || !settings) return;
@@ -245,7 +280,8 @@ export default function QnAPage() {
       currentNodeId: currentNode?.id || null,
       questionCount,
       prompt,
-      settings
+      settings,
+      requirementsDoc: requirementsDoc!
     };
     
     localStorage.setItem('qaProgress', JSON.stringify(progress));
@@ -272,6 +308,7 @@ export default function QnAPage() {
         setSettings(progress.settings);
         setQaTree(progress.qaTree);
         setQuestionCount(progress.questionCount);
+        setRequirementsDoc(progress.requirementsDoc);
         if (progress.currentNodeId) {
           const node = findNodeById(progress.qaTree, progress.currentNodeId);
           setCurrentNode(node);
@@ -297,6 +334,22 @@ export default function QnAPage() {
         children: [],
       };
       setQaTree(rootNode);
+      
+      // Initialize requirements document
+      const initialRequirementsDoc: RequirementsDocument = {
+        id: uuidv4(),
+        prompt: storedPrompt,
+        lastUpdated: new Date().toISOString(),
+        categories: {
+          basicNeeds: { title: 'Basic Needs', requirements: [] },
+          functionalRequirements: { title: 'Functional Requirements', requirements: [] },
+          userExperience: { title: 'User Experience', requirements: [] },
+          implementation: { title: 'Implementation', requirements: [] },
+          refinements: { title: 'Refinements', requirements: [] },
+          constraints: { title: 'Constraints', requirements: [] }
+        }
+      };
+      setRequirementsDoc(initialRequirementsDoc);
       
       // Generate first question
       fetchQuestionsForNode(storedPrompt, rootNode).then(({ nodes: children }) => {
@@ -330,6 +383,9 @@ export default function QnAPage() {
     // Record the answer
     currentNode.answer = answer;
     
+    // Update requirements document with new answer
+    await updateRequirements(currentNode.id);
+    
     // Get the next question based on traversal mode
     const nextNode = await getNextQuestion(currentNode);
     
@@ -338,6 +394,8 @@ export default function QnAPage() {
       setQuestionCount(prev => prev + 1);
     } else {
       setCurrentNode(null); // No more questions
+      // Final requirements update with no current node
+      await updateRequirements(null);
     }
     
     // Update the tree state
@@ -382,6 +440,7 @@ export default function QnAPage() {
             }
             onSubmitAnswer={handleAnswer}
             isLoading={isLoading || isLoadingNextQuestion}
+            suggestedAnswer={suggestedAnswer}
           />
         </div>
       </main>
