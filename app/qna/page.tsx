@@ -64,60 +64,180 @@ export default function QnAPage() {
   const getNextQuestion = async (node: QANode): Promise<QANode | null> => {
     const isDFS = settings?.traversalMode === 'dfs';
     
-    // Build complete question history including topics
-    const questionHistory: QuestionHistoryItem[] = [];
-    const collectHistory = (n: QANode) => {
-      if (n.question !== `Prompt: ${prompt}`) {
-        questionHistory.push({
-          question: n.question,
-          answer: n.answer,
-          topics: extractTopics(n.question)
-        });
-      }
-      n.children.forEach(collectHistory);
-    };
-    collectHistory(qaTree!);
-
-    try {
-      const response = await fetch('/api/generate-questions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          previousQuestions: questionHistory,
-          traversalMode: settings?.traversalMode,
-          knowledgeBase: settings?.knowledgeBase,
-          askedQuestions: Array.from(askedQuestions),
-          askedTopics: Array.from(askedTopics)
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch next question');
-      }
-
-      const data = await response.json();
-      
-      if (data.questions?.[0]) {
-        // Update tracking sets
-        setAskedQuestions(prev => new Set([...prev, data.questions[0]]));
-        const newTopics = extractTopics(data.questions[0]);
-        setAskedTopics(prev => new Set([...prev, ...newTopics]));
+    if (isDFS) {
+      // DFS: Try to go deeper first by exploring the current topic fully
+      if (node.answer) {
+        // Build complete question history including topics for the current branch
+        const branchHistory: QuestionHistoryItem[] = [];
+        let current: QANode | null = node;
+        let depth = 0;
         
-        // Create new node
-        return {
-          id: uuidv4(),
-          question: data.questions[0],
-          children: [],
-          questionNumber: questionCount + 1,
-        };
+        // Collect the current branch's history and calculate depth
+        while (current) {
+          if (current.question !== `Prompt: ${prompt}`) {
+            branchHistory.unshift({
+              question: current.question,
+              answer: current.answer,
+              topics: extractTopics(current.question)
+            });
+            depth++;
+          }
+          const parent = findParentNode(qaTree!, current);
+          if (!parent || parent === current) break;
+          current = parent;
+        }
+
+        // Try to generate a child question that explores the current topic deeper
+        const { nodes: children, shouldStopBranch, stopReason } = await fetchQuestionsForNode(
+          prompt, 
+          node,
+          branchHistory,
+          depth
+        );
+        
+        // If the AI suggests stopping this branch, move to siblings
+        if (shouldStopBranch) {
+          console.log(`Stopping current branch: ${stopReason}`);
+          // Find the next sibling at the highest incomplete level
+          let searchNode: QANode | null = node;
+          while (searchNode) {
+            const parent = findParentNode(qaTree!, searchNode);
+            if (!parent) break;
+            
+            const siblings = parent.children;
+            const currentIndex = siblings.indexOf(searchNode);
+            
+            if (currentIndex < siblings.length - 1) {
+              return siblings[currentIndex + 1];
+            }
+            searchNode = parent;
+          }
+        } 
+        // If we got new questions, verify they explore the current topic deeper
+        else if (children.length > 0) {
+          const newQuestionTopics = extractTopics(children[0].question);
+          const currentTopics = extractTopics(node.question);
+          
+          // Check if the new question is related to the current topic
+          const isRelatedTopic = currentTopics.some(topic => 
+            newQuestionTopics.includes(topic) || 
+            newQuestionTopics.some(t => t.includes(topic))
+          );
+
+          if (isRelatedTopic) {
+            // Set the question number based on exploration order
+            children[0].questionNumber = questionCount + 1;
+            node.children = children;
+            return children[0];
+          } else {
+            console.log('Generated question explores unrelated topic, trying siblings instead');
+            // Try to find the next sibling that continues the current topic
+            const parent = findParentNode(qaTree!, node);
+            if (parent) {
+              const siblings = parent.children;
+              const currentIndex = siblings.indexOf(node);
+              if (currentIndex < siblings.length - 1) {
+                return siblings[currentIndex + 1];
+              }
+            }
+          }
+        }
       }
       
-      return null;
-    } catch (error) {
-      console.error('Error getting next question:', error);
-      return null;
+      return null; // No more questions in this branch
+      
+    } else {
+      // BFS: Complete all questions at the current level before going deeper
+      const parent = findParentNode(qaTree!, node);
+      if (!parent) return null;
+      
+      // Get all nodes at the current level
+      const currentLevelNodes = parent.children;
+      const currentIndex = currentLevelNodes.indexOf(node);
+      const currentDepth = getNodeDepth(node);
+      
+      // Build question history for current level
+      const levelHistory: QuestionHistoryItem[] = currentLevelNodes.map(n => ({
+        question: n.question,
+        answer: n.answer,
+        topics: extractTopics(n.question)
+      }));
+      
+      // Check if all nodes at current level are answered
+      const allCurrentLevelAnswered = currentLevelNodes.every(n => n.answer);
+      
+      // If there are existing unanswered siblings, move to the next one
+      if (currentIndex < currentLevelNodes.length - 1) {
+        return currentLevelNodes[currentIndex + 1];
+      }
+      
+      // For top level (depth 1), ensure we have enough broad coverage before going deeper
+      // We want at least 3-4 high-level questions answered before considering going deeper
+      const isTopLevel = currentDepth === 1;
+      const shouldGenerateMoreSiblings = isTopLevel ? 
+        currentLevelNodes.length < 4 : // At top level, always try to get at least 4 questions
+        !allCurrentLevelAnswered;      // At other levels, generate siblings until all are answered
+      
+      // Only try to generate new siblings if we haven't completed the current level
+      // or if we need more top-level coverage
+      if (shouldGenerateMoreSiblings) {
+        const { nodes: newSiblings, shouldStopBranch } = await fetchQuestionsForNode(
+          prompt,
+          parent,
+          levelHistory,
+          currentDepth
+        );
+        
+        if (!shouldStopBranch && newSiblings.length > 0) {
+          // Set the question number sequentially within the layer
+          newSiblings[0].questionNumber = questionCount + 1;
+          parent.children = [...currentLevelNodes, ...newSiblings];
+          return newSiblings[0];
+        }
+      }
+      
+      // Only if ALL nodes at current level are answered AND we have enough top-level coverage,
+      // start going deeper
+      if (allCurrentLevelAnswered && (!isTopLevel || currentLevelNodes.length >= 3)) {
+        // Find the first answered node that doesn't have children yet
+        for (const sibling of currentLevelNodes) {
+          if (sibling.answer && sibling.children.length === 0) {
+            const siblingHistory = levelHistory.filter(h => 
+              extractTopics(h.question).some(t => 
+                extractTopics(sibling.question).includes(t)
+              )
+            );
+            
+            const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(
+              prompt,
+              sibling,
+              siblingHistory,
+              currentDepth + 1
+            );
+            
+            if (!shouldStopBranch && children.length > 0) {
+              // Set the question number sequentially for the next layer
+              children[0].questionNumber = questionCount + 1;
+              sibling.children = children;
+              return children[0];
+            }
+          }
+        }
+      }
+      
+      return null; // No more questions at this level or deeper
     }
+  };
+
+  // Helper: Get the depth of a node in the tree
+  const getNodeDepth = (node: QANode): number => {
+    let depth = 0;
+    let current = node;
+    while (findParentNode(qaTree!, current)) {
+      depth++;
+      current = findParentNode(qaTree!, current)!;
+    }
+    return depth;
   };
 
   // Helper: Find parent node
@@ -174,35 +294,27 @@ export default function QnAPage() {
   };
 
   // Helper: fetch questions for a node
-  const fetchQuestionsForNode = async (designPrompt: string, parentNode: QANode): Promise<{ nodes: QANode[], shouldStopBranch: boolean, stopReason: string }> => {
+  const fetchQuestionsForNode = async (designPrompt: string, parentNode: QANode, questionHistory: QuestionHistoryItem[], depth: number): Promise<{ nodes: QANode[], shouldStopBranch: boolean, stopReason: string }> => {
     try {
-      // Build the previous Q&A chain up to the root
-      const previousQA: Array<{ question: string; answer?: string; parent?: any }> = [];
-      let current: QANode | null = parentNode;
-      
-      while (current) {
-        if (current.answer && current.question !== `Prompt: ${prompt}`) {
-          previousQA.unshift({
-            question: current.question,
-            answer: current.answer,
-            parent: previousQA[0] || undefined
-          });
-        }
-        const parent = findParentNode(qaTree, current);
-        if (!parent || parent === current) break;
-        current = parent;
-      }
-
       console.log('Fetching questions with knowledge base:', settings?.knowledgeBase);
+      
+      // Get parent context for child questions
+      const parentContext = parentNode.question !== `Prompt: ${designPrompt}` ? {
+        parentQuestion: parentNode.question,
+        parentAnswer: parentNode.answer,
+        parentTopics: extractTopics(parentNode.question)
+      } : null;
       
       const response = await fetch('/api/generate-questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: designPrompt,
-          previousQuestions: previousQA,
+          previousQuestions: questionHistory,
           traversalMode: settings?.traversalMode,
-          knowledgeBase: settings?.knowledgeBase
+          knowledgeBase: settings?.knowledgeBase,
+          depth: depth,
+          parentContext: parentContext // Add parent context to help generate more specific child questions
         }),
       });
 
@@ -400,7 +512,7 @@ export default function QnAPage() {
       setRequirementsDoc(initialRequirementsDoc);
       
       // Generate first question (Q1)
-      fetchQuestionsForNode(storedPrompt, rootNode).then(({ nodes: children }) => {
+      fetchQuestionsForNode(storedPrompt, rootNode, [], 0).then(({ nodes: children }) => {
         if (children.length > 0) {
           // Set first actual question as Q1
           children[0].questionNumber = 1;
@@ -444,16 +556,15 @@ export default function QnAPage() {
       if (nextNode) {
         // Verify this question hasn't been asked before
         if (!askedQuestions.has(nextNode.question)) {
-          // Find the parent node where we should add the new question
-          const parent = findParentNode(qaTree!, currentNode) || qaTree;
-          if (parent) {
-            // Add the new question to the parent's children
-            parent.children.push(nextNode);
-            setCurrentNode(nextNode);
-            setQuestionCount(prev => prev + 1);
-            // Update the tree state to trigger re-render
-            setQaTree(prev => prev ? { ...prev } : prev);
-          }
+          // Add the question to the set of asked questions
+          setAskedQuestions(prev => new Set(prev).add(nextNode.question));
+          
+          // In BFS mode, the next node should already be properly placed by getNextQuestion
+          // We don't need to add it to any parent's children here as that's handled in getNextQuestion
+          setCurrentNode(nextNode);
+          setQuestionCount(prev => prev + 1);
+          // Update the tree state to trigger re-render
+          setQaTree(prev => prev ? { ...prev } : prev);
         } else {
           console.warn('Duplicate question detected:', nextNode.question);
           setCurrentNode(null);
@@ -472,15 +583,30 @@ export default function QnAPage() {
 
   const handleAutoPopulate = async (): Promise<string | null> => {
     try {
+      // Build the previous Q&A chain up to the current question
+      const questionHistory: QuestionHistoryItem[] = [];
+      const collectHistory = (n: QANode) => {
+        if (n.question !== `Prompt: ${prompt}`) {
+          questionHistory.push({
+            question: n.question,
+            answer: n.answer,
+            topics: extractTopics(n.question)
+          });
+        }
+        n.children.forEach(collectHistory);
+      };
+      collectHistory(qaTree!);
+
       const response = await fetch('/api/generate-questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt,
-          previousQuestions: [],  // We don't need previous questions for auto-populate
+          previousQuestions: questionHistory,  // Pass the full question history
           traversalMode: settings?.traversalMode,
           knowledgeBase: settings?.knowledgeBase,
-          currentQuestion: currentNode?.question
+          currentQuestion: currentNode?.question,
+          isAutoPopulate: true // Flag to indicate this is for auto-populate
         }),
       });
 
@@ -494,30 +620,6 @@ export default function QnAPage() {
       // Return the suggestedAnswer text if it exists
       if (data.suggestedAnswer) {
         return data.suggestedAnswer;
-      }
-      
-      // If we have questions but no suggested answer, try to use the first question as context
-      if (data.questions?.[0]) {
-        const contextResponse = await fetch('/api/generate-questions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt,
-            previousQuestions: [{
-              question: currentNode?.question || '',
-              answer: data.questions[0]
-            }],
-            traversalMode: settings?.traversalMode,
-            knowledgeBase: settings?.knowledgeBase
-          }),
-        });
-
-        if (contextResponse.ok) {
-          const contextData = await contextResponse.json();
-          if (contextData.suggestedAnswer) {
-            return contextData.suggestedAnswer;
-          }
-        }
       }
       
       return null;
@@ -564,7 +666,7 @@ export default function QnAPage() {
     setRequirementsDoc(initialRequirementsDoc);
     
     // Generate first question (Q1)
-    fetchQuestionsForNode(prompt, rootNode)
+    fetchQuestionsForNode(prompt, rootNode, [], 0)
       .then(({ nodes: children }) => {
         if (children.length > 0) {
           // Set first actual question as Q1

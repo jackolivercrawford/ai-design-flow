@@ -94,7 +94,8 @@ const openai = new OpenAI({
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, previousQuestions, traversalMode, knowledgeBase } = await request.json();
+    const { prompt, previousQuestions, traversalMode, knowledgeBase, isAutoPopulate, currentQuestion, depth } = await request.json();
+    console.log('API received knowledge base:', knowledgeBase);
 
     // Calculate current depth by counting parents in previousQuestions
     let currentDepth = 0;
@@ -125,53 +126,166 @@ Use this information to:
 - Highlight any conflicts between different sources`
       : 'No knowledge base provided.';
 
+    console.log('Formatted knowledge base context:', knowledgeBaseContext);
+
     const messages = [
       {
         role: 'system' as const,
-        content: `You are an expert UX design assistant that helps generate follow-up questions for a design prompt. Your questions should follow a clear progression from basic needs to specific implementation details.
+        content: isAutoPopulate 
+          ? `You are an expert UX design assistant that helps suggest answers based on the knowledge base and context. Your task is to provide a well-reasoned answer to the current question.
+
+Knowledge Base Context:
+${knowledgeBaseContext}
+
+Previous Questions Already Asked:
+${previousQuestions.map((q: { question: string; answer: string }, index: number) => 
+  `${index + 1}. Q: ${q.question}\n   A: ${q.answer}`
+).join('\n')}
+
+Guidelines for suggesting answers:
+1. Focus ONLY on answering the current question
+2. Use information from the knowledge base when available
+3. Write answers in third person, making definitive statements
+4. Avoid second person pronouns (your, you, yours) entirely
+5. State suggestions as definitive facts that can be modified
+6. Avoid hedging words like "might", "could", "probably", "likely", "maybe"
+7. Make clear, direct suggestions even with low confidence
+8. If multiple knowledge base sources agree, use that information with high confidence
+9. If sources conflict, use the most relevant or recent information
+10. If no relevant information exists, provide a reasonable suggestion based on UX best practices`
+          : `You are an expert UX design assistant that helps generate follow-up questions for a design prompt. Your questions should follow a clear progression based on the traversal mode.
 
 Follow these guidelines:
 1. Question Progression Levels:
-   - Level 1 (Basic Needs): Ask about fundamental user needs, target audience, and primary use cases
-   - Level 2 (Requirements): Focus on specific requirements, constraints, and key features
-   - Level 3 (User Experience): Explore UX preferences, accessibility needs, and interaction patterns
-   - Level 4 (Implementation): Discuss specific UI elements, layouts, and technical requirements
-   - Level 5 (Refinement): Fine-tune details, edge cases, and specific feature behaviors
+   Current Depth: ${depth}/5
+   
+   BFS Mode Levels:
+   - Level 0: Root/Prompt
+   - Level 1 (Basic Needs): Fundamental requirements, target audience, core purpose
+   - Level 2 (Features): Specific features, functionality, key interactions
+   - Level 3 (Details): Implementation specifics, technical requirements
+   - Level 4 (Refinements): Edge cases, optimizations, advanced features
+   - Level 5 (Polish): Final touches, minor improvements
 
-2. Current Depth: ${currentDepth}/5
-   - If depth > 4, only continue if absolutely necessary for critical information
-   - Consider stopping the current line of questioning if:
-     * The answers provide sufficient detail for implementation
-     * The topic has been thoroughly explored
-     * Further questions would be too specific or redundant
+   DFS Mode Topics:
+   - Start with a main topic (e.g., "load capacity")
+   - Explore all aspects of that topic before moving to siblings
+   - Go as deep as needed within a topic before switching
+   - Example progression:
+     * Main topic → Specific feature → Technical details → Edge cases
 
-3. Traversal Mode: ${traversalMode}
-   - BFS: Focus on getting a complete picture at the current level before going deeper
-   - DFS: Thoroughly explore one aspect before moving to siblings
+2. Traversal Rules (${traversalMode}):
+   ${traversalMode === 'bfs' 
+     ? `BFS Guidelines:
+        - Generate questions that belong at the current depth (${depth})
+        - Each question should cover a different aspect at this level
+        - Do not go deeper until all aspects at this level are covered
+        - Questions should be numbered sequentially within each layer
+        - Example: At depth 1, cover all main topics before details`
+     : `DFS Guidelines:
+        - Generate questions that explore the current topic deeper
+        - Stay focused on the current topic until fully explored
+        - Only suggest moving to a sibling topic when current is complete
+        - Questions should be numbered in exploration order
+        - Example: Explore all load capacity features before moving to floor input`
+   }
 
-4. Knowledge Base Context:
+3. Topic Management:
+   - Track the current topic and its subtopics
+   - Ensure new questions maintain proper topic hierarchy
+   - In BFS: Different aspects at same depth
+   - In DFS: Deeper exploration of current topic
+
+4. Question Generation:
+   - Questions must be specific and focused
+   - Include clear parent-child relationships
+   - Maintain proper depth progression
+   - Follow numbering conventions per mode
+
+5. Stopping Criteria:
+   - Stop current branch if:
+     * Topic is fully explored (all aspects covered)
+     * Further questions would be too specific
+     * A different topic needs attention
+     * Knowledge base provides sufficient information
+
+6. Knowledge Base Context:
 ${knowledgeBaseContext}
 
-5. Response Format:
-   Return a JSON object with:
+7. Previous Questions Already Asked:
+${previousQuestions.map((q: { question: string; answer: string }, index: number) => 
+  `${index + 1}. Q: ${q.question}\n   A: ${q.answer}`
+).join('\n')}
+
+8. Response Format:
    {
      "questions": ["Next question to ask"],
      "shouldStopBranch": boolean,
-     "stopReason": "string explaining why we should stop (if shouldStopBranch is true)",
-     "suggestedAnswer": "string with auto-populated answer based on knowledge base (if applicable)",
-     "sourceReferences": ["array of source indices that contributed to the suggested answer"]
-   }`
+     "stopReason": "Detailed explanation of why we should stop this branch",
+     "suggestedAnswer": "string with best guess answer based on knowledge base",
+     "sourceReferences": [array of source indices that contributed],
+     "confidence": "high" | "medium" | "low",
+     "topicsCovered": ["list of topics this question relates to"],
+     "parentTopic": "The main topic this question belongs to",
+     "subtopics": ["Potential child topics for this question"]
+   }
+
+9. Answer Generation Guidelines:
+   - Write answers in third person, making definitive statements
+   - Avoid second person pronouns (your, you, yours) entirely
+   - State suggestions as definitive facts that can be modified
+   - Avoid hedging words like "might", "could", "probably", "likely", "maybe"
+   - Make clear, direct suggestions even with low confidence`
       },
       {
         role: 'user' as const,
-        content: `The design prompt is: "${prompt}".
-Previous Q&A: ${JSON.stringify(previousQuestions, null, 2)}
+        content: isAutoPopulate
+          ? `The design prompt is: "${prompt}"
 
-Based on this context:
-1. Generate the next most appropriate question for the current depth level
-2. Determine if we should stop this line of questioning
-3. If possible, suggest an answer based on the knowledge base (cite sources)
-4. Return in the specified JSON format`
+Current Question: "${currentQuestion}"
+
+Based on the knowledge base and previous Q&A context:
+1. Analyze the knowledge base for relevant information about this specific question
+2. Consider the context from previous questions and answers
+3. Provide a clear, direct answer following the guidelines
+4. Indicate which knowledge base sources (if any) contributed to the answer
+5. Rate your confidence in the answer as high/medium/low
+
+Return your response in this format:
+{
+  "questions": [],
+  "shouldStopBranch": false,
+  "stopReason": "",
+  "suggestedAnswer": "Your suggested answer here",
+  "sourceReferences": [array of source indices that contributed],
+  "confidence": "high" | "medium" | "low"
+}`
+          : `The design prompt is: "${prompt}".
+Previous Q&A History:
+${JSON.stringify(previousQuestions, null, 2)}
+
+Current Question: ${previousQuestions[previousQuestions.length - 1]?.question || 'Initial question'}
+
+CRITICAL REQUIREMENTS:
+1. Review ALL previous questions and their topics carefully
+2. Generate a question that explores a COMPLETELY DIFFERENT aspect not covered in ANY previous question
+3. For BFS mode, ensure the new question:
+   - Stays at the same level
+   - Covers a new topic not related to any previous questions
+   - Follows the level-specific topic guidelines
+4. Provide a suggested answer following the guidelines
+
+Topics already covered (DO NOT ask about these or related topics):
+${previousQuestions.map((q: { question: string }, index: number) => 
+  `${index + 1}. ${q.question}`
+).join('\n')}
+
+Remember:
+- NEVER repeat a topic that's been covered in previous questions
+- Each new question must explore a different aspect of the design
+- In BFS mode, stay at the current level but explore new topics
+- Make clear, direct statements in suggested answers
+- Never use second person pronouns`
       },
     ];
 
@@ -179,39 +293,90 @@ Based on this context:
       model: 'gpt-4',
       messages,
       temperature: 0.7,
-      max_tokens: 150,
-      response_format: { type: "json_object" }
+      max_tokens: 500
     });
 
     const content = completion.choices[0].message.content?.trim();
+    if (!content) {
+      throw new Error('Empty response from OpenAI');
+    }
+
+    console.log('Raw OpenAI response:', content);
+
     let response: {
       questions: string[];
       shouldStopBranch: boolean;
       stopReason: string;
       suggestedAnswer: string | null;
       sourceReferences: number[];
-    } = { 
-      questions: [], 
-      shouldStopBranch: false, 
-      stopReason: '',
-      suggestedAnswer: null,
-      sourceReferences: []
+      confidence?: 'high' | 'medium' | 'low';
+      topicsCovered: string[];
+      parentTopic: string;
+      subtopics: string[];
     };
 
     try {
-      response = JSON.parse(content!);
+      response = JSON.parse(content);
+      console.log('Initial parsed response:', response);
+      
+      // Ensure we always have a suggested answer
+      if (!response.suggestedAnswer) {
+        console.log('No suggested answer provided, creating a default one');
+        response.suggestedAnswer = "Based on general UX principles, a reasonable approach would be...";
+        response.confidence = 'low';
+        response.sourceReferences = [];
+      }
+      
       if (!Array.isArray(response.questions)) {
         throw new Error("Questions is not an array");
+      }
+      
+      // Clean up questions to ensure they're plain text
+      response.questions = response.questions.map((q: any) => {
+        if (typeof q === 'string') {
+          // Try to parse if it looks like JSON
+          try {
+            const parsed = JSON.parse(q);
+            return parsed.question || parsed.text || q;
+          } catch {
+            return q;
+          }
+        }
+        return q.question || q.text || JSON.stringify(q);
+      });
+      
+      // Ensure suggestedAnswer has the required format
+      if (response.suggestedAnswer) {
+        console.log('Found suggested answer:', response.suggestedAnswer);
+        
+        // Make sure suggestedAnswer is a string
+        const suggestedAnswerText = typeof response.suggestedAnswer === 'object' 
+          ? (response.suggestedAnswer as { text?: string }).text || JSON.stringify(response.suggestedAnswer)
+          : response.suggestedAnswer;
+        
+        response = {
+          ...response,
+          suggestedAnswer: suggestedAnswerText,
+          confidence: response.confidence || 'high',  // Default to high if we have a suggestion
+          sourceReferences: response.sourceReferences || []
+        };
+        console.log('Formatted response with suggestion:', response);
+      } else {
+        console.log('No suggested answer in response');
       }
     } catch (jsonError) {
       console.error("Error parsing API response:", jsonError);
       // Fallback: extract questions from text
       response = {
-        questions: content?.split('\n').filter((line) => line.trim() !== '') || [],
+        questions: [content], // Use the entire content as a single question
         shouldStopBranch: false,
         stopReason: '',
         suggestedAnswer: null,
-        sourceReferences: []
+        sourceReferences: [],
+        confidence: 'low',
+        topicsCovered: [],
+        parentTopic: '',
+        subtopics: []
       };
     }
 
@@ -378,75 +543,152 @@ function findNodeById(root: QANode | null, id: string): QANode | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const { qaTree, currentNodeId, knowledgeBase, existingDocument } = await request.json();
+    const body = await request.json();
+    console.log('Received update request:', body);
+    
+    const { qaTree, currentNodeId, knowledgeBase, existingDocument } = body;
+    
+    if (!qaTree || !existingDocument) {
+      return NextResponse.json(
+        { error: 'QA Tree and existing document are required' },
+        { status: 400 }
+      );
+    }
     
     // Find the current node that was just answered
     const currentNode = currentNodeId ? findNodeById(qaTree, currentNodeId) : null;
     
     // Format the Q&A history and knowledge base for the AI
-    const qaContext = JSON.stringify(qaTree, null, 2);
+    const qaContext = JSON.stringify({
+      question: currentNode?.question || 'No current question',
+      answer: currentNode?.answer || 'No answer',
+      previousQuestions: qaTree.children.map((node: QANode) => ({
+        question: node.question,
+        answer: node.answer
+      }))
+    }, null, 2);
+
     const knowledgeBaseContext = knowledgeBase?.length
-      ? knowledgeBase.map((source: KnowledgeBaseSource, index: number) => `
-Source ${index + 1} (${source.type}): ${source.name}
-${Object.entries(source.processedContent || {}).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n')}
-`).join('\n')
+      ? knowledgeBase.map((source: KnowledgeBaseSource, index: number) => 
+          `Source ${index + 1}: ${Object.entries(source.processedContent || {})
+            .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+            .join('\n')}`
+        ).join('\n\n')
       : 'No knowledge base provided';
+
+    console.log('Sending to OpenAI:', {
+      qaContext: qaContext.substring(0, 100) + '...',
+      knowledgeBaseContext: knowledgeBaseContext.substring(0, 100) + '...'
+    });
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4",
       messages: [
         {
           role: "system",
-          content: `You are a requirements analyst that helps maintain and update a product requirements document based on Q&A sessions and knowledge base information.
+          content: `You are a requirements document updater. Your task is to update a requirements document based on Q&A session information and knowledge base data.
 
-The requirements document is organized into categories:
-1. Basic Needs - Fundamental user needs and target audience
-2. Functional Requirements - Core features and functionality
-3. User Experience - UX patterns, accessibility, and user interactions
-4. Implementation - Technical specifications and UI elements
-5. Refinements - Edge cases and detailed behaviors
-6. Constraints - Limitations and restrictions
-
-For each requirement, you should:
-- Determine the appropriate category
-- Set priority (high/medium/low)
-- Assign relevant tags
-- Categorize type (functional/technical/ux/accessibility/security/performance)
-- Track the source (user-qa or knowledge-base)
-
-Your task is to:
-1. Analyze the new answer and knowledge base
-2. Update or add requirements based on new information
-3. Ensure consistency across requirements
-4. Return the updated document in the specified format`
+CRITICAL INSTRUCTIONS:
+1. You MUST return ONLY a valid JSON object.
+2. DO NOT include any explanatory text, markdown, or other content.
+3. DO NOT wrap the JSON in code blocks or quotes.
+4. The JSON must exactly match this structure:
+{
+  "id": string,
+  "prompt": string,
+  "lastUpdated": string (ISO date),
+  "categories": {
+    "basicNeeds": {
+      "title": "Basic Needs",
+      "requirements": []
+    },
+    "functionalRequirements": {
+      "title": "Functional Requirements",
+      "requirements": []
+    },
+    "userExperience": {
+      "title": "User Experience",
+      "requirements": []
+    },
+    "implementation": {
+      "title": "Implementation",
+      "requirements": []
+    },
+    "refinements": {
+      "title": "Refinements",
+      "requirements": []
+    },
+    "constraints": {
+      "title": "Constraints",
+      "requirements": []
+    }
+  }
+}`
         },
         {
           role: "user",
-          content: `Current Q&A Tree: ${qaContext}
+          content: `Current Requirements Document:
+${JSON.stringify(existingDocument, null, 2)}
+
+Latest Q&A:
+${qaContext}
 
 Knowledge Base Information:
 ${knowledgeBaseContext}
 
-Current Requirements Document:
-${JSON.stringify(existingDocument || {}, null, 2)}
-
-Latest Answer: ${currentNode ? `
-Question: ${currentNode.question}
-Answer: ${currentNode.answer}` : 'No new answer'}
-
-Please update the requirements document and return it in JSON format.`
+Update the requirements document with any new information from the Q&A and knowledge base. Return ONLY the updated document as a JSON object. Do not include any additional text or formatting.`
         }
       ],
-      response_format: { type: "json_object" }
+      temperature: 0.3,
+      max_tokens: 2000
     });
 
-    const updatedDocument = JSON.parse(completion.choices[0].message.content!);
+    const content = completion.choices[0].message.content;
+    if (!content) {
+      throw new Error('Empty response from OpenAI');
+    }
 
-    return NextResponse.json(updatedDocument);
+    console.log('OpenAI response:', content.substring(0, 100) + '...');
+
+    try {
+      const updatedDocument = JSON.parse(content);
+      
+      // Validate the document structure
+      if (!updatedDocument.id || !updatedDocument.categories) {
+        console.error('Invalid document structure:', updatedDocument);
+        return NextResponse.json(existingDocument);
+      }
+      
+      // Ensure all required categories exist
+      const requiredCategories = [
+        'basicNeeds',
+        'functionalRequirements',
+        'userExperience',
+        'implementation',
+        'refinements',
+        'constraints'
+      ];
+      
+      const hasAllCategories = requiredCategories.every(
+        category => updatedDocument.categories[category]
+      );
+      
+      if (!hasAllCategories) {
+        console.error('Missing required categories');
+        return NextResponse.json(existingDocument);
+      }
+      
+      return NextResponse.json(updatedDocument);
+    } catch (parseError) {
+      console.error('Error parsing OpenAI response:', parseError);
+      console.error('Raw response:', content);
+      // If parsing fails, return the existing document unchanged
+      return NextResponse.json(existingDocument);
+    }
   } catch (error) {
     console.error('Error updating requirements:', error);
     return NextResponse.json(
-      { error: 'Failed to update requirements' },
+      { error: error instanceof Error ? error.message : 'Unknown error occurred' },
       { status: 500 }
     );
   }
@@ -508,6 +750,12 @@ interface SavedProgress {
   requirementsDoc: RequirementsDocument;
 }
 
+interface QuestionHistoryItem {
+  question: string;
+  answer?: string;
+  topics: string[];
+}
+
 export default function QnAPage() {
   const router = useRouter();
   const [prompt, setPrompt] = useState<string>('');
@@ -517,58 +765,150 @@ export default function QnAPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingNextQuestion, setIsLoadingNextQuestion] = useState(false);
   const [questionCount, setQuestionCount] = useState(0);
-  const [suggestedAnswer, setSuggestedAnswer] = useState<string | null>(null);
+  const [suggestedAnswer, setSuggestedAnswer] = useState<{
+    text: string;
+    confidence: 'high' | 'medium' | 'low';
+    sourceReferences: number[];
+  } | null>(null);
   const [requirementsDoc, setRequirementsDoc] = useState<RequirementsDocument | null>(null);
+  const [askedQuestions, setAskedQuestions] = useState<Set<string>>(new Set());
+  const [askedTopics, setAskedTopics] = useState<Set<string>>(new Set());
+
+  // Helper: Extract topics from a question
+  const extractTopics = (question: string): string[] => {
+    const topics = [];
+    // Common topic indicators in questions
+    if (question.toLowerCase().includes('audience') || 
+        question.toLowerCase().includes('user') || 
+        question.toLowerCase().includes('visitor')) {
+      topics.push('audience');
+    }
+    if (question.toLowerCase().includes('purpose') || 
+        question.toLowerCase().includes('goal')) {
+      topics.push('purpose');
+    }
+    // Add more topic extractors as needed
+    return topics;
+  };
 
   // Helper: Get the next question based on traversal mode
   const getNextQuestion = async (node: QANode): Promise<QANode | null> => {
     const isDFS = settings?.traversalMode === 'dfs';
     
     if (isDFS) {
-      // DFS: Try to go deeper first
+      // DFS: Try to go deeper first by exploring the current topic fully
       if (node.answer) {
-        // If this node has an answer, try to generate its first child
-        const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(prompt, node);
+        // Build complete question history including topics for the current branch
+        const branchHistory: QuestionHistoryItem[] = [];
+        let current: QANode | null = node;
+        let depth = 0;
         
-        // If we should stop this branch or no children were generated, move to siblings
-        if (!shouldStopBranch && children.length > 0) {
-          node.children = children;
-          return children[0];
+        // Collect the current branch's history and calculate depth
+        while (current) {
+          if (current.question !== `Prompt: ${prompt}`) {
+            branchHistory.unshift({
+              question: current.question,
+              answer: current.answer,
+              topics: extractTopics(current.question)
+            });
+            depth++;
+          }
+          const parent = findParentNode(qaTree!, current);
+          if (!parent || parent === current) break;
+          current = parent;
+        }
+
+        // Try to generate a child question that explores the current topic deeper
+        const { nodes: children, shouldStopBranch, stopReason } = await fetchQuestionsForNode(
+          prompt, 
+          node,
+          branchHistory,
+          depth
+        );
+        
+        // If the AI suggests stopping this branch, move to siblings
+        if (shouldStopBranch) {
+          console.log(`Stopping current branch: ${stopReason}`);
+          // Find the next sibling at the highest incomplete level
+          let searchNode: QANode | null = node;
+          while (searchNode) {
+            const parent = findParentNode(qaTree!, searchNode);
+            if (!parent) break;
+            
+            const siblings = parent.children;
+            const currentIndex = siblings.indexOf(searchNode);
+            
+            if (currentIndex < siblings.length - 1) {
+              return siblings[currentIndex + 1];
+            }
+            searchNode = parent;
+          }
+        } 
+        // If we got new questions, verify they explore the current topic deeper
+        else if (children.length > 0) {
+          const newQuestionTopics = extractTopics(children[0].question);
+          const currentTopics = extractTopics(node.question);
+          
+          // Check if the new question is related to the current topic
+          const isRelatedTopic = currentTopics.some(topic => 
+            newQuestionTopics.includes(topic) || 
+            newQuestionTopics.some(t => t.includes(topic))
+          );
+
+          if (isRelatedTopic) {
+            // Set the question number based on exploration order
+            children[0].questionNumber = questionCount + 1;
+            node.children = children;
+            return children[0];
+          } else {
+            console.log('Generated question explores unrelated topic, trying siblings instead');
+            // Try to find the next sibling that continues the current topic
+            const parent = findParentNode(qaTree!, node);
+            if (parent) {
+              const siblings = parent.children;
+              const currentIndex = siblings.indexOf(node);
+              if (currentIndex < siblings.length - 1) {
+                return siblings[currentIndex + 1];
+              }
+            }
+          }
         }
       }
       
-      // If we can't go deeper, find the next sibling by traversing up
-      let current: QANode | null = node;
-      let parent = findParentNode(qaTree!, node);
+      return null; // No more questions in this branch
       
-      while (parent) {
-        const siblings = parent.children;
-        const currentIndex = siblings.indexOf(current!);
-        
-        if (currentIndex < siblings.length - 1) {
-          // Return next sibling
-          return siblings[currentIndex + 1];
-        }
-        
-        // Move up to try next level's sibling
-        current = parent;
-        parent = findParentNode(qaTree!, parent);
-      }
-      
-      return null; // No more questions
     } else {
-      // BFS: Complete current level before going deeper
+      // BFS: Complete all questions at the current level before going deeper
       const parent = findParentNode(qaTree!, node);
-      if (!parent) return null; // Safety check
+      if (!parent) return null;
       
-      // First, try to generate siblings at the current level
+      // Get all nodes at the current level
       const currentLevelNodes = parent.children;
       const currentIndex = currentLevelNodes.indexOf(node);
+      const currentDepth = getNodeDepth(node);
+      
+      // Check if all nodes at current level are answered
+      const allCurrentLevelAnswered = currentLevelNodes.every(n => n.answer);
+      
+      // Build question history for current level
+      const levelHistory: QuestionHistoryItem[] = currentLevelNodes.map(n => ({
+        question: n.question,
+        answer: n.answer,
+        topics: extractTopics(n.question)
+      }));
       
       // If this was the last answered node in its level, try to generate a new sibling
-      if (currentIndex === currentLevelNodes.length - 1 && node.answer) {
-        const { nodes: newSiblings, shouldStopBranch } = await fetchQuestionsForNode(prompt, parent);
+      if (currentIndex === currentLevelNodes.length - 1 && node.answer && !allCurrentLevelAnswered) {
+        const { nodes: newSiblings, shouldStopBranch } = await fetchQuestionsForNode(
+          prompt,
+          parent,
+          levelHistory,
+          currentDepth
+        );
+        
         if (!shouldStopBranch && newSiblings.length > 0) {
+          // Set the question number sequentially within the layer
+          newSiblings[0].questionNumber = questionCount + 1;
           parent.children = [...currentLevelNodes, ...newSiblings];
           return newSiblings[0];
         }
@@ -578,38 +918,47 @@ export default function QnAPage() {
         return currentLevelNodes[currentIndex + 1];
       }
       
-      // If we can't generate more siblings or move to next sibling,
-      // look for the first answered node without children at the current level
-      for (const sibling of currentLevelNodes) {
-        if (sibling.answer && sibling.children.length === 0) {
-          const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(prompt, sibling);
-          if (!shouldStopBranch && children.length > 0) {
-            sibling.children = children;
-            return children[0];
-          }
-        }
-      }
-      
-      // If we can't go deeper at this level, move to the next level
-      const nextLevelStart = findFirstUnansweredChild(qaTree!);
-      if (nextLevelStart) {
-        return nextLevelStart;
-      }
-      
-      // If no existing unanswered nodes, try to start a new level
-      // Find the first node at the current level that can have children
-      for (const sibling of currentLevelNodes) {
-        if (sibling.answer && sibling.children.length === 0) {
-          const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(prompt, sibling);
-          if (!shouldStopBranch && children.length > 0) {
-            sibling.children = children;
-            return children[0];
+      // If all nodes at current level are answered, start going deeper
+      if (allCurrentLevelAnswered) {
+        // Try to generate children for each answered node at this level in order
+        for (const sibling of currentLevelNodes) {
+          if (sibling.answer && sibling.children.length === 0) {
+            const siblingHistory = levelHistory.filter(h => 
+              extractTopics(h.question).some(t => 
+                extractTopics(sibling.question).includes(t)
+              )
+            );
+            
+            const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(
+              prompt,
+              sibling,
+              siblingHistory,
+              currentDepth + 1
+            );
+            
+            if (!shouldStopBranch && children.length > 0) {
+              // Set the question number sequentially for the next layer
+              children[0].questionNumber = questionCount + 1;
+              sibling.children = children;
+              return children[0];
+            }
           }
         }
       }
       
       return null; // No more questions at this level or deeper
     }
+  };
+
+  // Helper: Get the depth of a node in the tree
+  const getNodeDepth = (node: QANode): number => {
+    let depth = 0;
+    let current = node;
+    while (findParentNode(qaTree!, current)) {
+      depth++;
+      current = findParentNode(qaTree!, current)!;
+    }
+    return depth;
   };
 
   // Helper: Find parent node
@@ -666,40 +1015,51 @@ export default function QnAPage() {
   };
 
   // Helper: fetch questions for a node
-  const fetchQuestionsForNode = async (designPrompt: string, parentNode: QANode): Promise<{ nodes: QANode[], shouldStopBranch: boolean, stopReason: string }> => {
+  const fetchQuestionsForNode = async (designPrompt: string, parentNode: QANode, questionHistory: QuestionHistoryItem[], depth: number): Promise<{ nodes: QANode[], shouldStopBranch: boolean, stopReason: string }> => {
     try {
-      // Build the previous Q&A chain up to the root
-      const previousQA: Array<{ question: string; answer?: string; parent?: any }> = [];
-      let current: QANode | null = parentNode;
-      
-      while (current) {
-        // Don't include the root prompt node in the Q&A chain
-        if (current.answer && current.question !== `Prompt: ${prompt}`) {
-          previousQA.unshift({
-            question: current.question,
-            answer: current.answer,
-            parent: previousQA[0] || undefined
-          });
-        }
-        const parent = findParentNode(qaTree, current);
-        if (!parent || parent === current) break;
-        current = parent;
-      }
+      console.log('Fetching questions with knowledge base:', settings?.knowledgeBase);
       
       const response = await fetch('/api/generate-questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: designPrompt,
-          previousQuestions: previousQA,
+          previousQuestions: questionHistory,
           traversalMode: settings?.traversalMode,
-          knowledgeBase: settings?.knowledgeBase
+          knowledgeBase: settings?.knowledgeBase,
+          depth: depth
         }),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        throw new Error(`API request failed: ${errorData.error || response.statusText}`);
+      }
+
       const data = await response.json();
+      console.log('Received API response with suggested answer:', data.suggestedAnswer);
       
+      if (!data || !Array.isArray(data.questions) || data.questions.length === 0) {
+        throw new Error('Invalid response format or no questions received');
+      }
+
       // Set suggested answer if available
-      setSuggestedAnswer(data.suggestedAnswer);
+      if (data.suggestedAnswer) {
+        console.log('Setting suggested answer:', {
+          text: data.suggestedAnswer,
+          confidence: data.confidence || 'low',
+          sourceReferences: data.sourceReferences || []
+        });
+        
+        setSuggestedAnswer({
+          text: data.suggestedAnswer,
+          confidence: data.confidence || 'low',
+          sourceReferences: data.sourceReferences || []
+        });
+      } else {
+        console.log('Clearing suggested answer');
+        setSuggestedAnswer(null);
+      }
       
       // Create a single child node with the next question number
       const nextQuestionNumber = questionCount + 1;
@@ -712,12 +1072,23 @@ export default function QnAPage() {
       
       return {
         nodes,
-        shouldStopBranch: data.shouldStopBranch,
-        stopReason: data.stopReason
+        shouldStopBranch: data.shouldStopBranch || false,
+        stopReason: data.stopReason || 'No more questions needed'
       };
     } catch (error) {
       console.error("Error in fetchQuestionsForNode:", error);
-      return { nodes: [], shouldStopBranch: true, stopReason: "Error generating questions" };
+      // Return a default error question node
+      const errorNode: QANode = {
+        id: uuidv4(),
+        question: "Failed to generate question. Please try again or refresh the page.",
+        children: [],
+        questionNumber: questionCount + 1,
+      };
+      return { 
+        nodes: [errorNode], 
+        shouldStopBranch: true, 
+        stopReason: error instanceof Error ? error.message : "Error generating questions" 
+      };
     }
   };
 
@@ -735,6 +1106,11 @@ export default function QnAPage() {
   // Helper: Update requirements document
   const updateRequirements = async (nodeId: string | null) => {
     try {
+      if (!qaTree || !requirementsDoc) {
+        console.warn('Missing qaTree or requirementsDoc, skipping requirements update');
+        return;
+      }
+
       const response = await fetch('/api/update-requirements', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -747,16 +1123,22 @@ export default function QnAPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update requirements');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        throw new Error(`API request failed: ${errorData.error || response.statusText}`);
       }
 
       const updatedDoc = await response.json();
+      if (!updatedDoc || !updatedDoc.categories) {
+        throw new Error('Invalid requirements document received');
+      }
+
       setRequirementsDoc(updatedDoc);
       
       // Save progress including requirements
       saveProgress();
     } catch (error) {
       console.error('Error updating requirements:', error);
+      // Don't throw the error, just log it and continue
     }
   };
 
@@ -793,6 +1175,7 @@ export default function QnAPage() {
       // Load saved progress
       try {
         const progress: SavedProgress = JSON.parse(savedProgress);
+        console.log('Loaded settings with knowledge base:', progress.settings.knowledgeBase);
         setPrompt(progress.prompt);
         setSettings(progress.settings);
         setQaTree(progress.qaTree);
@@ -806,21 +1189,22 @@ export default function QnAPage() {
         return;
       } catch (error) {
         console.error("Error loading saved progress:", error);
-        // If loading saved progress fails, fall back to new session
       }
     }
     
     // Start new session
     if (storedPrompt && storedSettings) {
       const parsedSettings = JSON.parse(storedSettings);
+      console.log('Starting new session with knowledge base:', parsedSettings.knowledgeBase);
       setPrompt(storedPrompt);
       setSettings(parsedSettings);
       
-      // Create and set up root node
+      // Create and set up root node (Q0)
       const rootNode: QANode = {
         id: uuidv4(),
         question: `Prompt: ${storedPrompt}`,
         children: [],
+        questionNumber: 0, // Explicitly set prompt as Q0
       };
       setQaTree(rootNode);
       
@@ -840,9 +1224,11 @@ export default function QnAPage() {
       };
       setRequirementsDoc(initialRequirementsDoc);
       
-      // Generate first question
-      fetchQuestionsForNode(storedPrompt, rootNode).then(({ nodes: children }) => {
+      // Generate first question (Q1)
+      fetchQuestionsForNode(storedPrompt, rootNode, [], 0).then(({ nodes: children }) => {
         if (children.length > 0) {
+          // Set first actual question as Q1
+          children[0].questionNumber = 1;
           rootNode.children = children;
           setQaTree({ ...rootNode });
           setCurrentNode(children[0]);
@@ -861,40 +1247,162 @@ export default function QnAPage() {
     if (!currentNode || !settings) return;
     
     setIsLoadingNextQuestion(true);
+    setSuggestedAnswer(null);
     
     // Check if we've hit the question limit
     if (settings.maxQuestions && questionCount >= settings.maxQuestions) {
-      setCurrentNode(null); // End the Q&A session
+      setCurrentNode(null);
       setIsLoadingNextQuestion(false);
       return;
     }
     
-    // Record the answer
-    currentNode.answer = answer;
-    
-    // Update requirements document with new answer
-    await updateRequirements(currentNode.id);
-    
-    // Get the next question based on traversal mode
-    const nextNode = await getNextQuestion(currentNode);
-    
-    if (nextNode) {
-      setCurrentNode(nextNode);
-      setQuestionCount(prev => prev + 1);
-    } else {
-      setCurrentNode(null); // No more questions
-      // Final requirements update with no current node
-      await updateRequirements(null);
+    try {
+      // Record the answer
+      currentNode.answer = answer;
+      
+      // Update requirements document with new answer
+      await updateRequirements(currentNode.id);
+      
+      // Get the next question based on traversal mode
+      const nextNode = await getNextQuestion(currentNode);
+      
+      if (nextNode) {
+        // Verify this question hasn't been asked before
+        if (!askedQuestions.has(nextNode.question)) {
+          // Find the parent node where we should add the new question
+          const parent = findParentNode(qaTree!, currentNode) || qaTree;
+          if (parent) {
+            // Add the new question to the parent's children
+            parent.children.push(nextNode);
+            setCurrentNode(nextNode);
+            setQuestionCount(prev => prev + 1);
+            // Update the tree state to trigger re-render
+            setQaTree(prev => prev ? { ...prev } : prev);
+          }
+        } else {
+          console.warn('Duplicate question detected:', nextNode.question);
+          setCurrentNode(null);
+        }
+      } else {
+        setCurrentNode(null); // No more questions
+        // Final requirements update with no current node
+        await updateRequirements(null);
+      }
+    } catch (error) {
+      console.error('Error in handleAnswer:', error);
+    } finally {
+      setIsLoadingNextQuestion(false);
     }
+  };
+
+  const handleAutoPopulate = async (): Promise<string | null> => {
+    try {
+      // Build the previous Q&A chain up to the current question
+      const questionHistory: QuestionHistoryItem[] = [];
+      const collectHistory = (n: QANode) => {
+        if (n.question !== `Prompt: ${prompt}`) {
+          questionHistory.push({
+            question: n.question,
+            answer: n.answer,
+            topics: extractTopics(n.question)
+          });
+        }
+        n.children.forEach(collectHistory);
+      };
+      collectHistory(qaTree!);
+
+      const response = await fetch('/api/generate-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          previousQuestions: questionHistory,  // Pass the full question history
+          traversalMode: settings?.traversalMode,
+          knowledgeBase: settings?.knowledgeBase,
+          currentQuestion: currentNode?.question,
+          isAutoPopulate: true // Flag to indicate this is for auto-populate
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate answer');
+      }
+
+      const data = await response.json();
+      console.log('Auto-populate response:', data);
+      
+      // Return the suggestedAnswer text if it exists
+      if (data.suggestedAnswer) {
+        return data.suggestedAnswer;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error auto-populating answer:', error);
+      return null;
+    }
+  };
+
+  const handleRestart = () => {
+    // Set loading state
+    setIsLoading(true);
+    setIsLoadingNextQuestion(true);
     
-    // Update the tree state
-    setQaTree(prev => prev ? { ...prev } : prev);
-    setIsLoadingNextQuestion(false);
+    // Create new root node (Q0)
+    const rootNode: QANode = {
+      id: uuidv4(),
+      question: `Prompt: ${prompt}`,
+      children: [],
+      questionNumber: 0, // Explicitly set prompt as Q0
+    };
+    
+    // Reset all states
+    setQaTree(rootNode);
+    setQuestionCount(0);
+    setCurrentNode(null);
+    setAskedQuestions(new Set());
+    setAskedTopics(new Set());
+    
+    // Reset requirements document
+    const initialRequirementsDoc: RequirementsDocument = {
+      id: uuidv4(),
+      prompt: prompt,
+      lastUpdated: new Date().toISOString(),
+      categories: {
+        basicNeeds: { title: 'Basic Needs', requirements: [] },
+        functionalRequirements: { title: 'Functional Requirements', requirements: [] },
+        userExperience: { title: 'User Experience', requirements: [] },
+        implementation: { title: 'Implementation', requirements: [] },
+        refinements: { title: 'Refinements', requirements: [] },
+        constraints: { title: 'Constraints', requirements: [] }
+      }
+    };
+    setRequirementsDoc(initialRequirementsDoc);
+    
+    // Generate first question (Q1)
+    fetchQuestionsForNode(prompt, rootNode, [], 0)
+      .then(({ nodes: children }) => {
+        if (children.length > 0) {
+          // Set first actual question as Q1
+          children[0].questionNumber = 1;
+          rootNode.children = children;
+          setQaTree({ ...rootNode });
+          setCurrentNode(children[0]);
+          setQuestionCount(1);
+        }
+      })
+      .catch(error => {
+        console.error('Error generating first question:', error);
+      })
+      .finally(() => {
+        setIsLoading(false);
+        setIsLoadingNextQuestion(false);
+      });
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
-      <HeaderToolbar />
+      <HeaderToolbar onRestart={handleRestart} showRestartButton={!isLoading} />
       <div className="py-2 px-6 bg-white border-b border-gray-200">
         <div className="flex justify-between items-center">
           <div className="text-sm text-gray-600">
@@ -929,7 +1437,8 @@ export default function QnAPage() {
             }
             onSubmitAnswer={handleAnswer}
             isLoading={isLoading || isLoadingNextQuestion}
-            suggestedAnswer={suggestedAnswer}
+            hasKnowledgeBase={Boolean(settings?.knowledgeBase?.length)}
+            onAutoPopulate={handleAutoPopulate}
           />
         </div>
       </main>
@@ -1174,34 +1683,38 @@ export default CanvasTree;
 ----- /Users/jackcrawford/ai-design-flow/components/HeaderToolbar.tsx -----
 import Link from 'next/link';
 
-export default function HeaderToolbar() {
+interface HeaderToolbarProps {
+  onRestart?: () => void;
+  showRestartButton?: boolean;
+}
+
+const HeaderToolbar: React.FC<HeaderToolbarProps> = ({ onRestart, showRestartButton = false }) => {
   return (
-    <header className="bg-white border-b">
-      <div className="w-2/3 pl-6">
-        <div className="flex items-center justify-between py-4">
-          <div className="flex items-center space-x-6">
-            <Link href="/" className="text-xl font-bold text-gray-900 hover:text-blue-600 transition-colors">
+    <header className="bg-white border-b border-gray-200">
+      <div className="w-full px-2">
+        <div className="flex justify-between items-center h-16 max-w-[1920px] mx-auto">
+          <div className="pl-2">
+            <Link href="/" className="text-xl font-bold text-gray-900 hover:text-gray-700 transition-colors">
               AI Design Flow
             </Link>
-            <nav className="hidden sm:flex space-x-6">
-              <Link href="/qna" className="text-gray-600 hover:text-gray-900">Q&A</Link>
-              <Link href="/preview" className="text-gray-600 hover:text-gray-900">Preview</Link>
-            </nav>
           </div>
-          <div className="flex items-center">
-            <button className="text-gray-600 hover:text-gray-900">
-              <span className="sr-only">Settings</span>
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
+          <div className="pr-2">
+            {showRestartButton && onRestart && (
+              <button
+                onClick={onRestart}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Restart Q&A
+              </button>
+            )}
           </div>
         </div>
       </div>
     </header>
   );
-} 
+};
+
+export default HeaderToolbar; 
 
 ----- /Users/jackcrawford/ai-design-flow/components/PreviewArea.tsx -----
 interface PreviewAreaProps {
@@ -1538,15 +2051,31 @@ export default PromptInput;
 ----- /Users/jackcrawford/ai-design-flow/components/QAPanel.tsx -----
 import { useState } from 'react';
 
+interface SuggestedAnswer {
+  text: string;
+  confidence: 'high' | 'medium' | 'low';
+  sourceReferences?: number[];
+}
+
 interface QAPanelProps {
   currentQuestion: string;
   onSubmitAnswer: (answer: string) => void;
   isLoading: boolean;
-  suggestedAnswer?: string | null;
+  hasKnowledgeBase: boolean;
+  onAutoPopulate: () => Promise<string | null>;
+  suggestedAnswer?: SuggestedAnswer | null;
 }
 
-export default function QAPanel({ currentQuestion, onSubmitAnswer, isLoading, suggestedAnswer }: QAPanelProps) {
+export default function QAPanel({ 
+  currentQuestion, 
+  onSubmitAnswer, 
+  isLoading,
+  hasKnowledgeBase,
+  onAutoPopulate,
+  suggestedAnswer
+}: QAPanelProps) {
   const [answer, setAnswer] = useState('');
+  const [isAutoPopulating, setIsAutoPopulating] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1556,9 +2085,20 @@ export default function QAPanel({ currentQuestion, onSubmitAnswer, isLoading, su
     }
   };
 
-  const handleUseSuggestion = () => {
-    if (suggestedAnswer) {
-      setAnswer(suggestedAnswer);
+  const handleAutoPopulate = async () => {
+    setIsAutoPopulating(true);
+    try {
+      const suggestedAnswer = await onAutoPopulate();
+      if (suggestedAnswer) {
+        setAnswer(suggestedAnswer);
+      } else {
+        alert('No relevant information found in the knowledge base. Please provide your expert answer.');
+      }
+    } catch (error) {
+      console.error('Error generating answer:', error);
+      alert('There was an error accessing the knowledge base. Please provide your answer manually.');
+    } finally {
+      setIsAutoPopulating(false);
     }
   };
 
@@ -1577,17 +2117,31 @@ export default function QAPanel({ currentQuestion, onSubmitAnswer, isLoading, su
       </div>
 
       {suggestedAnswer && (
-        <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
-          <div className="flex justify-between items-start">
-            <div>
-              <h4 className="text-sm font-medium text-blue-900 mb-1">Suggested Answer:</h4>
-              <p className="text-sm text-blue-800">{suggestedAnswer}</p>
+        <div className="mb-4 p-4 rounded-lg border border-gray-200">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <h4 className="text-sm font-medium">Suggested Answer</h4>
+              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                suggestedAnswer.confidence === 'high' 
+                  ? 'bg-green-100 text-green-800'
+                  : suggestedAnswer.confidence === 'medium'
+                  ? 'bg-yellow-100 text-yellow-800'
+                  : 'bg-gray-100 text-gray-800'
+              }`}>
+                {suggestedAnswer.confidence} confidence
+              </span>
             </div>
+            <p className="text-sm">{suggestedAnswer.text}</p>
+            {suggestedAnswer.sourceReferences && suggestedAnswer.sourceReferences.length > 0 && (
+              <p className="text-xs mt-2 text-gray-600">
+                Sources: {suggestedAnswer.sourceReferences.map(ref => `#${ref + 1}`).join(', ')}
+              </p>
+            )}
             <button
-              onClick={handleUseSuggestion}
-              className="ml-4 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              onClick={handleAutoPopulate}
+              className="mt-3 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
-              Use Suggestion
+              Use This Answer
             </button>
           </div>
         </div>
@@ -1595,21 +2149,48 @@ export default function QAPanel({ currentQuestion, onSubmitAnswer, isLoading, su
 
       <form onSubmit={handleSubmit}>
         <div className="space-y-4">
+          {hasKnowledgeBase && (
+            <button
+              type="button"
+              onClick={handleAutoPopulate}
+              disabled={isLoading || isAutoPopulating}
+              className={`w-full px-4 py-2 rounded-lg transition-colors ${
+                isLoading || isAutoPopulating
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-green-600 hover:bg-green-700'
+              } text-white flex items-center justify-center gap-2`}
+            >
+              {isAutoPopulating ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                  <span>Finding Best Answer...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span>Get Suggested Answer</span>
+                </>
+              )}
+            </button>
+          )}
+          
           <textarea
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
             className="w-full h-32 p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
-            placeholder="Type your answer..."
-            disabled={isLoading}
+            placeholder="Type your answer or use the suggestion button above..."
+            disabled={isLoading || isAutoPopulating}
           />
           <button
             type="submit"
             className={`w-full px-4 py-2 rounded-lg transition-colors ${
-              isLoading 
-                ? 'bg-gray-400 cursor-not-allowed' 
+              isLoading || isAutoPopulating || !answer.trim()
+                ? 'bg-gray-400 cursor-not-allowed'
                 : 'bg-blue-600 hover:bg-blue-700'
             } text-white`}
-            disabled={isLoading}
+            disabled={isLoading || isAutoPopulating || !answer.trim()}
           >
             Submit Answer
           </button>
