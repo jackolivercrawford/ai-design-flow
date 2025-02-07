@@ -51,30 +51,59 @@ Step 2: Interactive Q&A Flow (AI-Driven)
         * Q2: “What is the total number of floors?”
         * Q3: “Any known budget constraints?”
 2.2. Q&A Progression (Breadth vs. Depth)
+
 2.2.1. One Question at a Time
-* The system only generates the next question after the user answers the current one.
-* If Q1 leads to children (Q4, Q5), those appear only upon finishing Q1.
-2.2.2. Breadth-First Mode (Example)
-1. Layer-by-Layer
-    * If the user has top-level Q1, Q2, Q3, they see them in that order.
-    * Only after Q1, Q2, Q3 are completed does the system reveal their children:
-        * Q4, Q5 (children of Q1),
-        * Q6, Q7 (children of Q2),
-        * Q8 (child of Q3).
-2. Sequential BFS
-    * The user finishes Q4, Q5 (children of Q1), then Q6, Q7 (children of Q2), then Q8 (child of Q3).
-    * If Q4 spawns more children (Q9, Q10), those appear at the same BFS layer as any Q5 children.
-    * Sibling numbering is consecutive within the same layer—like in the BFS image: (Layer 0: Q1, Q2, Q3), (Layer 1: Q4, Q5, Q6, Q7), (Layer 2: Q8, Q9, etc.).
-2.2.3. Depth-First Mode (Example)
-1. Go Deep Immediately
-    * After answering Q1, the system spawns Q1’s children (e.g., Q4, Q5).
-    * Q2 (the next “root-level sibling” in BFS) might not appear until Q1’s entire subtree is fully explored, akin to the DFS image.
-2. Recursive DFS
-    * The user completes Q4. If Q4 has more children (Q6, Q7), those come next.
-    * Then Q5, possibly with Q8, Q9 as children, etc.
-    * Only after Q1’s entire subtree is done does the system “come back up” to reveal Q2. By that time, Q2 might not literally be labeled “Q2”—it could become Q17 or Q25 if many questions were introduced under Q1’s branch first.
-    * This parallels the DFS diagram: you follow one path down to the “leaf” nodes, then backtrack to handle siblings.
-Key difference: In BFS, siblings at the same layer stay consecutive (like Q1, Q2, Q3), while in DFS a “sibling” from BFS might not appear until much later (with a higher question ID), because the user is going “deep” on Q1’s children first.
+* The system only generates the next question after the user answers the current one
+* New questions (whether siblings or children) appear sequentially, never simultaneously
+
+2.2.2. Breadth-First Mode
+1. Level-by-Level Traversal
+   Layer 0 (Root):
+   * The prompt question appears and must be answered first
+   
+   Layer 1 (Direct Follow-ups):
+   * After prompt, system shows follow-up questions sequentially
+   * Must complete ALL questions at this layer before going deeper
+   
+   Layer 2 (Detailed Questions):
+   * Only after completing all Layer 1, system shows:
+       - More specific questions based on previous answers
+       - Each parent question may spawn multiple child questions
+   * Complete ALL questions in this layer before proceeding
+   
+   Layer 3 (Further Details):
+   * Each answered question may lead to more specific inquiries
+   * Process continues for as many layers as needed to fully explore the topic
+
+2. Key BFS Characteristics
+   * Questions follow a logical progression from general to specific
+   * Complete all questions at current level before going deeper
+   * Maintains organized topic exploration
+
+2.2.3. Depth-First Mode
+1. Deep Topic Exploration
+   Start:
+   * Initial question appears and must be answered
+   
+   First Branch:
+   * System immediately follows up with related detailed questions
+   * Explores all aspects of current topic before moving to new topics
+   * Example: Fully explore load capacity warnings before moving to floor input methods
+   
+   Next Topics:
+   * Only after completely exploring one topic:
+       - System moves to next major topic
+       - Explores all its related questions
+   * Complete each topic's questions before moving to new topics
+
+2. Key DFS Characteristics
+   * Questions explore one topic exhaustively before moving to others
+   * Follow-ups appear immediately based on current answer
+   * Related questions stay grouped together
+
+Key Difference:
+- BFS maintains consecutive numbering within layers (Q1, Q2, Q3)
+- DFS numbers based on exploration order (Q2's sibling might become Q5)
 2.2.4. New Top-Level Branches
 * The AI can discover (or user can request) a new major domain mid-flow.
 * Three ways new top-level Q’s appear:
@@ -168,18 +197,36 @@ Graph Impact Summary
     * Minor → silent fix if enabled, major → user must reconcile.
 
 Why This Flow Works
+
 1. Prompt as Anchor
-    * Keeps the user’s primary goal—designing a 1000-floor elevator—front and center.
+  * Keeps the user's main goal—designing a 1000-floor elevator—front and center.
+
 2. Configurable Q&A Traversal
-    * Breadth-First matches the left BFS example: nodes at each layer are completed before moving down.
-    * Depth-First matches the right DFS example: children appear as soon as the parent is answered, so “siblings” might not appear until much later (and could have higher question IDs).
-3. Sequential Question Generation
-    * Only one question at a time—no overload or confusion.
+  * Breadth-First: Complete each level of questions before diving deeper
+  * Depth-First: Fully explore each topic before moving to new ones
+  * Lets users choose approach that matches their thinking style
+
+3. **Sequential Question Generation
+  * Only one question appears at a time
+  * Each new question only shows after current one is answered
+  * Prevents overwhelming the user with too many choices
+
 4. Granular Unknown/Conflict Settings
-    * Minor issues can be auto-handled, major ones prompt user input.
+  * Streamlined handling of minor gaps or mismatches
+  * User-driven resolution for major decisions
+  * Clear separation between AI-assisted and user-required choices
+
 5. Flexible Stopping
-    * Either a question cap or AI-based sense of completeness.
+  * User can set specific question limit
+  * AI can suggest when enough data is gathered
+  * Ensures comprehensive requirements without excess
+
 6. Requirements & Live Prototype
-    * Results in a thorough doc plus a React/Tailwind mockup derived from the final Q&A.
+  * Immediate generation of functional React/Tailwind concept
+  * Direct translation of Q&A into working interface
+  * Clear connection between requirements and implementation
+
 7. Multiple Versions & Saved Sessions
-    * Allows iterative design changes and the option to pause/resume Q&A at any point.
+  * Rapid iteration on different interface styles
+  * Option to pause and resume at any time
+  * Preserves exploration while allowing refinement
