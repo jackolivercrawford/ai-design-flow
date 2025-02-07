@@ -33,7 +33,8 @@ AI-DESIGN-FLOW
   │   ├── vercel.svg
   │   └── window.svg
   ├── types
-  │   └── index.ts
+  │   ├── index.ts
+  │   └── settings.ts
   ├── .env.local
   ├── .gitignore
   ├── codebase.txt
@@ -87,53 +88,86 @@ const openai = new OpenAI({
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, previousQuestions } = await request.json();
+    const { prompt, previousQuestions, traversalMode } = await request.json();
+
+    // Calculate current depth by counting parents in previousQuestions
+    let currentDepth = 0;
+    let currentParent = previousQuestions[previousQuestions.length - 1];
+    while (currentParent?.parent) {
+      currentDepth++;
+      currentParent = currentParent.parent;
+    }
 
     const messages = [
       {
         role: 'system' as const,
-        content:
-          'You are an expert design assistant that helps generate follow-up questions for a design prompt. Your questions should be clear, concise, and focus on gathering detailed design requirements. When previous Q&A is provided, reference those answers to ask more specific, probing questions rather than generic ones.'
+        content: `You are an expert UX design assistant that helps generate follow-up questions for a design prompt. Your questions should follow a clear progression from basic needs to specific implementation details.
+
+Follow these guidelines:
+1. Question Progression Levels:
+   - Level 1 (Basic Needs): Ask about fundamental user needs, target audience, and primary use cases
+   - Level 2 (Requirements): Focus on specific requirements, constraints, and key features
+   - Level 3 (User Experience): Explore UX preferences, accessibility needs, and interaction patterns
+   - Level 4 (Implementation): Discuss specific UI elements, layouts, and technical requirements
+   - Level 5 (Refinement): Fine-tune details, edge cases, and specific feature behaviors
+
+2. Current Depth: ${currentDepth}/5
+   - If depth > 4, only continue if absolutely necessary for critical information
+   - Consider stopping the current line of questioning if:
+     * The answers provide sufficient detail for implementation
+     * The topic has been thoroughly explored
+     * Further questions would be too specific or redundant
+
+3. Traversal Mode: ${traversalMode}
+   - BFS: Focus on getting a complete picture at the current level before going deeper
+   - DFS: Thoroughly explore one aspect before moving to siblings
+
+4. Response Format:
+   Return a JSON object with:
+   {
+     "questions": ["Next question to ask"],
+     "shouldStopBranch": boolean, // true if this line of questioning is complete
+     "stopReason": "string explaining why we should stop (if shouldStopBranch is true)"
+   }`
       },
       {
         role: 'user' as const,
         content: `The design prompt is: "${prompt}".
-Previous Q&A: ${JSON.stringify(previousQuestions)}.
-Based on this information, generate up to three specific follow-up questions that build on the provided answers. Avoid broad or repetitive questions. 
-Return your questions as a JSON array.
-For example: 
-[
-  "How will you implement ADA compliance in the interface based on your requirements?",
-  "What specific features will you add to enhance user safety during emergencies?",
-  "How do you plan to integrate voice activation with the building's existing systems?"
-]`
+Previous Q&A: ${JSON.stringify(previousQuestions, null, 2)}
+
+Based on this context:
+1. Generate the next most appropriate question for the current depth level
+2. Determine if we should stop this line of questioning
+3. Return in the specified JSON format`
       },
     ];
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4',
       messages,
+      temperature: 0.7,
       max_tokens: 150,
     });
 
     const content = completion.choices[0].message.content?.trim();
-    let questions: string[] = [];
+    let response = { questions: [], shouldStopBranch: false, stopReason: '' };
 
     try {
-      questions = JSON.parse(content!);
-      if (!Array.isArray(questions)) {
-        throw new Error("Output is not an array");
+      response = JSON.parse(content!);
+      if (!Array.isArray(response.questions)) {
+        throw new Error("Questions is not an array");
       }
     } catch (jsonError) {
-      // Fallback: if JSON parsing fails, split by newline
-      questions = content?.split('\n').filter((line) => line.trim() !== '') || [];
+      console.error("Error parsing API response:", jsonError);
+      // Fallback: extract questions from text
+      response = {
+        questions: content?.split('\n').filter((line) => line.trim() !== '') || [],
+        shouldStopBranch: false,
+        stopReason: ''
+      };
     }
 
-    if (!questions || questions.length === 0) {
-      throw new Error('No questions generated.');
-    }
-
-    return NextResponse.json({ questions });
+    return NextResponse.json(response);
   } catch (error) {
     console.error('Error generating questions:', error);
     return NextResponse.json(
@@ -189,22 +223,191 @@ import HeaderToolbar from '../../components/HeaderToolbar';
 import QAPanel from '../../components/QAPanel';
 import CanvasTree from '../../components/CanvasTree';
 import { QANode } from '../../types';
+import { QASettings } from '@/types/settings';
+
+interface SavedProgress {
+  qaTree: QANode;
+  currentNodeId: string | null;
+  questionCount: number;
+  prompt: string;
+  settings: QASettings;
+}
 
 export default function QnAPage() {
   const router = useRouter();
   const [prompt, setPrompt] = useState<string>('');
+  const [settings, setSettings] = useState<QASettings | null>(null);
   const [qaTree, setQaTree] = useState<QANode | null>(null);
-  const [currentLevelNodes, setCurrentLevelNodes] = useState<QANode[]>([]);
-  const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [currentNode, setCurrentNode] = useState<QANode | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingNextQuestion, setIsLoadingNextQuestion] = useState(false);
+  const [questionCount, setQuestionCount] = useState(0);
 
-  // Helper: fetch multiple child nodes for a given parent node.
-  const fetchQuestionsForNode = async (designPrompt: string, parentNode: QANode): Promise<QANode[]> => {
+  // Helper: Get the next question based on traversal mode
+  const getNextQuestion = async (node: QANode): Promise<QANode | null> => {
+    const isDFS = settings?.traversalMode === 'dfs';
+    
+    if (isDFS) {
+      // DFS: Try to go deeper first
+      if (node.answer) {
+        // If this node has an answer, try to generate its first child
+        const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(prompt, node);
+        
+        // If we should stop this branch or no children were generated, move to siblings
+        if (!shouldStopBranch && children.length > 0) {
+          node.children = children;
+          return children[0];
+        }
+      }
+      
+      // If we can't go deeper, find the next sibling by traversing up
+      let current: QANode | null = node;
+      let parent = findParentNode(qaTree!, node);
+      
+      while (parent) {
+        const siblings = parent.children;
+        const currentIndex = siblings.indexOf(current!);
+        
+        if (currentIndex < siblings.length - 1) {
+          // Return next sibling
+          return siblings[currentIndex + 1];
+        }
+        
+        // Move up to try next level's sibling
+        current = parent;
+        parent = findParentNode(qaTree!, parent);
+      }
+      
+      return null; // No more questions
+    } else {
+      // BFS: Complete current level before going deeper
+      const parent = findParentNode(qaTree!, node);
+      if (!parent) return null; // Safety check
+      
+      // First, try to generate siblings at the current level
+      const currentLevelNodes = parent.children;
+      const currentIndex = currentLevelNodes.indexOf(node);
+      
+      // If this was the last answered node in its level, try to generate a new sibling
+      if (currentIndex === currentLevelNodes.length - 1 && node.answer) {
+        const { nodes: newSiblings, shouldStopBranch } = await fetchQuestionsForNode(prompt, parent);
+        if (!shouldStopBranch && newSiblings.length > 0) {
+          parent.children = [...currentLevelNodes, ...newSiblings];
+          return newSiblings[0];
+        }
+      } 
+      // If there are existing unanswered siblings, move to the next one
+      else if (currentIndex < currentLevelNodes.length - 1) {
+        return currentLevelNodes[currentIndex + 1];
+      }
+      
+      // If we can't generate more siblings or move to next sibling,
+      // look for the first answered node without children at the current level
+      for (const sibling of currentLevelNodes) {
+        if (sibling.answer && sibling.children.length === 0) {
+          const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(prompt, sibling);
+          if (!shouldStopBranch && children.length > 0) {
+            sibling.children = children;
+            return children[0];
+          }
+        }
+      }
+      
+      // If we can't go deeper at this level, move to the next level
+      const nextLevelStart = findFirstUnansweredChild(qaTree!);
+      if (nextLevelStart) {
+        return nextLevelStart;
+      }
+      
+      // If no existing unanswered nodes, try to start a new level
+      // Find the first node at the current level that can have children
+      for (const sibling of currentLevelNodes) {
+        if (sibling.answer && sibling.children.length === 0) {
+          const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(prompt, sibling);
+          if (!shouldStopBranch && children.length > 0) {
+            sibling.children = children;
+            return children[0];
+          }
+        }
+      }
+      
+      return null; // No more questions at this level or deeper
+    }
+  };
+
+  // Helper: Find parent node
+  const findParentNode = (root: QANode | null, target: QANode): QANode | null => {
+    if (!root) return null;
+    if (root.children.includes(target)) return root;
+    for (const child of root.children) {
+      const found = findParentNode(child, target);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  // Helper: Find all nodes at the same level as the target node
+  const findNodesAtSameLevel = (root: QANode | null, target: QANode): QANode[] => {
+    if (!root) return [];
+    const parent = findParentNode(root, target);
+    if (!parent) return root.children; // If no parent, must be root level
+    return parent.children;
+  };
+
+  // Helper: Find the first unanswered child in the tree (BFS)
+  const findFirstUnansweredChild = (root: QANode | null): QANode | null => {
+    if (!root) return null;
+    const queue: QANode[] = [root];
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      // Skip the root node when looking for unanswered questions
+      if (node.children.length > 0) {
+        for (const child of node.children) {
+          if (!child.answer) return child;
+          queue.push(child);
+        }
+      } else if (!node.answer && node.question !== `Prompt: ${prompt}`) {
+        return node;
+      }
+    }
+    return null;
+  };
+
+  // Helper: Find the first node that can have children (has answer but no children)
+  const findFirstNodeForChildren = (root: QANode | null): QANode | null => {
+    if (!root) return null;
+    const queue: QANode[] = [root];
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      // Skip the root node when looking for nodes that can have children
+      if (node.answer && node.children.length === 0 && node.question !== `Prompt: ${prompt}`) {
+        return node;
+      }
+      queue.push(...node.children);
+    }
+    return null;
+  };
+
+  // Helper: fetch questions for a node
+  const fetchQuestionsForNode = async (designPrompt: string, parentNode: QANode): Promise<{ nodes: QANode[], shouldStopBranch: boolean, stopReason: string }> => {
     try {
-      // Build previous Q&A context for this parent node.
-      const previousQA = parentNode.answer
-        ? [{ question: parentNode.question, answer: parentNode.answer }]
-        : [];
+      // Build the previous Q&A chain up to the root
+      const previousQA: Array<{ question: string; answer?: string; parent?: any }> = [];
+      let current: QANode | null = parentNode;
+      
+      while (current) {
+        // Don't include the root prompt node in the Q&A chain
+        if (current.answer && current.question !== `Prompt: ${prompt}`) {
+          previousQA.unshift({
+            question: current.question,
+            answer: current.answer,
+            parent: previousQA[0] || undefined
+          });
+        }
+        const parent = findParentNode(qaTree, current);
+        if (!parent || parent === current) break;
+        current = parent;
+      }
       
       const response = await fetch('/api/generate-questions', {
         method: 'POST',
@@ -212,95 +415,176 @@ export default function QnAPage() {
         body: JSON.stringify({
           prompt: designPrompt,
           previousQuestions: previousQA,
+          traversalMode: settings?.traversalMode,
         }),
       });
       const data = await response.json();
-      // Create a child for each question returned.
-      const children: QANode[] = data.questions.map((q: string) => ({
+      
+      // Create a single child node with the next question number
+      const nextQuestionNumber = questionCount + 1;
+      const nodes: QANode[] = data.questions.slice(0, 1).map((q: string) => ({
         id: uuidv4(),
         question: q,
         children: [],
+        questionNumber: nextQuestionNumber,
       }));
-      return children;
+      
+      return {
+        nodes,
+        shouldStopBranch: data.shouldStopBranch,
+        stopReason: data.stopReason
+      };
     } catch (error) {
       console.error("Error in fetchQuestionsForNode:", error);
-      return [];
+      return { nodes: [], shouldStopBranch: true, stopReason: "Error generating questions" };
     }
   };
 
-  // On mount: load the prompt, create the root node, and fetch top-level questions.
+  // Helper: Find node by ID in the tree
+  const findNodeById = (root: QANode | null, id: string): QANode | null => {
+    if (!root) return null;
+    if (root.id === id) return root;
+    for (const child of root.children) {
+      const found = findNodeById(child, id);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  // Helper: Save current progress to localStorage
+  const saveProgress = () => {
+    if (!qaTree || !settings) return;
+    
+    const progress: SavedProgress = {
+      qaTree,
+      currentNodeId: currentNode?.id || null,
+      questionCount,
+      prompt,
+      settings
+    };
+    
+    localStorage.setItem('qaProgress', JSON.stringify(progress));
+  };
+
+  // Effect to save progress whenever relevant state changes
   useEffect(() => {
+    if (qaTree && !isLoading) {
+      saveProgress();
+    }
+  }, [qaTree, currentNode, questionCount, prompt, settings]);
+
+  // On mount: try to load saved progress or start new session
+  useEffect(() => {
+    const savedProgress = localStorage.getItem('qaProgress');
     const storedPrompt = localStorage.getItem('designPrompt');
-    if (storedPrompt) {
+    const storedSettings = localStorage.getItem('qaSettings');
+    
+    if (savedProgress) {
+      // Load saved progress
+      try {
+        const progress: SavedProgress = JSON.parse(savedProgress);
+        setPrompt(progress.prompt);
+        setSettings(progress.settings);
+        setQaTree(progress.qaTree);
+        setQuestionCount(progress.questionCount);
+        if (progress.currentNodeId) {
+          const node = findNodeById(progress.qaTree, progress.currentNodeId);
+          setCurrentNode(node);
+        }
+        setIsLoading(false);
+        return;
+      } catch (error) {
+        console.error("Error loading saved progress:", error);
+        // If loading saved progress fails, fall back to new session
+      }
+    }
+    
+    // Start new session
+    if (storedPrompt && storedSettings) {
+      const parsedSettings = JSON.parse(storedSettings);
       setPrompt(storedPrompt);
+      setSettings(parsedSettings);
+      
+      // Create and set up root node
       const rootNode: QANode = {
         id: uuidv4(),
         question: `Prompt: ${storedPrompt}`,
         children: [],
       };
       setQaTree(rootNode);
-      // Fetch top-level (sibling) questions for the root node.
-      fetchQuestionsForNode(storedPrompt, rootNode).then((children) => {
-        rootNode.children = children;
-        // Update the tree immutably.
-        setQaTree({ ...rootNode });
-        setCurrentLevelNodes(children);
+      
+      // Generate first question
+      fetchQuestionsForNode(storedPrompt, rootNode).then(({ nodes: children }) => {
         if (children.length > 0) {
+          rootNode.children = children;
+          setQaTree({ ...rootNode });
           setCurrentNode(children[0]);
-          setCurrentIndex(0);
+          setQuestionCount(1);
         }
+        setIsLoading(false);
       });
     } else {
-      console.error("No design prompt found.");
+      console.error("No design prompt or settings found.");
       router.push('/');
     }
   }, [router]);
 
-  // When the user submits an answer.
+  // When the user submits an answer
   const handleAnswer = async (answer: string) => {
-    if (!currentNode) return;
-    // Record the answer.
-    currentNode.answer = answer;
-    // Update the tree state (a shallow copy is enough here because we update the current level separately).
-    setQaTree((prevTree) => (prevTree ? { ...prevTree } : prevTree));
-
-    // If there are more siblings in this level, move to the next one.
-    if (currentIndex < currentLevelNodes.length - 1) {
-      const newIndex = currentIndex + 1;
-      setCurrentIndex(newIndex);
-      setCurrentNode(currentLevelNodes[newIndex]);
-    } else {
-      // All nodes in the current level have been answered.
-      // For each node in the current level, fetch its children.
-      let nextLevelNodes: QANode[] = [];
-      for (const node of currentLevelNodes) {
-        const children = await fetchQuestionsForNode(prompt, node);
-        // Attach the fetched children to this node.
-        node.children = children;
-        nextLevelNodes = nextLevelNodes.concat(children);
-      }
-      // Update the tree immutably.
-      setQaTree((prevTree) => (prevTree ? { ...prevTree } : prevTree));
-      if (nextLevelNodes.length > 0) {
-        setCurrentLevelNodes(nextLevelNodes);
-        setCurrentIndex(0);
-        setCurrentNode(nextLevelNodes[0]);
-      } else {
-        // No further questions: the Q&A session is complete.
-        setCurrentNode(null);
-      }
+    if (!currentNode || !settings) return;
+    
+    setIsLoadingNextQuestion(true);
+    
+    // Check if we've hit the question limit
+    if (settings.maxQuestions && questionCount >= settings.maxQuestions) {
+      setCurrentNode(null); // End the Q&A session
+      setIsLoadingNextQuestion(false);
+      return;
     }
+    
+    // Record the answer
+    currentNode.answer = answer;
+    
+    // Get the next question based on traversal mode
+    const nextNode = await getNextQuestion(currentNode);
+    
+    if (nextNode) {
+      setCurrentNode(nextNode);
+      setQuestionCount(prev => prev + 1);
+    } else {
+      setCurrentNode(null); // No more questions
+    }
+    
+    // Update the tree state
+    setQaTree(prev => prev ? { ...prev } : prev);
+    setIsLoadingNextQuestion(false);
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
       <HeaderToolbar />
+      <div className="py-2 px-6 bg-white border-b border-gray-200">
+        <div className="flex justify-between items-center">
+          <div className="text-sm text-gray-600">
+            Questions: {questionCount}{settings?.maxQuestions ? ` / ${settings.maxQuestions}` : ''}
+          </div>
+          <div className="text-sm text-gray-600">
+            Mode: {settings?.traversalMode === 'dfs' ? 'Depth-First' : 'Breadth-First'}
+          </div>
+        </div>
+      </div>
       <main className="flex-1 flex">
         {/* Left: Canvas Tree view */}
         <div className="w-2/3 p-6 overflow-auto">
           <div className="bg-white rounded-lg shadow-lg p-6 min-h-full">
             <h2 className="text-2xl font-bold mb-6 text-gray-900">Question Tree</h2>
-            <CanvasTree node={qaTree} />
+            {isLoading ? (
+              <div className="flex items-center justify-center h-32">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : (
+              <CanvasTree node={qaTree} />
+            )}
           </div>
         </div>
         {/* Right: Q&A Panel */}
@@ -312,6 +596,7 @@ export default function QnAPage() {
                 : "No more questions. Q&A complete."
             }
             onSubmitAnswer={handleAnswer}
+            isLoading={isLoading || isLoadingNextQuestion}
           />
         </div>
       </main>
@@ -386,15 +671,48 @@ export default function RootLayout({
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import PromptInput from '@/components/PromptInput';
+import { QASettings } from '@/types/settings';
+
+interface SavedProgress {
+  qaTree: any;
+  currentNodeId: string | null;
+  questionCount: number;
+  prompt: string;
+  settings: QASettings;
+}
 
 export default function PromptPage() {
   const router = useRouter();
+  const [savedSession, setSavedSession] = useState<SavedProgress | null>(null);
 
-  const handlePromptSubmit = (prompt: string) => {
+  useEffect(() => {
+    const savedProgress = localStorage.getItem('qaProgress');
+    if (savedProgress) {
+      try {
+        const progress = JSON.parse(savedProgress);
+        setSavedSession(progress);
+      } catch (error) {
+        console.error("Error loading saved session:", error);
+      }
+    }
+  }, []);
+
+  const handlePromptSubmit = (prompt: string, settings: QASettings) => {
     console.log("User prompt:", prompt);
-    // Save the prompt in localStorage so the QnA page can access it
+    console.log("Settings:", settings);
+    
+    // Clear any existing progress
+    localStorage.removeItem('qaProgress');
+    
+    // Save new prompt and settings
     localStorage.setItem('designPrompt', prompt);
+    localStorage.setItem('qaSettings', JSON.stringify(settings));
+    router.push('/qna');
+  };
+
+  const handleContinueSession = () => {
     router.push('/qna');
   };
 
@@ -408,10 +726,46 @@ export default function PromptPage() {
         </p>
       </header>
       
+      {/* Saved Session */}
+      {savedSession && (
+        <div className="w-full max-w-2xl mb-8">
+          <div className="bg-white rounded-lg shadow-lg p-6 border border-gray-200">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Continue Previous Session</h2>
+            <div className="space-y-2 mb-4">
+              <p className="text-gray-700">
+                <span className="font-medium">Prompt:</span> {savedSession.prompt}
+              </p>
+              <p className="text-gray-700">
+                <span className="font-medium">Progress:</span> {savedSession.questionCount} questions answered
+              </p>
+              <p className="text-gray-700">
+                <span className="font-medium">Mode:</span> {savedSession.settings.traversalMode === 'dfs' ? 'Depth-First' : 'Breadth-First'}
+              </p>
+            </div>
+            <div className="flex gap-4">
+              <button
+                onClick={handleContinueSession}
+                className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                Continue Session
+              </button>
+              <button
+                onClick={() => setSavedSession(null)}
+                className="flex-1 bg-gray-100 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+              >
+                Start New Session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Prompt Input */}
-      <div className="w-full max-w-2xl">
-        <PromptInput onSubmit={handlePromptSubmit} />
-      </div>
+      {!savedSession && (
+        <div className="w-full max-w-2xl">
+          <PromptInput onSubmit={handlePromptSubmit} />
+        </div>
+      )}
     </div>
   );
 }
@@ -446,19 +800,36 @@ import { QANode } from '@/types'; // if you're using a separate types file
 interface CanvasTreeProps {
   node: QANode | null;
   depth?: number;
+  isRoot?: boolean;
 }
 
-const CanvasTree: React.FC<CanvasTreeProps> = ({ node, depth = 0 }) => {
+const CanvasTree: React.FC<CanvasTreeProps> = ({ node, depth = 0, isRoot = true }) => {
   if (!node) return null;
+
+  const isPromptNode = node.question.startsWith('Prompt:');
 
   return (
     <div style={{ marginLeft: depth * 16 }} className="mb-4">
-      <div className="p-2 border rounded mb-2 bg-white shadow">
-        <p className="font-medium text-gray-900">{node.question}</p>
-        {node.answer && <p className="text-gray-800">Answer: {node.answer}</p>}
+      <div className={`p-2 border rounded mb-2 ${isPromptNode ? 'bg-gray-50' : 'bg-white'} shadow`}>
+        <p className={`${isPromptNode ? 'font-semibold text-gray-900' : 'font-medium text-gray-900'}`}>
+          {isPromptNode ? (
+            node.question
+          ) : (
+            <>
+              <span className="text-blue-600 font-semibold">Q{node.questionNumber}: </span>
+              {node.question}
+            </>
+          )}
+        </p>
+        {!isPromptNode && node.answer && (
+          <p className="text-gray-800 mt-1">
+            <span className="text-blue-600 font-semibold">A{node.questionNumber}: </span>
+            {node.answer}
+          </p>
+        )}
       </div>
       {node.children?.map((child: QANode) => (
-        <CanvasTree key={child.id} node={child} depth={depth + 1} />
+        <CanvasTree key={child.id} node={child} depth={depth + 1} isRoot={false} />
       ))}
     </div>
   );
@@ -526,27 +897,159 @@ export default function PreviewArea({ requirements, uiCode }: PreviewAreaProps) 
 
 ----- /Users/jackcrawford/ai-design-flow/components/PromptInput.tsx -----
 // components/PromptInput.tsx
-import React, { useState } from 'react';
+import React, { useState, ChangeEvent } from 'react';
+import { QASettings } from '@/types/settings';
 
 interface PromptInputProps {
-  onSubmit: (prompt: string) => void;
+  onSubmit: (prompt: string, settings: QASettings) => void;
 }
 
 const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
   const [prompt, setPrompt] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState<QASettings>({
+    traversalMode: 'bfs',
+    unknownHandling: 'auto',
+    conflictResolution: 'auto'
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (prompt.trim()) {
-      onSubmit(prompt);
-      setPrompt('');
+      setShowSettings(true);
     }
   };
+
+  const handleStartQA = () => {
+    onSubmit(prompt, settings);
+  };
+
+  const handleSettingChange = (
+    setting: keyof QASettings,
+    value: string | number | File | undefined
+  ) => {
+    setSettings(prev => ({
+      ...prev,
+      [setting]: value
+    }));
+  };
+
+  if (showSettings) {
+    return (
+      <div className="p-8 w-full max-w-2xl">
+        <div className="mb-6">
+          <h3 className="text-xl font-bold text-gray-900 mb-2">Your Prompt:</h3>
+          <p className="text-gray-700 bg-gray-50 p-4 rounded-lg">{prompt}</p>
+          <button
+            onClick={() => setShowSettings(false)}
+            className="mt-2 text-blue-600 hover:text-blue-700 text-sm"
+          >
+            Edit Prompt
+          </button>
+        </div>
+        <div className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Traversal Mode
+            </label>
+            <div className="flex gap-4">
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="traversalMode"
+                  value="bfs"
+                  checked={settings.traversalMode === 'bfs'}
+                  onChange={(e) => handleSettingChange('traversalMode', e.target.value)}
+                  className="mr-2"
+                />
+                <span className="text-gray-900">Breadth-First</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="traversalMode"
+                  value="dfs"
+                  checked={settings.traversalMode === 'dfs'}
+                  onChange={(e) => handleSettingChange('traversalMode', e.target.value)}
+                  className="mr-2"
+                />
+                <span className="text-gray-900">Depth-First</span>
+              </label>
+            </div>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Unknown Handling
+            </label>
+            <select 
+              className="w-full border border-gray-300 rounded-lg p-2 text-gray-900 bg-white"
+              value={settings.unknownHandling}
+              onChange={(e) => handleSettingChange('unknownHandling', e.target.value)}
+            >
+              <option value="auto">Auto (trivial)</option>
+              <option value="prompt">Always Prompt</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Conflict Resolution
+            </label>
+            <select 
+              className="w-full border border-gray-300 rounded-lg p-2 text-gray-900 bg-white"
+              value={settings.conflictResolution}
+              onChange={(e) => handleSettingChange('conflictResolution', e.target.value)}
+            >
+              <option value="auto">Auto-resolve Minor</option>
+              <option value="manual">Manual Resolution</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Maximum Questions
+            </label>
+            <input
+              type="number"
+              min="1"
+              placeholder="Optional"
+              className="w-full border border-gray-300 rounded-lg p-2 text-gray-900 bg-white"
+              value={settings.maxQuestions || ''}
+              onChange={(e) => handleSettingChange('maxQuestions', e.target.value ? parseInt(e.target.value) : undefined)}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Knowledge Base (Optional)
+            </label>
+            <input
+              type="file"
+              className="w-full text-gray-900 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              accept=".pdf,.doc,.docx,.txt"
+              onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                const file = e.target.files?.[0];
+                handleSettingChange('knowledgeBase', file);
+              }}
+            />
+          </div>
+
+          <button
+            onClick={handleStartQA}
+            className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+          >
+            Start Q&A
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8 w-full max-w-2xl">
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <label htmlFor="prompt" className="text-xl font-bold text-white">
+        <label htmlFor="prompt" className="text-xl font-bold text-gray-900">
           Enter your design prompt:
         </label>
         <textarea
@@ -554,13 +1057,13 @@ const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder="Design the interface for a 1000-floor elevator"
-          className="border border-gray-300 p-4 rounded-lg h-48 text-gray-900 text-base resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="border border-gray-300 p-4 rounded-lg h-48 text-gray-900 text-base resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
         />
         <button 
           type="submit" 
           className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
         >
-          Start Q&A
+          Configure Settings
         </button>
       </form>
     </div>
@@ -575,9 +1078,10 @@ import { useState } from 'react';
 interface QAPanelProps {
   currentQuestion: string;
   onSubmitAnswer: (answer: string) => void;
+  isLoading: boolean;
 }
 
-export default function QAPanel({ currentQuestion, onSubmitAnswer }: QAPanelProps) {
+export default function QAPanel({ currentQuestion, onSubmitAnswer, isLoading }: QAPanelProps) {
   const [answer, setAnswer] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -592,7 +1096,14 @@ export default function QAPanel({ currentQuestion, onSubmitAnswer }: QAPanelProp
     <div className="bg-white rounded-lg p-6 shadow-lg">
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Current Question:</h3>
-        <p className="text-gray-800">{currentQuestion}</p>
+        {isLoading ? (
+          <div className="flex items-center space-x-2">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+            <p className="text-gray-600">Loading question...</p>
+          </div>
+        ) : (
+          <p className="text-gray-800">{currentQuestion}</p>
+        )}
       </div>
       <form onSubmit={handleSubmit}>
         <div className="space-y-4">
@@ -601,10 +1112,16 @@ export default function QAPanel({ currentQuestion, onSubmitAnswer }: QAPanelProp
             onChange={(e) => setAnswer(e.target.value)}
             className="w-full h-32 p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
             placeholder="Type your answer..."
+            disabled={isLoading}
           />
           <button
             type="submit"
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className={`w-full px-4 py-2 rounded-lg transition-colors ${
+              isLoading 
+                ? 'bg-gray-400 cursor-not-allowed' 
+                : 'bg-blue-600 hover:bg-blue-700'
+            } text-white`}
+            disabled={isLoading}
           >
             Submit Answer
           </button>
@@ -620,6 +1137,16 @@ export interface QANode {
   question: string;
   answer?: string;
   children: QANode[];
+  questionNumber?: number;
+} 
+
+----- /Users/jackcrawford/ai-design-flow/types/settings.ts -----
+export interface QASettings {
+  traversalMode: 'bfs' | 'dfs';
+  unknownHandling: 'auto' | 'prompt';
+  conflictResolution: 'auto' | 'manual';
+  maxQuestions?: number;
+  knowledgeBase?: File;
 } 
 
 ----- /Users/jackcrawford/ai-design-flow/.env.local -----

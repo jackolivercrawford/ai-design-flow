@@ -17,10 +17,20 @@ const CanvasTree: React.FC<CanvasTreeProps> = ({ node, depth = 0, isRoot = true 
     <div style={{ marginLeft: depth * 16 }} className="mb-4">
       <div className={`p-2 border rounded mb-2 ${isPromptNode ? 'bg-gray-50' : 'bg-white'} shadow`}>
         <p className={`${isPromptNode ? 'font-semibold text-gray-900' : 'font-medium text-gray-900'}`}>
-          {node.question}
+          {isPromptNode ? (
+            node.question
+          ) : (
+            <>
+              <span className="text-blue-600 font-semibold">Q{node.questionNumber}: </span>
+              {node.question}
+            </>
+          )}
         </p>
         {!isPromptNode && node.answer && (
-          <p className="text-gray-800 mt-1">Answer: {node.answer}</p>
+          <p className="text-gray-800 mt-1">
+            <span className="text-blue-600 font-semibold">A{node.questionNumber}: </span>
+            {node.answer}
+          </p>
         )}
       </div>
       {node.children?.map((child: QANode) => (

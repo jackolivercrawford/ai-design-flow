@@ -10,6 +10,14 @@ import CanvasTree from '../../components/CanvasTree';
 import { QANode } from '../../types';
 import { QASettings } from '@/types/settings';
 
+interface SavedProgress {
+  qaTree: QANode;
+  currentNodeId: string | null;
+  questionCount: number;
+  prompt: string;
+  settings: QASettings;
+}
+
 export default function QnAPage() {
   const router = useRouter();
   const [prompt, setPrompt] = useState<string>('');
@@ -58,32 +66,57 @@ export default function QnAPage() {
       return null; // No more questions
     } else {
       // BFS: Complete current level before going deeper
-      // Find all nodes at the current level
-      const currentLevel = findNodesAtSameLevel(qaTree!, node);
-      const currentIndex = currentLevel.indexOf(node);
+      const parent = findParentNode(qaTree!, node);
+      if (!parent) return null; // Safety check
       
-      if (currentIndex < currentLevel.length - 1) {
-        // Return next sibling in current level
-        return currentLevel[currentIndex + 1];
+      // First, try to generate siblings at the current level
+      const currentLevelNodes = parent.children;
+      const currentIndex = currentLevelNodes.indexOf(node);
+      
+      // If this was the last answered node in its level, try to generate a new sibling
+      if (currentIndex === currentLevelNodes.length - 1 && node.answer) {
+        const { nodes: newSiblings, shouldStopBranch } = await fetchQuestionsForNode(prompt, parent);
+        if (!shouldStopBranch && newSiblings.length > 0) {
+          parent.children = [...currentLevelNodes, ...newSiblings];
+          return newSiblings[0];
+        }
+      } 
+      // If there are existing unanswered siblings, move to the next one
+      else if (currentIndex < currentLevelNodes.length - 1) {
+        return currentLevelNodes[currentIndex + 1];
       }
       
-      // If we've completed the current level, start the next level
+      // If we can't generate more siblings or move to next sibling,
+      // look for the first answered node without children at the current level
+      for (const sibling of currentLevelNodes) {
+        if (sibling.answer && sibling.children.length === 0) {
+          const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(prompt, sibling);
+          if (!shouldStopBranch && children.length > 0) {
+            sibling.children = children;
+            return children[0];
+          }
+        }
+      }
+      
+      // If we can't go deeper at this level, move to the next level
       const nextLevelStart = findFirstUnansweredChild(qaTree!);
       if (nextLevelStart) {
         return nextLevelStart;
       }
       
-      // If no unanswered children found, generate new ones for the first node that can have children
-      const nodeForChildren = findFirstNodeForChildren(qaTree!);
-      if (nodeForChildren) {
-        const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(prompt, nodeForChildren);
-        if (!shouldStopBranch && children.length > 0) {
-          nodeForChildren.children = children;
-          return children[0];
+      // If no existing unanswered nodes, try to start a new level
+      // Find the first node at the current level that can have children
+      for (const sibling of currentLevelNodes) {
+        if (sibling.answer && sibling.children.length === 0) {
+          const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(prompt, sibling);
+          if (!shouldStopBranch && children.length > 0) {
+            sibling.children = children;
+            return children[0];
+          }
         }
       }
       
-      return null; // No more questions
+      return null; // No more questions at this level or deeper
     }
   };
 
@@ -172,11 +205,13 @@ export default function QnAPage() {
       });
       const data = await response.json();
       
-      // Create a single child node
+      // Create a single child node with the next question number
+      const nextQuestionNumber = questionCount + 1;
       const nodes: QANode[] = data.questions.slice(0, 1).map((q: string) => ({
         id: uuidv4(),
         question: q,
         children: [],
+        questionNumber: nextQuestionNumber,
       }));
       
       return {
@@ -190,11 +225,66 @@ export default function QnAPage() {
     }
   };
 
-  // On mount: load the prompt and settings
+  // Helper: Find node by ID in the tree
+  const findNodeById = (root: QANode | null, id: string): QANode | null => {
+    if (!root) return null;
+    if (root.id === id) return root;
+    for (const child of root.children) {
+      const found = findNodeById(child, id);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  // Helper: Save current progress to localStorage
+  const saveProgress = () => {
+    if (!qaTree || !settings) return;
+    
+    const progress: SavedProgress = {
+      qaTree,
+      currentNodeId: currentNode?.id || null,
+      questionCount,
+      prompt,
+      settings
+    };
+    
+    localStorage.setItem('qaProgress', JSON.stringify(progress));
+  };
+
+  // Effect to save progress whenever relevant state changes
   useEffect(() => {
+    if (qaTree && !isLoading) {
+      saveProgress();
+    }
+  }, [qaTree, currentNode, questionCount, prompt, settings]);
+
+  // On mount: try to load saved progress or start new session
+  useEffect(() => {
+    const savedProgress = localStorage.getItem('qaProgress');
     const storedPrompt = localStorage.getItem('designPrompt');
     const storedSettings = localStorage.getItem('qaSettings');
     
+    if (savedProgress) {
+      // Load saved progress
+      try {
+        const progress: SavedProgress = JSON.parse(savedProgress);
+        setPrompt(progress.prompt);
+        setSettings(progress.settings);
+        setQaTree(progress.qaTree);
+        setQuestionCount(progress.questionCount);
+        if (progress.currentNodeId) {
+          const node = findNodeById(progress.qaTree, progress.currentNodeId);
+          setCurrentNode(node);
+        }
+        setIsLoading(false);
+        return;
+      } catch (error) {
+        console.error("Error loading saved progress:", error);
+        // If loading saved progress fails, fall back to new session
+      }
+    }
+    
+    // Start new session
     if (storedPrompt && storedSettings) {
       const parsedSettings = JSON.parse(storedSettings);
       setPrompt(storedPrompt);

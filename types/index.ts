@@ -3,4 +3,5 @@ export interface QANode {
   question: string;
   answer?: string;
   children: QANode[];
+  questionNumber?: number;
 } 

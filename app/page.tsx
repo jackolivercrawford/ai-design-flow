@@ -2,18 +2,48 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import PromptInput from '@/components/PromptInput';
 import { QASettings } from '@/types/settings';
 
+interface SavedProgress {
+  qaTree: any;
+  currentNodeId: string | null;
+  questionCount: number;
+  prompt: string;
+  settings: QASettings;
+}
+
 export default function PromptPage() {
   const router = useRouter();
+  const [savedSession, setSavedSession] = useState<SavedProgress | null>(null);
+
+  useEffect(() => {
+    const savedProgress = localStorage.getItem('qaProgress');
+    if (savedProgress) {
+      try {
+        const progress = JSON.parse(savedProgress);
+        setSavedSession(progress);
+      } catch (error) {
+        console.error("Error loading saved session:", error);
+      }
+    }
+  }, []);
 
   const handlePromptSubmit = (prompt: string, settings: QASettings) => {
     console.log("User prompt:", prompt);
     console.log("Settings:", settings);
-    // Save both prompt and settings in localStorage
+    
+    // Clear any existing progress
+    localStorage.removeItem('qaProgress');
+    
+    // Save new prompt and settings
     localStorage.setItem('designPrompt', prompt);
     localStorage.setItem('qaSettings', JSON.stringify(settings));
+    router.push('/qna');
+  };
+
+  const handleContinueSession = () => {
     router.push('/qna');
   };
 
@@ -27,10 +57,46 @@ export default function PromptPage() {
         </p>
       </header>
       
+      {/* Saved Session */}
+      {savedSession && (
+        <div className="w-full max-w-2xl mb-8">
+          <div className="bg-white rounded-lg shadow-lg p-6 border border-gray-200">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Continue Previous Session</h2>
+            <div className="space-y-2 mb-4">
+              <p className="text-gray-700">
+                <span className="font-medium">Prompt:</span> {savedSession.prompt}
+              </p>
+              <p className="text-gray-700">
+                <span className="font-medium">Progress:</span> {savedSession.questionCount} questions answered
+              </p>
+              <p className="text-gray-700">
+                <span className="font-medium">Mode:</span> {savedSession.settings.traversalMode === 'dfs' ? 'Depth-First' : 'Breadth-First'}
+              </p>
+            </div>
+            <div className="flex gap-4">
+              <button
+                onClick={handleContinueSession}
+                className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                Continue Session
+              </button>
+              <button
+                onClick={() => setSavedSession(null)}
+                className="flex-1 bg-gray-100 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+              >
+                Start New Session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Prompt Input */}
-      <div className="w-full max-w-2xl">
-        <PromptInput onSubmit={handlePromptSubmit} />
-      </div>
+      {!savedSession && (
+        <div className="w-full max-w-2xl">
+          <PromptInput onSubmit={handlePromptSubmit} />
+        </div>
+      )}
     </div>
   );
 }
