@@ -147,9 +147,9 @@ ${formattedRequirements}
 Generate a complete React/Tailwind mockup that satisfies ALL these requirements. The mockup should be immediately usable and include all necessary types and styling. Each requirement should be reflected in the implementation.`
         }
       ],
-      max_completion_tokens: 16000,
+      max_completion_tokens: 25000,
       response_format: { type: "json_object" },
-      reasoning_effort: 'medium'
+      reasoning_effort: 'high'
     });
 
     const content = completion.choices[0].message.content;
