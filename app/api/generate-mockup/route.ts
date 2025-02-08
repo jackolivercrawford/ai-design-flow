@@ -42,18 +42,18 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "system",
-          content: `You are an expert UI developer. Your task is to generate a complete, production-ready React component mockup based on the provided requirements. You must use React with Tailwind CSS for styling—and you are encouraged to integrate DaisyUI (a Tailwind CSS plugin) via CDN to ensure the UI is attractive, modern, and clean.
+          content: `You are an expert UI developer. Your task is to generate a complete, production-ready React component mockup based on the provided requirements. You MUST use React with Tailwind CSS and DaisyUI for styling. DaisyUI is already included via CDN in the preview environment.
 
 Guidelines:
 1. Use React as the core technology.
-2. Use Tailwind CSS, and where appropriate, include DaisyUI via CDN for enhanced styling.
+2. Use Tailwind CSS with DaisyUI as the primary styling system.
 3. Follow modern design principles and best practices.
 4. Ensure the UI is responsive and accessible.
 5. Include comments explaining key design decisions.
 6. Structure the code in a clean, maintainable way.
 7. Use semantic HTML elements.
 8. Include hover states, transitions, and proper spacing.
-9. Use a consistent color scheme that matches the application's purpose.
+9. Generate a comprehensive color scheme that works with DaisyUI.
 10. Include TypeScript types as comments only (avoid inline type assertions).
 
 CRITICAL REQUIREMENTS:
@@ -62,6 +62,23 @@ CRITICAL REQUIREMENTS:
 3. All interactive elements must have proper ARIA labels and roles.
 4. Handle error, loading, and success states appropriately.
 5. Export the main component as default.
+6. Use DaisyUI classes for all common components. Examples:
+   - Buttons: btn, btn-primary, btn-secondary, btn-accent, btn-ghost
+   - Cards: card, card-body, card-title
+   - Forms: input, select, textarea with appropriate modifiers
+   - Alerts: alert, alert-info, alert-success, alert-warning, alert-error
+   - Modals: modal, modal-box
+   - Dropdowns: dropdown, dropdown-content
+   - Tabs: tabs, tab, tab-active
+   - Loading states: loading, loading-spinner
+   
+The color scheme must work with DaisyUI's theme system using these variables:
+- Primary: --p, --pf (focus), --pc (content)
+- Secondary: --s, --sf (focus), --sc (content)
+- Accent: --a, --af (focus), --ac (content)
+- Neutral: --n, --nf (focus), --nc (content)
+- Base: --b1, --b2, --b3, --bc (content)
+- State: --in, --su, --wa, --er
 
 Example structure:
 \`\`\`tsx
@@ -101,10 +118,25 @@ Return your response in this exact JSON format:
   "code": "Complete React/Tailwind component code as shown in the example above",
   "colorScheme": {
     "primary": "hex color (for main actions and headers)",
+    "primary-focus": "hex color (darker shade of primary for focus/hover)",
+    "primary-content": "hex color (text color on primary background)",
     "secondary": "hex color (for supporting elements)",
+    "secondary-focus": "hex color (darker shade of secondary for focus/hover)",
+    "secondary-content": "hex color (text color on secondary background)",
     "accent": "hex color (for attention-grabbing elements)",
-    "background": "hex color (for the main background)",
-    "text": "hex color (for main text content)"
+    "accent-focus": "hex color (darker shade of accent for focus/hover)",
+    "accent-content": "hex color (text color on accent background)",
+    "neutral": "hex color (for neutral elements)",
+    "neutral-focus": "hex color (darker shade of neutral for focus/hover)",
+    "neutral-content": "hex color (text color on neutral background)",
+    "base-100": "hex color (main background color)",
+    "base-200": "hex color (slightly darker background)",
+    "base-300": "hex color (even darker background)",
+    "base-content": "hex color (main text color)",
+    "info": "hex color (for informational elements)",
+    "success": "hex color (for success states)",
+    "warning": "hex color (for warning states)",
+    "error": "hex color (for error states)"
   },
   "components": [
     "Detailed list of all reusable components created, with their purposes"
@@ -129,7 +161,7 @@ Generate a complete React/Tailwind mockup that satisfies ALL these requirements.
       ],
       max_completion_tokens: 25000,
       response_format: { type: "json_object" },
-      reasoning_effort: 'high'
+      reasoning_effort: 'medium'
     });
 
     const content = completion.choices[0].message.content;
@@ -140,10 +172,71 @@ Generate a complete React/Tailwind mockup that satisfies ALL these requirements.
     try {
       const mockupData = JSON.parse(content);
 
-      // Optionally, post-process the generated code to remove inline type assertions
+      // Validate mockup data structure
+      if (!mockupData.code || !mockupData.colorScheme || !mockupData.components || !mockupData.features || !mockupData.nextSteps) {
+        throw new Error('Invalid mockup data received');
+      }
+
+      // Ensure all required color scheme properties exist
+      const requiredColors = [
+        'primary',
+        'primary-focus',
+        'primary-content',
+        'secondary',
+        'secondary-focus',
+        'secondary-content',
+        'accent',
+        'accent-focus',
+        'accent-content',
+        'neutral',
+        'neutral-focus',
+        'neutral-content',
+        'base-100',
+        'base-200',
+        'base-300',
+        'base-content',
+        'info',
+        'success',
+        'warning',
+        'error'
+      ];
+
+      // Fill in any missing colors with defaults
+      const defaultColors: Record<string, string> = {
+        'primary': '#1D4ED8',
+        'primary-focus': '#1E40AF',
+        'primary-content': '#FFFFFF',
+        'secondary': '#64748B',
+        'secondary-focus': '#475569',
+        'secondary-content': '#FFFFFF',
+        'accent': '#F59E0B',
+        'accent-focus': '#D97706',
+        'accent-content': '#FFFFFF',
+        'neutral': '#3D4451',
+        'neutral-focus': '#2A2E37',
+        'neutral-content': '#FFFFFF',
+        'base-100': '#FFFFFF',
+        'base-200': '#F3F4F6',
+        'base-300': '#E5E7EB',
+        'base-content': '#1F2937',
+        'info': '#3ABFF8',
+        'success': '#36D399',
+        'warning': '#FBBD23',
+        'error': '#F87272'
+      };
+
+      // Ensure all required colors exist, use defaults if missing
+      requiredColors.forEach(color => {
+        if (!mockupData.colorScheme[color]) {
+          mockupData.colorScheme[color] = defaultColors[color];
+        }
+      });
+
+      // Remove inline type assertions from the code
       if (mockupData.code && typeof mockupData.code === 'string') {
         mockupData.code = mockupData.code.replace(/\sas\s+\w+/g, '');
       }
+
       return NextResponse.json(mockupData);
     } catch (parseError) {
       console.error('Error parsing mockup data:', parseError);

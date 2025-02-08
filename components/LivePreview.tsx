@@ -4,11 +4,49 @@ interface LivePreviewProps {
   code: string;
   colorScheme?: {
     primary: string;
+    'primary-focus': string;
+    'primary-content': string;
     secondary: string;
+    'secondary-focus': string;
+    'secondary-content': string;
     accent: string;
-    background: string;
-    text: string;
+    'accent-focus': string;
+    'accent-content': string;
+    neutral: string;
+    'neutral-focus': string;
+    'neutral-content': string;
+    'base-100': string;
+    'base-200': string;
+    'base-300': string;
+    'base-content': string;
+    info: string;
+    success: string;
+    warning: string;
+    error: string;
   };
+}
+
+// Helper function to adjust hex colors
+function adjustColor(hex: string, amount: number): string {
+  try {
+    // Remove the hash if present
+    hex = hex.replace('#', '');
+    // Convert to RGB
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    // Adjust each component
+    const adjustComponent = (c: number) => {
+      const newC = Math.min(255, Math.max(0, c + amount));
+      const hexComponent = newC.toString(16);
+      return hexComponent.length === 1 ? '0' + hexComponent : hexComponent;
+    };
+    // Convert back to hex
+    return '#' + adjustComponent(r) + adjustComponent(g) + adjustComponent(b);
+  } catch {
+    // Return a fallback color if there's any error
+    return amount > 0 ? '#3B82F6' : '#1E40AF';
+  }
 }
 
 const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
@@ -45,50 +83,66 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
       // Escape the final code so it can be safely embedded
       const safeCode = JSON.stringify(transformedCode);
 
-      // Build the custom theme style block using your colorScheme.
-      // Note: DaisyUI uses CSS variables like --p (primary), --s (secondary),
-      // --a (accent), --base-100 (background), and --base-content (text).
-      const customThemeStyle = colorScheme
+      // Build the DaisyUI theme style block using the colorScheme
+      const daisyuiTheme = colorScheme
         ? `
           <style>
-            :root {
+            [data-theme="custom"] {
+              /* Primary colors */
               --p: ${colorScheme.primary};
-              --primary: ${colorScheme.primary};
-              --p-content: #ffffff;
+              --pf: ${colorScheme['primary-focus']};
+              --pc: ${colorScheme['primary-content']};
+              
+              /* Secondary colors */
               --s: ${colorScheme.secondary};
-              --secondary: ${colorScheme.secondary};
-              --s-content: #ffffff;
+              --sf: ${colorScheme['secondary-focus']};
+              --sc: ${colorScheme['secondary-content']};
+              
+              /* Accent colors */
               --a: ${colorScheme.accent};
-              --accent: ${colorScheme.accent};
-              --a-content: #ffffff;
-              --base-100: ${colorScheme.background};
-              --base-content: ${colorScheme.text};
+              --af: ${colorScheme['accent-focus']};
+              --ac: ${colorScheme['accent-content']};
+              
+              /* Neutral colors */
+              --n: ${colorScheme.neutral};
+              --nf: ${colorScheme['neutral-focus']};
+              --nc: ${colorScheme['neutral-content']};
+              
+              /* Base colors */
+              --b1: ${colorScheme['base-100']};
+              --b2: ${colorScheme['base-200']};
+              --b3: ${colorScheme['base-300']};
+              --bc: ${colorScheme['base-content']};
+              
+              /* State colors */
+              --in: ${colorScheme.info};
+              --su: ${colorScheme.success};
+              --wa: ${colorScheme.warning};
+              --er: ${colorScheme.error};
             }
           </style>
         `
         : '';
 
-      // Build the HTML content for the iframe.
-      // IMPORTANT: Place the customThemeStyle right after the DaisyUI link so that it overrides the default colors.
+      // Build the HTML content for the iframe
       const html = `
         <!DOCTYPE html>
-        <html>
+        <html data-theme="custom">
           <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <!-- Load Tailwind CSS -->
             <script src="https://cdn.tailwindcss.com"></script>
-            <!-- Load DaisyUI (must be loaded after Tailwind) -->
             <link href="https://cdn.jsdelivr.net/npm/daisyui@2.51.5/dist/full.css" rel="stylesheet">
-            ${customThemeStyle}
+            ${daisyuiTheme}
             <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
             <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
             <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
             <style>
               body { margin: 0; padding: 1rem; }
+              * { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
             </style>
           </head>
-          <body>
+          <body data-theme="custom">
             <div id="root"></div>
             <script type="text/babel" data-presets="react,typescript">
               // Dummy type definitions to avoid runtime errors
@@ -140,9 +194,9 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
       console.error('Error rendering preview:', error);
       if (containerRef.current) {
         containerRef.current.innerHTML = `
-          <div style="padding: 1rem; color: red;">
-            <h2 style="font-size: 1.25rem; font-weight: 600;">Error Rendering Preview</h2>
-            <pre style="font-size: 0.875rem; overflow:auto;">
+          <div class="p-4 text-red-600 bg-red-50 rounded-lg">
+            <h2 class="text-lg font-semibold mb-2">Error Rendering Preview</h2>
+            <pre class="text-sm overflow-auto">
               ${error instanceof Error ? error.message : 'Unknown error occurred'}
             </pre>
           </div>

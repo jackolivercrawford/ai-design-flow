@@ -10,10 +10,26 @@ interface MockupData {
   code: string;
   colorScheme: {
     primary: string;
+    'primary-focus': string;
+    'primary-content': string;
     secondary: string;
+    'secondary-focus': string;
+    'secondary-content': string;
     accent: string;
-    background: string;
-    text: string;
+    'accent-focus': string;
+    'accent-content': string;
+    neutral: string;
+    'neutral-focus': string;
+    'neutral-content': string;
+    'base-100': string;
+    'base-200': string;
+    'base-300': string;
+    'base-content': string;
+    info: string;
+    success: string;
+    warning: string;
+    error: string;
+    [key: string]: string; // Allow string indexing for dynamic access
   };
   components: string[];
   features: string[];
@@ -28,6 +44,40 @@ interface PreviewPanelProps {
   qaTree: any;
   onVersionRestore?: (version: MockupVersion) => void;
 }
+
+// Helper function to ensure complete color scheme
+const ensureCompleteColorScheme = (version: MockupVersion): MockupVersion => {
+  const defaultColors: Record<string, string> = {
+    'primary-focus': '#1E40AF',
+    'primary-content': '#FFFFFF',
+    'secondary-focus': '#475569',
+    'secondary-content': '#FFFFFF',
+    'accent-focus': '#D97706',
+    'accent-content': '#FFFFFF',
+    'neutral': '#3D4451',
+    'neutral-focus': '#2A2E37',
+    'neutral-content': '#FFFFFF',
+    'base-100': '#FFFFFF',
+    'base-200': '#F3F4F6',
+    'base-300': '#E5E7EB',
+    'base-content': '#1F2937',
+    'info': '#3ABFF8',
+    'success': '#36D399',
+    'warning': '#FBBD23',
+    'error': '#F87272'
+  };
+
+  return {
+    ...version,
+    mockupData: {
+      ...version.mockupData,
+      colorScheme: {
+        ...defaultColors,
+        ...version.mockupData.colorScheme,
+      }
+    }
+  };
+};
 
 export default function PreviewPanel({
   isOpen,
@@ -111,8 +161,9 @@ export default function PreviewPanel({
   };
 
   const handleVersionSelect = (version: MockupVersion) => {
-    setSelectedVersion(version);
-    setMockupData(version.mockupData);
+    const completeVersion = ensureCompleteColorScheme(version);
+    setSelectedVersion(completeVersion);
+    setMockupData(completeVersion.mockupData);
   };
 
   const handleVersionRestore = (version: MockupVersion) => {
@@ -383,17 +434,107 @@ export default function PreviewPanel({
                         {/* Color Scheme */}
                         <div>
                           <h2 className="text-xl font-semibold text-gray-900 mb-4">Color Scheme</h2>
-                          <div className="flex flex-wrap gap-4">
-                            {Object.entries(mockupData.colorScheme).map(([name, color]) => (
-                              <div key={name} className="flex flex-col items-center">
-                                <div
-                                  className="w-16 h-16 rounded-lg shadow-md"
-                                  style={{ backgroundColor: color }}
-                                />
-                                <span className="mt-2 text-sm text-gray-600">{name}</span>
-                                <span className="text-xs text-gray-400">{color}</span>
-                              </div>
-                            ))}
+                          
+                          {/* Primary Colors */}
+                          <div className="mb-8">
+                            <h3 className="text-lg font-medium text-gray-800 mb-3">Primary Colors</h3>
+                            <div className="flex flex-wrap gap-4">
+                              {['primary', 'primary-focus', 'primary-content'].map((key) => (
+                                <div key={key} className="flex flex-col items-center">
+                                  <div
+                                    className="w-16 h-16 rounded-lg shadow-md"
+                                    style={{ backgroundColor: mockupData.colorScheme[key] }}
+                                  />
+                                  <span className="mt-2 text-sm text-gray-600">{key}</span>
+                                  <span className="text-xs text-gray-400">{mockupData.colorScheme[key]}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Secondary Colors */}
+                          <div className="mb-8">
+                            <h3 className="text-lg font-medium text-gray-800 mb-3">Secondary Colors</h3>
+                            <div className="flex flex-wrap gap-4">
+                              {['secondary', 'secondary-focus', 'secondary-content'].map((key) => (
+                                <div key={key} className="flex flex-col items-center">
+                                  <div
+                                    className="w-16 h-16 rounded-lg shadow-md"
+                                    style={{ backgroundColor: mockupData.colorScheme[key] }}
+                                  />
+                                  <span className="mt-2 text-sm text-gray-600">{key}</span>
+                                  <span className="text-xs text-gray-400">{mockupData.colorScheme[key]}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Accent Colors */}
+                          <div className="mb-8">
+                            <h3 className="text-lg font-medium text-gray-800 mb-3">Accent Colors</h3>
+                            <div className="flex flex-wrap gap-4">
+                              {['accent', 'accent-focus', 'accent-content'].map((key) => (
+                                <div key={key} className="flex flex-col items-center">
+                                  <div
+                                    className="w-16 h-16 rounded-lg shadow-md"
+                                    style={{ backgroundColor: mockupData.colorScheme[key] }}
+                                  />
+                                  <span className="mt-2 text-sm text-gray-600">{key}</span>
+                                  <span className="text-xs text-gray-400">{mockupData.colorScheme[key]}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Neutral Colors */}
+                          <div className="mb-8">
+                            <h3 className="text-lg font-medium text-gray-800 mb-3">Neutral Colors</h3>
+                            <div className="flex flex-wrap gap-4">
+                              {['neutral', 'neutral-focus', 'neutral-content'].map((key) => (
+                                <div key={key} className="flex flex-col items-center">
+                                  <div
+                                    className="w-16 h-16 rounded-lg shadow-md"
+                                    style={{ backgroundColor: mockupData.colorScheme[key] }}
+                                  />
+                                  <span className="mt-2 text-sm text-gray-600">{key}</span>
+                                  <span className="text-xs text-gray-400">{mockupData.colorScheme[key]}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Base Colors */}
+                          <div className="mb-8">
+                            <h3 className="text-lg font-medium text-gray-800 mb-3">Base Colors</h3>
+                            <div className="flex flex-wrap gap-4">
+                              {['base-100', 'base-200', 'base-300', 'base-content'].map((key) => (
+                                <div key={key} className="flex flex-col items-center">
+                                  <div
+                                    className="w-16 h-16 rounded-lg shadow-md"
+                                    style={{ backgroundColor: mockupData.colorScheme[key] }}
+                                  />
+                                  <span className="mt-2 text-sm text-gray-600">{key}</span>
+                                  <span className="text-xs text-gray-400">{mockupData.colorScheme[key]}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* State Colors */}
+                          <div className="mb-8">
+                            <h3 className="text-lg font-medium text-gray-800 mb-3">State Colors</h3>
+                            <div className="flex flex-wrap gap-4">
+                              {['info', 'success', 'warning', 'error'].map((key) => (
+                                <div key={key} className="flex flex-col items-center">
+                                  <div
+                                    className="w-16 h-16 rounded-lg shadow-md"
+                                    style={{ backgroundColor: mockupData.colorScheme[key] }}
+                                  />
+                                  <span className="mt-2 text-sm text-gray-600">{key}</span>
+                                  <span className="text-xs text-gray-400">{mockupData.colorScheme[key]}</span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </div>
 
