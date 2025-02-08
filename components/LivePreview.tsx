@@ -44,12 +44,12 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
     if (!containerRef.current || !code) return;
 
     try {
-      // Clean up any previous content
+      // Remove any previous content
       while (containerRef.current.firstChild) {
         containerRef.current.removeChild(containerRef.current.firstChild);
       }
 
-      // Create a new iframe to sandbox the preview
+      // Create a new iframe for sandboxed preview
       const iframe = document.createElement('iframe');
       iframe.style.width = '100%';
       iframe.style.height = '100%';
@@ -57,17 +57,17 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
       containerRef.current.appendChild(iframe);
 
       // Transform the code:
-      // Remove import statements but leave React (which will be available as a global)
+      // 1. Remove import statements (React will be provided as a global)
       let transformedCode = code;
       transformedCode = transformedCode.replace(/import\s+{([^}]+)}\s+from\s+['"]react['"];?/g, '');
       transformedCode = transformedCode.replace(/import\s+React\s*,?\s*{([^}]+)}\s+from\s+['"]react['"];?/g, '');
       transformedCode = transformedCode.replace(/import\s+.*?from\s+['"].*?['"];?\n?/g, '');
       
-      // Remove export statements (keeping the component definition)
+      // 2. Remove export statements (keep the component definition)
       transformedCode = transformedCode.replace(/export\s+default\s+/, '');
       transformedCode = transformedCode.replace(/export\s+/, '');
-
-      // Remove inline type assertions (e.g. " as ElevatorMode")
+      
+      // 3. Remove inline type assertions (e.g. " as ElevatorMode")
       transformedCode = transformedCode.replace(/\sas\s+\w+/g, '');
 
       // Escape the final code so it can be safely embedded
@@ -140,32 +140,32 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
               .border-accent-dark { border-color: var(--color-accent-dark); }
               
               /* Hover states */
-              .hover\:text-primary:hover { color: var(--color-primary); }
-              .hover\:text-primary-light:hover { color: var(--color-primary-light); }
-              .hover\:text-primary-dark:hover { color: var(--color-primary-dark); }
-              .hover\:text-secondary:hover { color: var(--color-secondary); }
-              .hover\:text-accent:hover { color: var(--color-accent); }
+              .hover\\:text-primary:hover { color: var(--color-primary); }
+              .hover\\:text-primary-light:hover { color: var(--color-primary-light); }
+              .hover\\:text-primary-dark:hover { color: var(--color-primary-dark); }
+              .hover\\:text-secondary:hover { color: var(--color-secondary); }
+              .hover\\:text-accent:hover { color: var(--color-accent); }
               
-              .hover\:bg-primary:hover { background-color: var(--color-primary); }
-              .hover\:bg-primary-light:hover { background-color: var(--color-primary-light); }
-              .hover\:bg-primary-dark:hover { background-color: var(--color-primary-dark); }
-              .hover\:bg-secondary:hover { background-color: var(--color-secondary); }
-              .hover\:bg-accent:hover { background-color: var(--color-accent); }
+              .hover\\:bg-primary:hover { background-color: var(--color-primary); }
+              .hover\\:bg-primary-light:hover { background-color: var(--color-primary-light); }
+              .hover\\:bg-primary-dark:hover { background-color: var(--color-primary-dark); }
+              .hover\\:bg-secondary:hover { background-color: var(--color-secondary); }
+              .hover\\:bg-accent:hover { background-color: var(--color-accent); }
               
               /* Focus states */
-              .focus\:border-primary:focus { border-color: var(--color-primary); }
-              .focus\:border-accent:focus { border-color: var(--color-accent); }
-              .focus\:ring-primary:focus { --tw-ring-color: var(--color-primary); }
-              .focus\:ring-accent:focus { --tw-ring-color: var(--color-accent); }
+              .focus\\:border-primary:focus { border-color: var(--color-primary); }
+              .focus\\:border-accent:focus { border-color: var(--color-accent); }
+              .focus\\:ring-primary:focus { --tw-ring-color: var(--color-primary); }
+              .focus\\:ring-accent:focus { --tw-ring-color: var(--color-accent); }
               
               /* Active states */
-              .active\:bg-primary-dark:active { background-color: var(--color-primary-dark); }
-              .active\:bg-secondary-dark:active { background-color: var(--color-secondary-dark); }
-              .active\:bg-accent-dark:active { background-color: var(--color-accent-dark); }
+              .active\\:bg-primary-dark:active { background-color: var(--color-primary-dark); }
+              .active\\:bg-secondary-dark:active { background-color: var(--color-secondary-dark); }
+              .active\\:bg-accent-dark:active { background-color: var(--color-accent-dark); }
               
               /* Disabled states */
-              .disabled\:bg-gray-300:disabled { background-color: #D1D5DB; }
-              .disabled\:text-gray-500:disabled { color: #6B7280; }
+              .disabled\\:bg-gray-300:disabled { background-color: #D1D5DB; }
+              .disabled\\:text-gray-500:disabled { color: #6B7280; }
               
               /* Additional utility classes for transitions */
               .transition { transition-property: all; transition-duration: 200ms; }
