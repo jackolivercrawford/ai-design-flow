@@ -5,19 +5,16 @@ function adjustColor(hex: string, amount: number): string {
   try {
     // Remove the hash if present
     hex = hex.replace('#', '');
-    
     // Convert to RGB
     const r = parseInt(hex.substring(0, 2), 16);
     const g = parseInt(hex.substring(2, 4), 16);
     const b = parseInt(hex.substring(4, 6), 16);
-    
     // Adjust each component
     const adjustComponent = (c: number) => {
       const newC = Math.min(255, Math.max(0, c + amount));
       const hexComponent = newC.toString(16);
       return hexComponent.length === 1 ? '0' + hexComponent : hexComponent;
     };
-    
     // Convert back to hex
     return '#' + adjustComponent(r) + adjustComponent(g) + adjustComponent(b);
   } catch {
@@ -44,12 +41,12 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
     if (!containerRef.current || !code) return;
 
     try {
-      // Remove any previous content
+      // Clean up any previous content
       while (containerRef.current.firstChild) {
         containerRef.current.removeChild(containerRef.current.firstChild);
       }
 
-      // Create a new iframe for sandboxed preview
+      // Create a new iframe for the sandboxed preview
       const iframe = document.createElement('iframe');
       iframe.style.width = '100%';
       iframe.style.height = '100%';
@@ -57,16 +54,14 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
       containerRef.current.appendChild(iframe);
 
       // Transform the code:
-      // 1. Remove import statements (React will be provided as a global)
+      // 1. Remove import statements (React is provided as a global)
       let transformedCode = code;
       transformedCode = transformedCode.replace(/import\s+{([^}]+)}\s+from\s+['"]react['"];?/g, '');
       transformedCode = transformedCode.replace(/import\s+React\s*,?\s*{([^}]+)}\s+from\s+['"]react['"];?/g, '');
       transformedCode = transformedCode.replace(/import\s+.*?from\s+['"].*?['"];?\n?/g, '');
-      
       // 2. Remove export statements (keep the component definition)
       transformedCode = transformedCode.replace(/export\s+default\s+/, '');
       transformedCode = transformedCode.replace(/export\s+/, '');
-      
       // 3. Remove inline type assertions (e.g. " as ElevatorMode")
       transformedCode = transformedCode.replace(/\sas\s+\w+/g, '');
 
@@ -180,11 +175,18 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
               window.ChangeEvent = function(target) { return {}; };
               window.MouseEvent = function(target) { return {}; };
 
+              // Prepend React hook destructuring so that useState, useEffect, etc. are available
+              const prelude = "const { useState, useEffect, useRef, useMemo, useCallback, useContext, useReducer } = React;";
+              
               // Retrieve the safe, escaped code string
               const code = ${safeCode};
 
-              // Evaluate the generated code so that the component is defined
-              eval(code);
+              // Combine the prelude with the generated code
+              const fullCode = prelude + code;
+
+              // Transpile the code with Babel and provide a filename option
+              const transformed = Babel.transform(fullCode, { filename: 'file.tsx', presets: ['react', 'typescript'] }).code;
+              eval(transformed);
 
               // Find and render the main component
               const components = Object.values(window).filter(
@@ -195,9 +197,7 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
                 const root = ReactDOM.createRoot(document.getElementById('root'));
                 root.render(
                   <React.StrictMode>
-                    <ErrorBoundary>
-                      <MainComponent />
-                    </ErrorBoundary>
+                    <MainComponent />
                   </React.StrictMode>
                 );
               } else {
