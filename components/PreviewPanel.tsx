@@ -328,8 +328,10 @@ export default function PreviewPanel({
                               <ul className="space-y-3">
                                 {[...category.requirements]
                                   .sort((a, b) => {
-                                    const priorityOrder = { high: 0, medium: 1, low: 2 };
-                                    return (priorityOrder[a.priority] || 1) - (priorityOrder[b.priority] || 1);
+                                    const priorityOrder: Record<string, number> = { 'high': 0, 'medium': 1, 'low': 2 };
+                                    const aPriority = (a.priority && priorityOrder[a.priority.toLowerCase()]) ?? 1;
+                                    const bPriority = (b.priority && priorityOrder[b.priority.toLowerCase()]) ?? 1;
+                                    return aPriority - bPriority;
                                   })
                                   .map((req, index) => (
                                   <li
