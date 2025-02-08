@@ -25,6 +25,7 @@ AI-DESIGN-FLOW
   │   ├── Canvas.tsx
   │   ├── CanvasTree.tsx
   │   ├── HeaderToolbar.tsx
+  │   ├── LivePreview.tsx
   │   ├── PreviewArea.tsx
   │   ├── PreviewPanel.tsx
   │   ├── PromptInput.tsx
@@ -119,32 +120,95 @@ Guidelines:
 9. Use a consistent color scheme
 10. Include proper TypeScript types
 
+CRITICAL REQUIREMENTS:
+1. The code MUST implement ALL features mentioned in the requirements
+2. Each requirement should be traceable to specific UI elements or functionality
+3. The color scheme should be carefully chosen to match the application's purpose
+4. Components should be modular and reusable
+5. All interactive elements must have proper ARIA labels and roles
+6. Error states, loading states, and success states must be handled
+7. The interface must be fully responsive
+8. All user inputs must be validated
+9. Emergency and critical functions must be easily accessible
+10. Real-time updates and status changes must be clearly visible
+
+The code must be a complete, working React component that:
+1. Includes all necessary imports at the top
+2. Defines all required TypeScript interfaces
+3. Implements a main component that uses the interfaces
+4. Uses React hooks (useState, useEffect) for state management
+5. Includes all event handlers and UI interactions
+6. Has proper error handling and loading states
+7. Uses the provided color scheme consistently
+8. Implements all features from the requirements
+9. Has proper ARIA labels and accessibility features
+10. Exports the main component as default
+
+Example structure:
+\`\`\`tsx
+import React, { useState, useEffect } from 'react';
+
+interface ComponentProps {
+  // prop definitions
+}
+
+interface ComponentState {
+  // state definitions
+}
+
+function MainComponent() {
+  const [state, setState] = useState<ComponentState>({});
+  
+  useEffect(() => {
+    // side effects
+  }, []);
+
+  const handleEvent = () => {
+    // event handling
+  };
+
+  return (
+    <div>
+      {/* component JSX */}
+    </div>
+  );
+}
+
+export default MainComponent;
+\`\`\`
+
 Return your response in this exact JSON format:
 {
-  "code": "Complete React/Tailwind component code",
+  "code": "Complete React/Tailwind component code as shown in the example above",
   "colorScheme": {
-    "primary": "hex color",
-    "secondary": "hex color",
-    "accent": "hex color",
-    "background": "hex color",
-    "text": "hex color"
+    "primary": "hex color (should be suitable for main actions and headers)",
+    "secondary": "hex color (should be suitable for supporting elements)",
+    "accent": "hex color (should be suitable for attention-grabbing elements)",
+    "background": "hex color (should be suitable for the main background)",
+    "text": "hex color (should be suitable for main text content)"
   },
-  "components": ["List of reusable components created"],
-  "features": ["List of implemented features"],
-  "nextSteps": ["Suggested improvements or additions"]
+  "components": [
+    "Detailed list of all reusable components created, with their purposes"
+  ],
+  "features": [
+    "Comprehensive list of all implemented features, matching the requirements"
+  ],
+  "nextSteps": [
+    "List of suggested improvements or additions for future iterations"
+  ]
 }`
         },
         {
           role: "user",
           content: `Design Prompt: ${requirementsDoc.prompt}
 
-Requirements:
+Requirements (MUST ALL BE IMPLEMENTED):
 ${formattedRequirements}
 
-Generate a complete React/Tailwind mockup that satisfies these requirements. The mockup should be immediately usable and include all necessary types and styling.`
+Generate a complete React/Tailwind mockup that satisfies ALL these requirements. The mockup should be immediately usable and include all necessary types and styling. Each requirement should be reflected in the implementation.`
         }
       ],
-      max_completion_tokens: 4000,
+      max_completion_tokens: 16000,
       response_format: { type: "json_object" },
       reasoning_effort: 'medium'
     });
@@ -774,7 +838,7 @@ Knowledge Base: ${knowledgeBaseContext}
 Update the requirements document with any new information from the Q&A and knowledge base. Return ONLY the updated document as a JSON object.`
         }
       ],
-      max_completion_tokens: 4000,
+      max_completion_tokens: 16000,
       response_format: { type: "json_object" },
       reasoning_effort: 'medium'
     });
@@ -798,16 +862,98 @@ Update the requirements document with any new information from the Q&A and knowl
         return NextResponse.json(existingDocument);
       }
       
-      // Ensure all requirements have IDs
-      (Object.values(updatedDocument.categories) as RequirementCategory[]).forEach((category: RequirementCategory) => {
+      // Helper function to determine requirement category and tags
+      function analyzeRequirement(text: string): {
+        category: 'functional' | 'technical' | 'ux' | 'accessibility' | 'security' | 'performance';
+        tags: string[];
+        priority: 'high' | 'medium' | 'low';
+      } {
+        const textLower = text.toLowerCase();
+        let category: 'functional' | 'technical' | 'ux' | 'accessibility' | 'security' | 'performance' = 'functional';
+        const tags: string[] = [];
+        let priority: 'high' | 'medium' | 'low' = 'medium';
+
+        // Category determination
+        if (textLower.includes('security') || textLower.includes('emergency') || textLower.includes('safety')) {
+          category = 'security';
+          priority = 'high';
+          tags.push('safety');
+        } else if (textLower.includes('user') || textLower.includes('interface') || textLower.includes('display') || textLower.includes('visual')) {
+          category = 'ux';
+          tags.push('interface');
+        } else if (textLower.includes('performance') || textLower.includes('speed') || textLower.includes('efficiency')) {
+          category = 'performance';
+          tags.push('optimization');
+        } else if (textLower.includes('accessible') || textLower.includes('disability')) {
+          category = 'accessibility';
+          priority = 'high';
+          tags.push('ada-compliance');
+        } else if (textLower.includes('technical') || textLower.includes('system') || textLower.includes('integration')) {
+          category = 'technical';
+          tags.push('integration');
+        }
+
+        // Additional tags based on content
+        if (textLower.includes('monitor') || textLower.includes('sensor')) {
+          tags.push('monitoring');
+        }
+        if (textLower.includes('data') || textLower.includes('analytics')) {
+          tags.push('data');
+        }
+        if (textLower.includes('ai') || textLower.includes('machine learning')) {
+          tags.push('ai');
+        }
+        if (textLower.includes('maintenance')) {
+          tags.push('maintenance');
+        }
+        if (textLower.includes('real-time') || textLower.includes('realtime')) {
+          tags.push('real-time');
+        }
+
+        // Priority determination (if not already set by category)
+        if (priority === 'medium') {
+          if (textLower.includes('critical') || textLower.includes('essential') || textLower.includes('must')) {
+            priority = 'high';
+          } else if (textLower.includes('optional') || textLower.includes('nice to have')) {
+            priority = 'low';
+          }
+        }
+
+        return { category, tags, priority };
+      }
+
+      // Ensure all requirements have proper structure and IDs
+      Object.values(updatedDocument.categories).forEach((category: any) => {
         if (Array.isArray(category.requirements)) {
-          category.requirements.forEach((req: { id?: string; createdAt?: string; updatedAt?: string }) => {
+          category.requirements = category.requirements.map((req: string | any) => {
+            // If the requirement is just a string, convert it to proper structure
+            if (typeof req === 'string') {
+              const analysis = analyzeRequirement(req);
+              return {
+                id: uuidv4(),
+                text: req,
+                source: 'user-qa',
+                priority: analysis.priority,
+                category: analysis.category,
+                tags: analysis.tags,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+              };
+            }
+            // If it's already an object but missing ID
             if (!req.id) {
+              const analysis = analyzeRequirement(req.text);
               req.id = uuidv4();
+              req.priority = req.priority || analysis.priority;
+              req.category = req.category || analysis.category;
+              req.tags = req.tags || analysis.tags;
               req.createdAt = new Date().toISOString();
               req.updatedAt = new Date().toISOString();
             }
+            return req;
           });
+        } else {
+          category.requirements = [];
         }
       });
       
@@ -886,7 +1032,7 @@ export default function PreviewPage() {
 // /app/qna/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import HeaderToolbar from '../../components/HeaderToolbar';
@@ -913,6 +1059,7 @@ interface QuestionHistoryItem {
 
 export default function QnAPage() {
   const router = useRouter();
+  const hasFetchedInitialQuestion = useRef(false);
   const [prompt, setPrompt] = useState<string>('');
   const [settings, setSettings] = useState<QASettings | null>(null);
   const [qaTree, setQaTree] = useState<QANode | null>(null);
@@ -1437,6 +1584,10 @@ export default function QnAPage() {
 
   // On mount: try to load saved progress or start new session
   useEffect(() => {
+    // Prevent duplicate API call on initial load
+    if (hasFetchedInitialQuestion.current) return;
+    hasFetchedInitialQuestion.current = true;
+
     const savedProgress = localStorage.getItem('qaProgress');
     const storedPrompt = localStorage.getItem('designPrompt');
     const storedSettings = localStorage.getItem('qaSettings');
@@ -1496,7 +1647,7 @@ export default function QnAPage() {
       setRequirementsDoc(initialRequirementsDoc);
       
       // Generate first question (Q1)
-      fetchQuestionsForNode(storedPrompt, rootNode, [], 0, true).then(({ nodes: children, suggestedAnswer }) => {
+      fetchQuestionsForNode(storedPrompt, rootNode, [], 0, false).then(({ nodes: children, suggestedAnswer }) => {
         if (children.length > 0) {
           children[0].questionNumber = 1;
           rootNode.children = children;
@@ -2079,6 +2230,340 @@ const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
 
 export default HeaderToolbar; 
 
+----- /Users/jackcrawford/ai-design-flow/components/LivePreview.tsx -----
+import React, { useEffect, useRef } from 'react';
+
+// Helper function to adjust hex colors
+function adjustColor(hex: string, amount: number): string {
+  try {
+    // Remove the hash if present
+    hex = hex.replace('#', '');
+    
+    // Convert to RGB
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    
+    // Adjust each component
+    const adjustComponent = (c: number) => {
+      const newC = Math.min(255, Math.max(0, c + amount));
+      const hex = newC.toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    };
+    
+    // Convert back to hex
+    return '#' + adjustComponent(r) + adjustComponent(g) + adjustComponent(b);
+  } catch {
+    // Return a fallback color if there's any error
+    return amount > 0 ? '#3B82F6' : '#1E40AF';
+  }
+}
+
+interface LivePreviewProps {
+  code: string;
+  colorScheme?: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    background: string;
+    text: string;
+  };
+}
+
+const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!containerRef.current || !code) return;
+
+    try {
+      // Clean up any previous content
+      while (containerRef.current.firstChild) {
+        containerRef.current.removeChild(containerRef.current.firstChild);
+      }
+
+      // Create a new iframe to sandbox the preview
+      const iframe = document.createElement('iframe');
+      iframe.style.width = '100%';
+      iframe.style.height = '100%';
+      iframe.style.border = 'none';
+      containerRef.current.appendChild(iframe);
+
+      // Transform the code to remove imports and exports
+      let transformedCode = code;
+      
+      // Remove import statements but keep React imports as globals
+      transformedCode = transformedCode.replace(/import\s+{([^}]+)}\s+from\s+['"]react['"];?/g, '');
+      transformedCode = transformedCode.replace(/import\s+React\s*,?\s*{([^}]+)}\s+from\s+['"]react['"];?/g, '');
+      transformedCode = transformedCode.replace(/import\s+.*?from\s+['"].*?['"];?\n?/g, '');
+      
+      // Remove export statements but keep the component definition
+      transformedCode = transformedCode.replace(/export\s+default\s+/, '');
+      transformedCode = transformedCode.replace(/export\s+/, '');
+
+      // Create the document content with necessary dependencies
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+            <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+            <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+            <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+            <style>
+              body { margin: 0; padding: 1rem; }
+              * { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+              
+              /* Custom color scheme */
+              :root {
+                --color-primary: ${colorScheme?.primary || '#1D4ED8'};
+                --color-secondary: ${colorScheme?.secondary || '#64748B'};
+                --color-accent: ${colorScheme?.accent || '#F59E0B'};
+                --color-background: ${colorScheme?.background || '#F3F4F6'};
+                --color-text: ${colorScheme?.text || '#111827'};
+                
+                /* Computed colors for states */
+                --color-primary-light: ${colorScheme?.primary ? adjustColor(colorScheme.primary, 20) : '#3B82F6'};
+                --color-primary-dark: ${colorScheme?.primary ? adjustColor(colorScheme.primary, -20) : '#1E40AF'};
+                --color-secondary-light: ${colorScheme?.secondary ? adjustColor(colorScheme.secondary, 20) : '#94A3B8'};
+                --color-secondary-dark: ${colorScheme?.secondary ? adjustColor(colorScheme.secondary, -20) : '#475569'};
+                --color-accent-light: ${colorScheme?.accent ? adjustColor(colorScheme.accent, 20) : '#FBBF24'};
+                --color-accent-dark: ${colorScheme?.accent ? adjustColor(colorScheme.accent, -20) : '#D97706'};
+              }
+              
+              /* Text colors */
+              .text-primary { color: var(--color-primary); }
+              .text-primary-light { color: var(--color-primary-light); }
+              .text-primary-dark { color: var(--color-primary-dark); }
+              .text-secondary { color: var(--color-secondary); }
+              .text-secondary-light { color: var(--color-secondary-light); }
+              .text-secondary-dark { color: var(--color-secondary-dark); }
+              .text-accent { color: var(--color-accent); }
+              .text-accent-light { color: var(--color-accent-light); }
+              .text-accent-dark { color: var(--color-accent-dark); }
+              .text-text { color: var(--color-text); }
+              
+              /* Background colors */
+              .bg-primary { background-color: var(--color-primary); }
+              .bg-primary-light { background-color: var(--color-primary-light); }
+              .bg-primary-dark { background-color: var(--color-primary-dark); }
+              .bg-secondary { background-color: var(--color-secondary); }
+              .bg-secondary-light { background-color: var(--color-secondary-light); }
+              .bg-secondary-dark { background-color: var(--color-secondary-dark); }
+              .bg-accent { background-color: var(--color-accent); }
+              .bg-accent-light { background-color: var(--color-accent-light); }
+              .bg-accent-dark { background-color: var(--color-accent-dark); }
+              .bg-background { background-color: var(--color-background); }
+              
+              /* Border colors */
+              .border-primary { border-color: var(--color-primary); }
+              .border-primary-light { border-color: var(--color-primary-light); }
+              .border-primary-dark { border-color: var(--color-primary-dark); }
+              .border-secondary { border-color: var(--color-secondary); }
+              .border-secondary-light { border-color: var(--color-secondary-light); }
+              .border-secondary-dark { border-color: var(--color-secondary-dark); }
+              .border-accent { border-color: var(--color-accent); }
+              .border-accent-light { border-color: var(--color-accent-light); }
+              .border-accent-dark { border-color: var(--color-accent-dark); }
+              
+              /* Hover states */
+              .hover\:text-primary:hover { color: var(--color-primary); }
+              .hover\:text-primary-light:hover { color: var(--color-primary-light); }
+              .hover\:text-primary-dark:hover { color: var(--color-primary-dark); }
+              .hover\:text-secondary:hover { color: var(--color-secondary); }
+              .hover\:text-accent:hover { color: var(--color-accent); }
+              
+              .hover\:bg-primary:hover { background-color: var(--color-primary); }
+              .hover\:bg-primary-light:hover { background-color: var(--color-primary-light); }
+              .hover\:bg-primary-dark:hover { background-color: var(--color-primary-dark); }
+              .hover\:bg-secondary:hover { background-color: var(--color-secondary); }
+              .hover\:bg-accent:hover { background-color: var(--color-accent); }
+              
+              /* Focus states */
+              .focus\:border-primary:focus { border-color: var(--color-primary); }
+              .focus\:border-accent:focus { border-color: var(--color-accent); }
+              .focus\:ring-primary:focus { --tw-ring-color: var(--color-primary); }
+              .focus\:ring-accent:focus { --tw-ring-color: var(--color-accent); }
+              
+              /* Active states */
+              .active\:bg-primary-dark:active { background-color: var(--color-primary-dark); }
+              .active\:bg-secondary-dark:active { background-color: var(--color-secondary-dark); }
+              .active\:bg-accent-dark:active { background-color: var(--color-accent-dark); }
+              
+              /* Disabled states */
+              .disabled\:bg-gray-300:disabled { background-color: #D1D5DB; }
+              .disabled\:text-gray-500:disabled { color: #6B7280; }
+              
+              /* Additional utility classes for transitions */
+              .transition { transition-property: all; transition-duration: 200ms; }
+              .transition-colors { transition-property: background-color, border-color, color, fill, stroke; transition-duration: 200ms; }
+            </style>
+          </head>
+          <body>
+            <div id="root"></div>
+            <script type="text/babel">
+              // Make React hooks available globally
+              const { useState, useEffect, useRef, useMemo, useCallback, useContext, useReducer } = React;
+              
+              // Error Boundary Component
+              class ErrorBoundary extends React.Component {
+                constructor(props) {
+                  super(props);
+                  this.state = { hasError: false, error: null };
+                }
+                
+                static getDerivedStateFromError(error) {
+                  return { hasError: true, error };
+                }
+                
+                render() {
+                  if (this.state.hasError) {
+                    return (
+                      <div className="p-4 text-red-600 bg-red-50 rounded-lg">
+                        <h2 className="text-lg font-semibold mb-2">Error in Component</h2>
+                        <pre className="text-sm overflow-auto">
+                          {this.state.error?.message || 'Unknown error occurred'}
+                        </pre>
+                      </div>
+                    );
+                  }
+                  return this.props.children;
+                }
+              }
+
+              // Define TypeScript-like interface handling
+              function defineInterface(name, structure) {
+                // Create a basic structure that works with useState destructuring
+                const defaultStructure = {
+                  [Symbol.iterator]: function* () {
+                    yield undefined;  // initial state
+                    yield function() {};  // setState function
+                  }
+                };
+                window[name] = { ...defaultStructure, ...structure };
+                return window[name];
+              }
+
+              // Define basic TypeScript types as JavaScript equivalents
+              const TypeScriptTypes = {
+                string: String,
+                number: Number,
+                boolean: Boolean,
+                Date: Date,
+                null: null,
+                undefined: undefined,
+                void: undefined,
+                any: undefined,
+                never: undefined,
+                object: Object,
+                Array: Array,
+                Promise: Promise,
+                // React-specific types
+                ChangeEvent: class {
+                  constructor(target) { this.target = target; }
+                },
+                FormEvent: class {
+                  constructor(target) { 
+                    this.target = target;
+                    this.preventDefault = () => {};
+                  }
+                },
+                MouseEvent: class {
+                  constructor(target) { 
+                    this.target = target;
+                    this.preventDefault = () => {};
+                  }
+                }
+              };
+
+              // Add TypeScript types to window
+              Object.entries(TypeScriptTypes).forEach(([key, value]) => {
+                window[key] = value;
+              });
+
+              // Extract and define interfaces from the code
+              (function() {
+                const code = '${transformedCode.replace(/'/g, "\\'")}';
+                const interfaceRegex = /interface\\s+(\\w+)\\s*{[^}]+}/g;
+                const matches = code.match(interfaceRegex) || [];
+                
+                matches.forEach(match => {
+                  const nameMatch = match.match(/interface\\s+(\\w+)/);
+                  if (nameMatch && nameMatch[1]) {
+                    try {
+                      defineInterface(nameMatch[1], {});
+                    } catch (error) {
+                      console.warn('Failed to define interface:', nameMatch[1]);
+                    }
+                  }
+                });
+              })();
+              
+              // Component code
+              ${transformedCode}
+              
+              // Find and render the main component
+              const components = Object.values(window).filter(
+                val => typeof val === 'function' && /^[A-Z]/.test(val?.name || '')
+              );
+              
+              // Get the last defined component (usually the main one)
+              const MainComponent = components[components.length - 1];
+              
+              if (MainComponent) {
+                const root = ReactDOM.createRoot(document.getElementById('root'));
+                root.render(
+                  <React.StrictMode>
+                    <ErrorBoundary>
+                      <MainComponent />
+                    </ErrorBoundary>
+                  </React.StrictMode>
+                );
+              } else {
+                document.getElementById('root').innerHTML = 
+                  '<div class="p-4 text-red-600 bg-red-50 rounded-lg">No React component found in the code</div>';
+              }
+            </script>
+          </body>
+        </html>
+      `;
+
+      // Write the content to the iframe
+      const iframeDoc = iframe.contentWindow?.document;
+      if (iframeDoc) {
+        iframeDoc.open();
+        iframeDoc.write(html);
+        iframeDoc.close();
+      }
+    } catch (error) {
+      console.error('Error rendering preview:', error);
+      // Show error in preview
+      if (containerRef.current) {
+        containerRef.current.innerHTML = `
+          <div class="p-4 text-red-600 bg-red-50 rounded-lg">
+            <h2 class="text-lg font-semibold mb-2">Error Rendering Preview</h2>
+            <pre class="text-sm overflow-auto">
+              ${error instanceof Error ? error.message : 'Unknown error occurred'}
+            </pre>
+          </div>
+        `;
+      }
+    }
+  }, [code, colorScheme]);
+
+  return (
+    <div ref={containerRef} className="w-full h-full bg-white">
+      <div className="flex items-center justify-center h-full text-gray-400">
+        Loading preview...
+      </div>
+    </div>
+  );
+};
+
+export default LivePreview; 
+
 ----- /Users/jackcrawford/ai-design-flow/components/PreviewArea.tsx -----
 interface PreviewAreaProps {
   requirements: string;
@@ -2108,6 +2593,10 @@ export default function PreviewArea({ requirements, uiCode }: PreviewAreaProps) 
 import { RequirementsDocument, MockupVersion } from '@/types';
 import { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import dynamic from 'next/dynamic';
+
+// Dynamically import a component that will render the live preview
+const LivePreview = dynamic(() => import('./LivePreview'), { ssr: false });
 
 interface MockupData {
   code: string;
@@ -2271,7 +2760,7 @@ export default function PreviewPanel({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-end">
-      <div className={`${isCompareMode ? 'w-4/5' : 'w-2/5'} bg-white h-full shadow-lg flex flex-col`}>
+      <div className={`${isCompareMode ? 'w-4/5' : 'w-full'} bg-white h-full shadow-lg flex flex-col`}>
         {/* Header */}
         <div className="p-4 border-b border-gray-200 flex justify-between items-center">
           <div className="flex space-x-4">
@@ -2339,207 +2828,232 @@ export default function PreviewPanel({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto">
-          {error ? (
-            <div className="p-6 text-center">
-              <div className="text-red-600 mb-4">{error}</div>
-              <button
-                onClick={() => {
-                  setError(null);
-                  generateMockup();
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Try Again
-              </button>
-            </div>
-          ) : isGenerating || isMockupLoading ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="flex flex-col items-center space-y-4">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                <p className="text-gray-600">
-                  {isGenerating ? 'Generating preview...' : 'Generating mockup...'}
-                </p>
+        <div className="flex-1 overflow-hidden flex">
+          {/* Live Preview (Left Side) */}
+          {activeTab === 'mockup' && mockupData && (
+            <div className="w-2/3 h-full border-r border-gray-200 bg-gray-50 overflow-auto">
+              <div className="h-full">
+                <LivePreview code={mockupData.code} />
               </div>
             </div>
-          ) : activeTab === 'versions' ? (
-            <div className="p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Version History</h2>
-              <div className="space-y-4">
-                {versions.map((version) => (
-                  <div
-                    key={version.id}
-                    className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                      selectedVersion?.id === version.id
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-blue-300'
-                    }`}
-                    onClick={() => handleVersionSelect(version)}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-medium text-gray-900">
-                          Version from {new Date(version.timestamp).toLocaleString()}
-                        </p>
-                        <p className="text-sm text-gray-600 mt-1">
-                          {version.requirementsDoc.categories.basicNeeds.requirements.length} requirements,{' '}
-                          {version.mockupData.components.length} components
-                        </p>
-                      </div>
-                      {version.name && (
-                        <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">
-                          {version.name}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className={`flex ${isCompareMode ? 'space-x-4' : ''}`}>
-              <div className={`${isCompareMode ? 'w-1/2' : 'w-full'} p-6`}>
-                {activeTab === 'requirements' ? (
-                  <div className="space-y-8">
-                    <div className="prose max-w-none">
-                      <h1 className="text-2xl font-bold text-gray-900 mb-4">
-                        {requirementsDoc.prompt}
-                      </h1>
-                      <p className="text-sm text-gray-500 mb-8">
-                        Last updated: {new Date(requirementsDoc.lastUpdated).toLocaleString()}
-                      </p>
-                    </div>
+          )}
 
-                    {Object.entries(requirementsDoc.categories).map(([key, category]) => (
-                      <div key={key} className="space-y-4">
-                        <h2 className="text-xl font-semibold text-gray-900">
-                          {category.title}
-                        </h2>
-                        {category.requirements && category.requirements.length > 0 ? (
-                          <ul className="space-y-3">
-                            {category.requirements.map((req, index) => (
-                              <li
-                                key={req.id || `${key}-${index}-${req.text}`}
-                                className="bg-white rounded-lg border border-gray-200 p-4"
-                              >
-                                <div className="flex items-start justify-between">
-                                  <div className="flex-1">
-                                    <p className="text-gray-900">{req.text}</p>
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                      {req.priority && (
-                                        <span className={`px-2 py-1 rounded-full text-xs ${
-                                          req.priority === 'high'
-                                            ? 'bg-red-100 text-red-800'
-                                            : req.priority === 'medium'
-                                            ? 'bg-yellow-100 text-yellow-800'
-                                            : 'bg-green-100 text-green-800'
-                                        }`}>
-                                          {req.priority} priority
-                                        </span>
-                                      )}
-                                      {req.category && (
-                                        <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                                          {req.category}
-                                        </span>
-                                      )}
-                                      {req.tags?.map((tag, tagIndex) => (
-                                        <span
-                                          key={`${req.id || index}-tag-${tagIndex}`}
-                                          className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800"
-                                        >
-                                          {tag}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="text-gray-500 italic">No requirements in {category.title}</p>
-                        )}
+          {/* Details Panel (Right Side) */}
+          <div className={`${activeTab === 'mockup' && mockupData ? 'w-1/3' : 'w-full'} h-full overflow-auto`}>
+            <div className="p-6">
+              {error ? (
+                <div className="p-6 text-center">
+                  <div className="text-red-600 mb-4">{error}</div>
+                  <button
+                    onClick={() => {
+                      setError(null);
+                      generateMockup();
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              ) : isGenerating || isMockupLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="flex flex-col items-center space-y-4">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                    <p className="text-gray-600">
+                      {isGenerating ? 'Generating preview...' : 'Generating mockup...'}
+                    </p>
+                  </div>
+                </div>
+              ) : activeTab === 'versions' ? (
+                <div className="p-6">
+                  <h2 className="text-xl font-semibold text-gray-900 mb-4">Version History</h2>
+                  <div className="space-y-4">
+                    {versions.map((version) => (
+                      <div
+                        key={version.id}
+                        className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                          selectedVersion?.id === version.id
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-blue-300'
+                        }`}
+                        onClick={() => handleVersionSelect(version)}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-medium text-gray-900">
+                              Version from {new Date(version.timestamp).toLocaleString()}
+                            </p>
+                            <p className="text-sm text-gray-600 mt-1">
+                              {version.requirementsDoc.categories.basicNeeds.requirements.length} requirements,{' '}
+                              {version.mockupData.components.length} components
+                            </p>
+                          </div>
+                          {version.name && (
+                            <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">
+                              {version.name}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
-                ) : mockupData ? (
-                  <div className="space-y-8">
-                    {/* Color Scheme */}
-                    <div>
-                      <h2 className="text-xl font-semibold text-gray-900 mb-4">Color Scheme</h2>
-                      <div className="flex flex-wrap gap-4">
-                        {Object.entries(mockupData.colorScheme).map(([name, color]) => (
-                          <div key={name} className="flex flex-col items-center">
-                            <div
-                              className="w-16 h-16 rounded-lg shadow-md"
-                              style={{ backgroundColor: color }}
-                            />
-                            <span className="mt-2 text-sm text-gray-600">{name}</span>
-                            <span className="text-xs text-gray-400">{color}</span>
+                </div>
+              ) : (
+                <div className={`flex ${isCompareMode ? 'space-x-4' : ''}`}>
+                  <div className={`${isCompareMode ? 'w-1/2' : 'w-full'}`}>
+                    {activeTab === 'requirements' ? (
+                      <div className="space-y-8">
+                        <div className="prose max-w-none">
+                          <h1 className="text-2xl font-bold text-gray-900 mb-4">
+                            {requirementsDoc.prompt}
+                          </h1>
+                          <p className="text-sm text-gray-500 mb-8">
+                            Last updated: {new Date(requirementsDoc.lastUpdated).toLocaleString()}
+                          </p>
+                        </div>
+
+                        {Object.entries(requirementsDoc.categories).map(([key, category]) => (
+                          <div key={key} className="space-y-4">
+                            <h2 className="text-xl font-semibold text-gray-900">
+                              {category.title}
+                            </h2>
+                            {category.requirements && category.requirements.length > 0 ? (
+                              <ul className="space-y-3">
+                                {category.requirements.map((req, index) => (
+                                  <li
+                                    key={req.id || `${key}-${index}-${req.text}`}
+                                    className="bg-white rounded-lg border border-gray-200 p-4"
+                                  >
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex-1">
+                                        <p className="text-gray-900">{req.text}</p>
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                          {req.priority && (
+                                            <span className={`px-2 py-1 rounded-full text-xs ${
+                                              req.priority === 'high'
+                                                ? 'bg-red-100 text-red-800'
+                                                : req.priority === 'medium'
+                                                ? 'bg-yellow-100 text-yellow-800'
+                                                : 'bg-green-100 text-green-800'
+                                            }`}>
+                                              {req.priority} priority
+                                            </span>
+                                          )}
+                                          {req.category && (
+                                            <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                                              {req.category}
+                                            </span>
+                                          )}
+                                          {req.tags?.map((tag, tagIndex) => (
+                                            <span
+                                              key={`${req.id || index}-tag-${tagIndex}`}
+                                              className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800"
+                                            >
+                                              {tag}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-gray-500 italic">No requirements in {category.title}</p>
+                            )}
                           </div>
                         ))}
                       </div>
-                    </div>
+                    ) : mockupData ? (
+                      <div className="space-y-8">
+                        {/* Color Scheme */}
+                        <div>
+                          <h2 className="text-xl font-semibold text-gray-900 mb-4">Color Scheme</h2>
+                          <div className="flex flex-wrap gap-4">
+                            {Object.entries(mockupData.colorScheme).map(([name, color]) => (
+                              <div key={name} className="flex flex-col items-center">
+                                <div
+                                  className="w-16 h-16 rounded-lg shadow-md"
+                                  style={{ backgroundColor: color }}
+                                />
+                                <span className="mt-2 text-sm text-gray-600">{name}</span>
+                                <span className="text-xs text-gray-400">{color}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
 
-                    {/* Components */}
-                    <div>
-                      <h2 className="text-xl font-semibold text-gray-900 mb-4">Components</h2>
-                      <ul className="list-disc list-inside space-y-2">
-                        {mockupData.components.map((component, index) => (
-                          <li key={index} className="text-gray-700">{component}</li>
-                        ))}
-                      </ul>
-                    </div>
+                        {/* Components */}
+                        <div>
+                          <h2 className="text-xl font-semibold text-gray-900 mb-4">Components</h2>
+                          <ul className="list-disc list-inside space-y-2">
+                            {mockupData.components.map((component, index) => (
+                              <li key={index} className="text-gray-700">{component}</li>
+                            ))}
+                          </ul>
+                        </div>
 
-                    {/* Features */}
-                    <div>
-                      <h2 className="text-xl font-semibold text-gray-900 mb-4">Implemented Features</h2>
-                      <ul className="list-disc list-inside space-y-2">
-                        {mockupData.features.map((feature, index) => (
-                          <li key={index} className="text-gray-700">{feature}</li>
-                        ))}
-                      </ul>
-                    </div>
+                        {/* Features */}
+                        <div>
+                          <h2 className="text-xl font-semibold text-gray-900 mb-4">Implemented Features</h2>
+                          <ul className="list-disc list-inside space-y-2">
+                            {mockupData.features.map((feature, index) => (
+                              <li key={index} className="text-gray-700">{feature}</li>
+                            ))}
+                          </ul>
+                        </div>
 
-                    {/* Code */}
-                    <div>
-                      <h2 className="text-xl font-semibold text-gray-900 mb-4">Generated Code</h2>
-                      <pre className="bg-gray-50 p-4 rounded-lg overflow-auto text-sm">
-                        <code className="text-gray-800">{mockupData.code}</code>
-                      </pre>
-                    </div>
+                        {/* Code */}
+                        <div>
+                          <h2 className="text-xl font-semibold text-gray-900 mb-4">Generated Code</h2>
+                          <div className="relative">
+                            <pre className="bg-gray-50 p-4 rounded-lg overflow-auto text-sm max-h-96">
+                              <code className="text-gray-800">{mockupData.code}</code>
+                            </pre>
+                            <button
+                              onClick={handleCopyCode}
+                              className="absolute top-2 right-2 p-2 bg-white rounded-md shadow-sm hover:bg-gray-50"
+                              title="Copy code"
+                            >
+                              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
 
-                    {/* Next Steps */}
-                    <div>
-                      <h2 className="text-xl font-semibold text-gray-900 mb-4">Next Steps</h2>
-                      <ul className="list-disc list-inside space-y-2">
-                        {mockupData.nextSteps.map((step, index) => (
-                          <li key={index} className="text-gray-700">{step}</li>
-                        ))}
-                      </ul>
-                    </div>
+                        {/* Next Steps */}
+                        <div>
+                          <h2 className="text-xl font-semibold text-gray-900 mb-4">Next Steps</h2>
+                          <ul className="list-disc list-inside space-y-2">
+                            {mockupData.nextSteps.map((step, index) => (
+                              <li key={index} className="text-gray-700">{step}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
-              </div>
-              {isCompareMode && compareVersion && (
-                <div className="w-1/2 p-6 border-l border-gray-200">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4">
-                    Comparing with version from {new Date(compareVersion.timestamp).toLocaleString()}
-                  </h2>
-                  {/* Render comparison content */}
-                  {activeTab === 'requirements' ? (
-                    <div className="space-y-8">
-                      {/* ... requirements comparison rendering ... */}
-                    </div>
-                  ) : (
-                    <div className="space-y-8">
-                      {/* ... mockup comparison rendering ... */}
+                  {isCompareMode && compareVersion && (
+                    <div className="w-1/2 p-6 border-l border-gray-200">
+                      <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                        Comparing with version from {new Date(compareVersion.timestamp).toLocaleString()}
+                      </h2>
+                      {/* Render comparison content */}
+                      {activeTab === 'requirements' ? (
+                        <div className="space-y-8">
+                          {/* ... requirements comparison rendering ... */}
+                        </div>
+                      ) : (
+                        <div className="space-y-8">
+                          {/* ... mockup comparison rendering ... */}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               )}
             </div>
-          )}
+          </div>
         </div>
 
         {/* Footer */}
@@ -2553,12 +3067,6 @@ export default function PreviewPanel({
             </button>
             {activeTab === 'mockup' && mockupData && (
               <div className="flex space-x-4">
-                <button
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  onClick={handleCopyCode}
-                >
-                  Copy Code
-                </button>
                 <button
                   className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
                   onClick={() => {

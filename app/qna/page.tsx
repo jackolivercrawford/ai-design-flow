@@ -1,7 +1,7 @@
 // /app/qna/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import HeaderToolbar from '../../components/HeaderToolbar';
@@ -28,6 +28,7 @@ interface QuestionHistoryItem {
 
 export default function QnAPage() {
   const router = useRouter();
+  const hasFetchedInitialQuestion = useRef(false);
   const [prompt, setPrompt] = useState<string>('');
   const [settings, setSettings] = useState<QASettings | null>(null);
   const [qaTree, setQaTree] = useState<QANode | null>(null);
@@ -552,6 +553,10 @@ export default function QnAPage() {
 
   // On mount: try to load saved progress or start new session
   useEffect(() => {
+    // Prevent duplicate API call on initial load
+    if (hasFetchedInitialQuestion.current) return;
+    hasFetchedInitialQuestion.current = true;
+
     const savedProgress = localStorage.getItem('qaProgress');
     const storedPrompt = localStorage.getItem('designPrompt');
     const storedSettings = localStorage.getItem('qaSettings');
@@ -611,7 +616,7 @@ export default function QnAPage() {
       setRequirementsDoc(initialRequirementsDoc);
       
       // Generate first question (Q1)
-      fetchQuestionsForNode(storedPrompt, rootNode, [], 0, true).then(({ nodes: children, suggestedAnswer }) => {
+      fetchQuestionsForNode(storedPrompt, rootNode, [], 0, false).then(({ nodes: children, suggestedAnswer }) => {
         if (children.length > 0) {
           children[0].questionNumber = 1;
           rootNode.children = children;

@@ -111,7 +111,7 @@ Knowledge Base: ${knowledgeBaseContext}
 Update the requirements document with any new information from the Q&A and knowledge base. Return ONLY the updated document as a JSON object.`
         }
       ],
-      max_completion_tokens: 4000,
+      max_completion_tokens: 16000,
       response_format: { type: "json_object" },
       reasoning_effort: 'medium'
     });
@@ -135,16 +135,98 @@ Update the requirements document with any new information from the Q&A and knowl
         return NextResponse.json(existingDocument);
       }
       
-      // Ensure all requirements have IDs
-      (Object.values(updatedDocument.categories) as RequirementCategory[]).forEach((category: RequirementCategory) => {
+      // Helper function to determine requirement category and tags
+      function analyzeRequirement(text: string): {
+        category: 'functional' | 'technical' | 'ux' | 'accessibility' | 'security' | 'performance';
+        tags: string[];
+        priority: 'high' | 'medium' | 'low';
+      } {
+        const textLower = text.toLowerCase();
+        let category: 'functional' | 'technical' | 'ux' | 'accessibility' | 'security' | 'performance' = 'functional';
+        const tags: string[] = [];
+        let priority: 'high' | 'medium' | 'low' = 'medium';
+
+        // Category determination
+        if (textLower.includes('security') || textLower.includes('emergency') || textLower.includes('safety')) {
+          category = 'security';
+          priority = 'high';
+          tags.push('safety');
+        } else if (textLower.includes('user') || textLower.includes('interface') || textLower.includes('display') || textLower.includes('visual')) {
+          category = 'ux';
+          tags.push('interface');
+        } else if (textLower.includes('performance') || textLower.includes('speed') || textLower.includes('efficiency')) {
+          category = 'performance';
+          tags.push('optimization');
+        } else if (textLower.includes('accessible') || textLower.includes('disability')) {
+          category = 'accessibility';
+          priority = 'high';
+          tags.push('ada-compliance');
+        } else if (textLower.includes('technical') || textLower.includes('system') || textLower.includes('integration')) {
+          category = 'technical';
+          tags.push('integration');
+        }
+
+        // Additional tags based on content
+        if (textLower.includes('monitor') || textLower.includes('sensor')) {
+          tags.push('monitoring');
+        }
+        if (textLower.includes('data') || textLower.includes('analytics')) {
+          tags.push('data');
+        }
+        if (textLower.includes('ai') || textLower.includes('machine learning')) {
+          tags.push('ai');
+        }
+        if (textLower.includes('maintenance')) {
+          tags.push('maintenance');
+        }
+        if (textLower.includes('real-time') || textLower.includes('realtime')) {
+          tags.push('real-time');
+        }
+
+        // Priority determination (if not already set by category)
+        if (priority === 'medium') {
+          if (textLower.includes('critical') || textLower.includes('essential') || textLower.includes('must')) {
+            priority = 'high';
+          } else if (textLower.includes('optional') || textLower.includes('nice to have')) {
+            priority = 'low';
+          }
+        }
+
+        return { category, tags, priority };
+      }
+
+      // Ensure all requirements have proper structure and IDs
+      Object.values(updatedDocument.categories).forEach((category: any) => {
         if (Array.isArray(category.requirements)) {
-          category.requirements.forEach((req: { id?: string; createdAt?: string; updatedAt?: string }) => {
+          category.requirements = category.requirements.map((req: string | any) => {
+            // If the requirement is just a string, convert it to proper structure
+            if (typeof req === 'string') {
+              const analysis = analyzeRequirement(req);
+              return {
+                id: uuidv4(),
+                text: req,
+                source: 'user-qa',
+                priority: analysis.priority,
+                category: analysis.category,
+                tags: analysis.tags,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+              };
+            }
+            // If it's already an object but missing ID
             if (!req.id) {
+              const analysis = analyzeRequirement(req.text);
               req.id = uuidv4();
+              req.priority = req.priority || analysis.priority;
+              req.category = req.category || analysis.category;
+              req.tags = req.tags || analysis.tags;
               req.createdAt = new Date().toISOString();
               req.updatedAt = new Date().toISOString();
             }
+            return req;
           });
+        } else {
+          category.requirements = [];
         }
       });
       
