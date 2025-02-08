@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import { RequirementsDocument, QANode } from '@/types';
+import { RequirementsDocument, QANode, RequirementCategory } from '@/types';
 import { KnowledgeBaseSource } from '@/types/settings';
+import { v4 as uuidv4 } from 'uuid';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -58,11 +59,11 @@ export async function POST(request: NextRequest) {
     });
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "o3-mini",
       messages: [
         {
           role: "system",
-          content: `You are a requirements document updater. Your task is to update a requirements document based on Q&A session information and knowledge base data.
+          content: `You are a requirements document updater. Your task is to update a requirements document based on Q&A session information and knowledge base data and return it as a JSON object.
 
 CRITICAL INSTRUCTIONS:
 1. You MUST return ONLY a valid JSON object.
@@ -103,25 +104,23 @@ CRITICAL INSTRUCTIONS:
         },
         {
           role: "user",
-          content: `Current Requirements Document:
-${JSON.stringify(existingDocument, null, 2)}
+          content: `Current Document: ${JSON.stringify(existingDocument)}
+Latest Q&A: ${qaContext}
+Knowledge Base: ${knowledgeBaseContext}
 
-Latest Q&A:
-${qaContext}
-
-Knowledge Base Information:
-${knowledgeBaseContext}
-
-Update the requirements document with any new information from the Q&A and knowledge base. Return ONLY the updated document as a JSON object. Do not include any additional text or formatting.`
+Update the requirements document with any new information from the Q&A and knowledge base. Return ONLY the updated document as a JSON object.`
         }
       ],
-      temperature: 0.3,
-      max_tokens: 2000
+      max_completion_tokens: 4000,
+      response_format: { type: "json_object" },
+      reasoning_effort: 'medium'
     });
 
     const content = completion.choices[0].message.content;
     if (!content) {
-      throw new Error('Empty response from OpenAI');
+      console.error('Empty response from OpenAI');
+      console.log('Returning existing document due to empty OpenAI response');
+      return NextResponse.json(existingDocument);
     }
 
     console.log('OpenAI response:', content.substring(0, 100) + '...');
@@ -132,8 +131,22 @@ Update the requirements document with any new information from the Q&A and knowl
       // Validate the document structure
       if (!updatedDocument.id || !updatedDocument.categories) {
         console.error('Invalid document structure:', updatedDocument);
+        console.log('Returning existing document due to invalid structure');
         return NextResponse.json(existingDocument);
       }
+      
+      // Ensure all requirements have IDs
+      (Object.values(updatedDocument.categories) as RequirementCategory[]).forEach((category: RequirementCategory) => {
+        if (Array.isArray(category.requirements)) {
+          category.requirements.forEach((req: { id?: string; createdAt?: string; updatedAt?: string }) => {
+            if (!req.id) {
+              req.id = uuidv4();
+              req.createdAt = new Date().toISOString();
+              req.updatedAt = new Date().toISOString();
+            }
+          });
+        }
+      });
       
       // Ensure all required categories exist
       const requiredCategories = [
@@ -151,6 +164,7 @@ Update the requirements document with any new information from the Q&A and knowl
       
       if (!hasAllCategories) {
         console.error('Missing required categories');
+        console.log('Returning existing document due to missing categories');
         return NextResponse.json(existingDocument);
       }
       
@@ -159,6 +173,7 @@ Update the requirements document with any new information from the Q&A and knowl
       console.error('Error parsing OpenAI response:', parseError);
       console.error('Raw response:', content);
       // If parsing fails, return the existing document unchanged
+      console.log('Returning existing document due to parse error');
       return NextResponse.json(existingDocument);
     }
   } catch (error) {

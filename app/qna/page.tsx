@@ -7,8 +7,9 @@ import { v4 as uuidv4 } from 'uuid';
 import HeaderToolbar from '../../components/HeaderToolbar';
 import QAPanel from '../../components/QAPanel';
 import CanvasTree from '../../components/CanvasTree';
-import { QANode, RequirementsDocument } from '@/types';
+import { QANode, RequirementsDocument, MockupVersion, SessionMetadata } from '@/types';
 import { QASettings } from '@/types/settings';
+import PreviewPanel from '../../components/PreviewPanel';
 
 interface SavedProgress {
   qaTree: QANode;
@@ -42,6 +43,11 @@ export default function QnAPage() {
   const [requirementsDoc, setRequirementsDoc] = useState<RequirementsDocument | null>(null);
   const [askedQuestions, setAskedQuestions] = useState<Set<string>>(new Set());
   const [askedTopics, setAskedTopics] = useState<Set<string>>(new Set());
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [sessionMetadata, setSessionMetadata] = useState<SessionMetadata | null>(null);
+  const [isLeavingPage, setIsLeavingPage] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   // Helper: Extract topics from a question
   const extractTopics = (question: string): string[] => {
@@ -92,7 +98,8 @@ export default function QnAPage() {
           prompt, 
           node,
           branchHistory,
-          depth
+          depth,
+          true // Enable suggestions for follow-up questions
         );
         
         // If the AI suggests stopping this branch, move to siblings
@@ -185,7 +192,8 @@ export default function QnAPage() {
           prompt,
           parent,
           levelHistory,
-          currentDepth
+          currentDepth,
+          true // Enable suggestions for follow-up questions
         );
         
         if (!shouldStopBranch && newSiblings.length > 0) {
@@ -212,7 +220,8 @@ export default function QnAPage() {
               prompt,
               sibling,
               siblingHistory,
-              currentDepth + 1
+              currentDepth + 1,
+              true // Enable suggestions for follow-up questions
             );
             
             if (!shouldStopBranch && children.length > 0) {
@@ -294,7 +303,7 @@ export default function QnAPage() {
   };
 
   // Helper: fetch questions for a node
-  const fetchQuestionsForNode = async (designPrompt: string, parentNode: QANode, questionHistory: QuestionHistoryItem[], depth: number): Promise<{ nodes: QANode[], shouldStopBranch: boolean, stopReason: string }> => {
+  const fetchQuestionsForNode = async (designPrompt: string, parentNode: QANode, questionHistory: QuestionHistoryItem[], depth: number, setSuggestion: boolean = false): Promise<{ nodes: QANode[], shouldStopBranch: boolean, stopReason: string, suggestedAnswer?: string }> => {
     try {
       console.log('Fetching questions with knowledge base:', settings?.knowledgeBase);
       
@@ -314,7 +323,8 @@ export default function QnAPage() {
           traversalMode: settings?.traversalMode,
           knowledgeBase: settings?.knowledgeBase,
           depth: depth,
-          parentContext: parentContext // Add parent context to help generate more specific child questions
+          parentContext: parentContext,
+          includeSuggestions: setSuggestion // Only request suggestions when needed
         }),
       });
 
@@ -330,22 +340,24 @@ export default function QnAPage() {
         throw new Error('Invalid response format or no questions received');
       }
 
-      // Set suggested answer if available
-      if (data.suggestedAnswer) {
-        console.log('Setting suggested answer:', {
-          text: data.suggestedAnswer,
-          confidence: data.confidence || 'low',
-          sourceReferences: data.sourceReferences || []
-        });
-        
-        setSuggestedAnswer({
-          text: data.suggestedAnswer,
-          confidence: data.confidence || 'low',
-          sourceReferences: data.sourceReferences || []
-        });
-      } else {
-        console.log('Clearing suggested answer');
-        setSuggestedAnswer(null);
+      // Only set suggested answer if explicitly requested
+      if (setSuggestion) {
+        if (data.suggestedAnswer) {
+          console.log('Setting suggested answer:', {
+            text: data.suggestedAnswer,
+            confidence: data.confidence || 'low',
+            sourceReferences: data.sourceReferences || []
+          });
+          
+          setSuggestedAnswer({
+            text: data.suggestedAnswer,
+            confidence: data.confidence || 'low',
+            sourceReferences: data.sourceReferences || []
+          });
+        } else {
+          console.log('Clearing suggested answer');
+          setSuggestedAnswer(null);
+        }
       }
       
       // Create a single child node with the next question number
@@ -360,7 +372,8 @@ export default function QnAPage() {
       return {
         nodes,
         shouldStopBranch: data.shouldStopBranch || false,
-        stopReason: data.stopReason || 'No more questions needed'
+        stopReason: data.stopReason || 'No more questions needed',
+        suggestedAnswer: data.suggestedAnswer
       };
     } catch (error) {
       console.error("Error in fetchQuestionsForNode:", error);
@@ -374,7 +387,8 @@ export default function QnAPage() {
       return { 
         nodes: [errorNode], 
         shouldStopBranch: true, 
-        stopReason: error instanceof Error ? error.message : "Error generating questions" 
+        stopReason: error instanceof Error ? error.message : "Error generating questions",
+        suggestedAnswer: undefined
       };
     }
   };
@@ -429,28 +443,112 @@ export default function QnAPage() {
     }
   };
 
-  // Helper: Save current progress to localStorage
-  const saveProgress = () => {
-    if (!qaTree || !settings) return;
-    
-    const progress: SavedProgress = {
-      qaTree,
-      currentNodeId: currentNode?.id || null,
-      questionCount,
-      prompt,
-      settings,
-      requirementsDoc: requirementsDoc!
+  // Auto-save timer
+  useEffect(() => {
+    const autoSaveInterval = setInterval(() => {
+      if (qaTree) {
+        saveProgress(true);
+      }
+    }, 60000); // Auto-save every minute
+
+    return () => clearInterval(autoSaveInterval);
+  }, [qaTree, currentNode, questionCount, prompt, settings]);
+
+  // Handle page leave
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!isLeavingPage) {
+        e.preventDefault();
+        e.returnValue = '';
+        saveProgress(true);
+      }
     };
-    
-    localStorage.setItem('qaProgress', JSON.stringify(progress));
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isLeavingPage]);
+
+  // Helper: Save current progress
+  const saveProgress = (isAutoSave = false) => {
+    if (!qaTree || !settings || !requirementsDoc) return;
+
+    try {
+      // Update session metadata
+      const currentTime = new Date().toISOString();
+      const metadata: SessionMetadata = {
+        id: sessionMetadata?.id || uuidv4(),
+        prompt,
+        lastUpdated: currentTime,
+        questionCount,
+        versions: [],
+        settings: {
+          traversalMode: settings.traversalMode,
+          unknownHandling: settings.unknownHandling,
+          conflictResolution: settings.conflictResolution
+        },
+        name: sessionMetadata?.name
+      };
+
+      // Save progress and metadata
+      localStorage.setItem('qaProgress', JSON.stringify({
+        qaTree,
+        currentNodeId: currentNode?.id || null,
+        questionCount,
+        prompt,
+        settings,
+        requirementsDoc
+      }));
+
+      localStorage.setItem('sessionMetadata', JSON.stringify(metadata));
+      setSessionMetadata(metadata);
+
+      if (!isAutoSave) {
+        // Show success message for manual saves
+        // TODO: Add a toast notification system
+        console.log('Progress saved successfully');
+      }
+    } catch (error) {
+      console.error('Error saving progress:', error);
+      // TODO: Add error notification
+    }
   };
 
-  // Effect to save progress whenever relevant state changes
-  useEffect(() => {
-    if (qaTree && !isLoading) {
+  const handleVersionRestore = (version: MockupVersion) => {
+    // Confirm before restoring
+    if (window.confirm('Restoring this version will replace your current progress. Continue?')) {
+      setQaTree(version.qaTree);
+      setRequirementsDoc(version.requirementsDoc);
+      
+      // Find the first unanswered question in the restored tree
+      const firstUnanswered = findFirstUnansweredChild(version.qaTree);
+      setCurrentNode(firstUnanswered);
+      
+      // Update question count
+      let count = 0;
+      const countAnswers = (node: QANode) => {
+        if (node.answer) count++;
+        node.children.forEach(countAnswers);
+      };
+      countAnswers(version.qaTree);
+      setQuestionCount(count);
+      
+      // Save the restored state
       saveProgress();
     }
-  }, [qaTree, currentNode, questionCount, prompt, settings]);
+  };
+
+  const handleSaveSession = (name?: string) => {
+    if (sessionMetadata) {
+      const updatedMetadata = {
+        ...sessionMetadata,
+        name,
+        lastUpdated: new Date().toISOString()
+      };
+      setSessionMetadata(updatedMetadata);
+      localStorage.setItem('sessionMetadata', JSON.stringify(updatedMetadata));
+      saveProgress();
+    }
+  };
 
   // On mount: try to load saved progress or start new session
   useEffect(() => {
@@ -473,6 +571,7 @@ export default function QnAPage() {
           setCurrentNode(node);
         }
         setIsLoading(false);
+        setIsInitialLoad(false);
         return;
       } catch (error) {
         console.error("Error loading saved progress:", error);
@@ -491,7 +590,7 @@ export default function QnAPage() {
         id: uuidv4(),
         question: `Prompt: ${storedPrompt}`,
         children: [],
-        questionNumber: 0, // Explicitly set prompt as Q0
+        questionNumber: 0,
       };
       setQaTree(rootNode);
       
@@ -512,16 +611,23 @@ export default function QnAPage() {
       setRequirementsDoc(initialRequirementsDoc);
       
       // Generate first question (Q1)
-      fetchQuestionsForNode(storedPrompt, rootNode, [], 0).then(({ nodes: children }) => {
+      fetchQuestionsForNode(storedPrompt, rootNode, [], 0, true).then(({ nodes: children, suggestedAnswer }) => {
         if (children.length > 0) {
-          // Set first actual question as Q1
           children[0].questionNumber = 1;
           rootNode.children = children;
           setQaTree({ ...rootNode });
           setCurrentNode(children[0]);
+          if (suggestedAnswer) {
+            setSuggestedAnswer({ 
+              text: suggestedAnswer, 
+              confidence: 'medium',
+              sourceReferences: []
+            });
+          }
           setQuestionCount(1);
         }
         setIsLoading(false);
+        setIsInitialLoad(false);
       });
     } else {
       console.error("No design prompt or settings found.");
@@ -556,15 +662,12 @@ export default function QnAPage() {
       if (nextNode) {
         // Verify this question hasn't been asked before
         if (!askedQuestions.has(nextNode.question)) {
-          // Add the question to the set of asked questions
           setAskedQuestions(prev => new Set(prev).add(nextNode.question));
-          
-          // In BFS mode, the next node should already be properly placed by getNextQuestion
-          // We don't need to add it to any parent's children here as that's handled in getNextQuestion
+          setIsInitialLoad(true); // Prevent auto-fetch when setting current node
           setCurrentNode(nextNode);
           setQuestionCount(prev => prev + 1);
-          // Update the tree state to trigger re-render
           setQaTree(prev => prev ? { ...prev } : prev);
+          setIsInitialLoad(false); // Reset flag after state updates
         } else {
           console.warn('Duplicate question detected:', nextNode.question);
           setCurrentNode(null);
@@ -583,7 +686,12 @@ export default function QnAPage() {
 
   const handleAutoPopulate = async (): Promise<string | null> => {
     try {
-      // Build the previous Q&A chain up to the current question
+      // If we already have a suggested answer, use it
+      if (suggestedAnswer) {
+        return suggestedAnswer.text;
+      }
+      
+      // Otherwise, build the previous Q&A chain up to the current question
       const questionHistory: QuestionHistoryItem[] = [];
       const collectHistory = (n: QANode) => {
         if (n.question !== `Prompt: ${prompt}`) {
@@ -602,11 +710,11 @@ export default function QnAPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt,
-          previousQuestions: questionHistory,  // Pass the full question history
+          previousQuestions: questionHistory,
           traversalMode: settings?.traversalMode,
           knowledgeBase: settings?.knowledgeBase,
           currentQuestion: currentNode?.question,
-          isAutoPopulate: true // Flag to indicate this is for auto-populate
+          isAutoPopulate: true
         }),
       });
 
@@ -655,28 +763,45 @@ export default function QnAPage() {
       prompt: prompt,
       lastUpdated: new Date().toISOString(),
       categories: {
-        basicNeeds: { title: 'Basic Needs', requirements: [] },
-        functionalRequirements: { title: 'Functional Requirements', requirements: [] },
-        userExperience: { title: 'User Experience', requirements: [] },
-        implementation: { title: 'Implementation', requirements: [] },
-        refinements: { title: 'Refinements', requirements: [] },
-        constraints: { title: 'Constraints', requirements: [] }
+        basicNeeds: { 
+          title: 'Basic Needs', 
+          requirements: [] 
+        },
+        functionalRequirements: { 
+          title: 'Functional Requirements', 
+          requirements: [] 
+        },
+        userExperience: { 
+          title: 'User Experience', 
+          requirements: [] 
+        },
+        implementation: { 
+          title: 'Implementation', 
+          requirements: [] 
+        },
+        refinements: { 
+          title: 'Refinements', 
+          requirements: [] 
+        },
+        constraints: { 
+          title: 'Constraints', 
+          requirements: [] 
+        }
       }
     };
     setRequirementsDoc(initialRequirementsDoc);
     
     // Generate first question (Q1)
-    fetchQuestionsForNode(prompt, rootNode, [], 0)
-      .then(({ nodes: children }) => {
-        if (children.length > 0) {
-          // Set first actual question as Q1
-          children[0].questionNumber = 1;
-          rootNode.children = children;
-          setQaTree({ ...rootNode });
-          setCurrentNode(children[0]);
-          setQuestionCount(1);
-        }
-      })
+    fetchQuestionsForNode(prompt, rootNode, [], 0, true).then(({ nodes: children }) => {
+      if (children.length > 0) {
+        // Set first actual question as Q1
+        children[0].questionNumber = 1;
+        rootNode.children = children;
+        setQaTree({ ...rootNode });
+        setCurrentNode(children[0]);
+        setQuestionCount(1);
+      }
+    })
       .catch(error => {
         console.error('Error generating first question:', error);
       })
@@ -686,9 +811,34 @@ export default function QnAPage() {
       });
   };
 
+  const handleGenerate = async () => {
+    setIsPreviewOpen(true);
+    setIsGenerating(true);
+    
+    try {
+      // Update requirements one final time before showing preview
+      await updateRequirements(currentNode?.id || null);
+      
+      // Wait a bit to ensure requirements are updated
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+    } catch (error) {
+      console.error('Error generating preview:', error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
-      <HeaderToolbar onRestart={handleRestart} showRestartButton={!isLoading} />
+      <HeaderToolbar 
+        onRestart={handleRestart} 
+        onGenerate={handleGenerate}
+        onSave={() => handleSaveSession()}
+        showRestartButton={!isLoading}
+        showGenerateButton={!isLoading && qaTree !== null}
+        showSaveButton={!isLoading && qaTree !== null}
+      />
       <div className="py-2 px-6 bg-white border-b border-gray-200">
         <div className="flex justify-between items-center">
           <div className="text-sm text-gray-600">
@@ -728,6 +878,15 @@ export default function QnAPage() {
           />
         </div>
       </main>
+      
+      <PreviewPanel
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        requirementsDoc={requirementsDoc!}
+        isGenerating={isGenerating}
+        qaTree={qaTree}
+        onVersionRestore={handleVersionRestore}
+      />
     </div>
   );
 }

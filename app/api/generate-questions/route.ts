@@ -43,11 +43,13 @@ Use this information to:
 
     console.log('Formatted knowledge base context:', knowledgeBaseContext);
 
-    const messages = [
-      {
-        role: 'system' as const,
-        content: isAutoPopulate 
-          ? `You are an expert UX design assistant that helps suggest answers based on the knowledge base and context. Your task is to provide a well-reasoned answer to the current question.
+    const completion = await openai.chat.completions.create({
+      model: 'o3-mini',
+      messages: [
+        {
+          role: 'system',
+          content: isAutoPopulate 
+            ? `You are an expert UX design assistant that helps suggest answers based on the knowledge base and context. Your task is to provide a well-reasoned answer to the current question and return it as a JSON object.
 
 Knowledge Base Context:
 ${knowledgeBaseContext}
@@ -67,8 +69,18 @@ Guidelines for suggesting answers:
 7. Make clear, direct suggestions even with low confidence
 8. If multiple knowledge base sources agree, use that information with high confidence
 9. If sources conflict, use the most relevant or recent information
-10. If no relevant information exists, provide a reasonable suggestion based on UX best practices`
-          : `You are an expert UX design assistant that helps generate follow-up questions for a design prompt. Your questions should follow a clear progression based on the traversal mode.
+10. If no relevant information exists, provide a reasonable suggestion based on UX best practices
+
+Return your response in this JSON format:
+{
+  "questions": [],
+  "shouldStopBranch": false,
+  "stopReason": "",
+  "suggestedAnswer": "Your suggested answer here",
+  "sourceReferences": [array of source indices that contributed],
+  "confidence": "high" | "medium" | "low"
+}`
+            : `You are an expert UX design assistant that helps generate follow-up questions for a design prompt. Your task is to generate ONE follow-up question based on the traversal mode and return it as a JSON object.
 
 ${parentContext ? `
 Current Parent Question Context:
@@ -76,7 +88,7 @@ Current Parent Question Context:
 - Parent Answer: "${parentContext.parentAnswer}"
 - Parent Topics: ${JSON.stringify(parentContext.parentTopics)}
 
-CRITICAL: Any generated question MUST:
+CRITICAL: The generated question MUST:
 1. Be more specific than the parent question
 2. Focus on a specific aspect mentioned in the parent's answer
 3. Not repeat information already covered in the parent's answer
@@ -138,7 +150,8 @@ Follow these guidelines:
    - Child questions must explore specific aspects mentioned in parent's answer
 
 5. Question Generation:
-   - Questions must be specific and focused
+   - Generate exactly ONE question
+   - Make it specific and focused
    - Include clear parent-child relationships
    - Maintain proper depth progression
    - Follow numbering conventions per mode
@@ -165,29 +178,23 @@ ${previousQuestions.map((q: { question: string; answer: string }, index: number)
 ).join('\n')}
 
 9. Response Format:
-   {
-     "questions": ["Next question to ask"],
-     "shouldStopBranch": boolean,
-     "stopReason": "Detailed explanation of why we should stop this branch",
-     "suggestedAnswer": "string with best guess answer based on knowledge base",
-     "sourceReferences": [array of source indices that contributed],
-     "confidence": "high" | "medium" | "low",
-     "topicsCovered": ["list of topics this question relates to"],
-     "parentTopic": "The main topic this question belongs to",
-     "subtopics": ["Potential child topics for this question"]
-   }
-
-10. Answer Generation Guidelines:
-   - Write answers in third person, making definitive statements
-   - Avoid second person pronouns (your, you, yours) entirely
-   - State suggestions as definitive facts that can be modified
-   - Avoid hedging words like "might", "could", "probably", "likely", "maybe"
-   - Make clear, direct suggestions even with low confidence`
-      },
-      {
-        role: 'user' as const,
-        content: isAutoPopulate
-          ? `The design prompt is: "${prompt}"
+Return your response in this exact JSON format:
+{
+  "questions": ["Next question to ask"],
+  "shouldStopBranch": boolean,
+  "stopReason": "Detailed explanation of why we should stop this branch",
+  "suggestedAnswer": "string with best guess answer based on knowledge base",
+  "sourceReferences": [array of source indices that contributed],
+  "confidence": "high" | "medium" | "low",
+  "topicsCovered": ["list of topics this question relates to"],
+  "parentTopic": "The main topic this question belongs to",
+  "subtopics": ["Potential child topics for this question"]
+}`
+        },
+        {
+          role: 'user',
+          content: isAutoPopulate
+            ? `The design prompt is: "${prompt}"
 
 Current Question: "${currentQuestion}"
 
@@ -207,7 +214,7 @@ Return your response in this format:
   "sourceReferences": [array of source indices that contributed],
   "confidence": "high" | "medium" | "low"
 }`
-          : `The design prompt is: "${prompt}".
+            : `The design prompt is: "${prompt}".
 Previous Q&A History:
 ${JSON.stringify(previousQuestions, null, 2)}
 
@@ -215,7 +222,7 @@ Current Question: ${previousQuestions[previousQuestions.length - 1]?.question ||
 
 CRITICAL REQUIREMENTS:
 1. Review ALL previous questions and their topics carefully
-2. Generate a question that explores a COMPLETELY DIFFERENT aspect not covered in ANY previous question
+2. Generate ONE question that explores a COMPLETELY DIFFERENT aspect not covered in ANY previous question
 3. For BFS mode, ensure the new question:
    - Stays at the same level
    - Covers a new topic not related to any previous questions
@@ -233,19 +240,28 @@ Remember:
 - In BFS mode, stay at the current level but explore new topics
 - Make clear, direct statements in suggested answers
 - Never use second person pronouns`
-      },
-    ];
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages,
-      temperature: 0.7,
-      max_tokens: 500
+        }
+      ],
+      max_completion_tokens: 4000,
+      response_format: { type: "json_object" },
+      reasoning_effort: 'medium'
     });
 
     const content = completion.choices[0].message.content?.trim();
     if (!content) {
-      throw new Error('Empty response from OpenAI');
+      console.error('Empty response from OpenAI');
+      // Return a default response instead of throwing
+      return NextResponse.json({
+        questions: ["What are the core features needed for this design?"],
+        shouldStopBranch: false,
+        stopReason: "",
+        suggestedAnswer: null,
+        sourceReferences: [],
+        confidence: "low",
+        topicsCovered: ["core_features"],
+        parentTopic: "requirements",
+        subtopics: []
+      });
     }
 
     console.log('Raw OpenAI response:', content);
@@ -263,71 +279,63 @@ Remember:
     };
 
     try {
+      // First try to parse the JSON response
       response = JSON.parse(content);
-      console.log('Initial parsed response:', response);
       
-      // Ensure we always have a suggested answer
-      if (!response.suggestedAnswer) {
-        console.log('No suggested answer provided, creating a default one');
-        response.suggestedAnswer = "Based on general UX principles, a reasonable approach would be...";
-        response.confidence = 'low';
-        response.sourceReferences = [];
-      }
-      
-      if (!Array.isArray(response.questions)) {
-        throw new Error("Questions is not an array");
-      }
-      
+      // Ensure required fields exist with defaults
+      response = {
+        questions: Array.isArray(response.questions) ? response.questions : [response.questions || "What are the core features needed for this design?"],
+        shouldStopBranch: response.shouldStopBranch || false,
+        stopReason: response.stopReason || "",
+        suggestedAnswer: response.suggestedAnswer || null,
+        sourceReferences: response.sourceReferences || [],
+        confidence: response.confidence || "low",
+        topicsCovered: response.topicsCovered || [],
+        parentTopic: response.parentTopic || "requirements",
+        subtopics: response.subtopics || []
+      };
+
       // Clean up questions to ensure they're plain text
       response.questions = response.questions.map((q: any) => {
-        if (typeof q === 'string') {
-          // Try to parse if it looks like JSON
-          try {
-            const parsed = JSON.parse(q);
-            return parsed.question || parsed.text || q;
-          } catch {
-            return q;
-          }
-        }
+        if (typeof q === 'string') return q;
         return q.question || q.text || JSON.stringify(q);
-      });
-      
-      // Ensure suggestedAnswer has the required format
-      if (response.suggestedAnswer) {
-        console.log('Found suggested answer:', response.suggestedAnswer);
-        
-        // Make sure suggestedAnswer is a string
-        const suggestedAnswerText = typeof response.suggestedAnswer === 'object' 
-          ? (response.suggestedAnswer as { text?: string }).text || JSON.stringify(response.suggestedAnswer)
-          : response.suggestedAnswer;
-        
-        response = {
-          ...response,
-          suggestedAnswer: suggestedAnswerText,
-          confidence: response.confidence || 'high',  // Default to high if we have a suggestion
-          sourceReferences: response.sourceReferences || []
-        };
-        console.log('Formatted response with suggestion:', response);
-      } else {
-        console.log('No suggested answer in response');
+      }).filter(Boolean);
+
+      // If no valid questions after cleanup, provide a default
+      if (response.questions.length === 0) {
+        response.questions = ["What are the core features needed for this design?"];
       }
+
+      console.log('Formatted response:', response);
+      return NextResponse.json(response);
     } catch (jsonError) {
       console.error("Error parsing API response:", jsonError);
-      // Fallback: extract questions from text
-      response = {
-        questions: [content], // Use the entire content as a single question
+      console.error("Raw content causing parse error:", content);
+      
+      // Try to extract a valid question from the partial response
+      let extractedQuestion = "What are the core features needed for this design?";
+      try {
+        const questionMatch = content.match(/"questions":\s*\[\s*"([^"]+)"/);
+        if (questionMatch && questionMatch[1]) {
+          extractedQuestion = questionMatch[1];
+        }
+      } catch (e) {
+        console.error("Failed to extract question from partial response");
+      }
+      
+      // Provide a default response using any extracted data
+      return NextResponse.json({
+        questions: [extractedQuestion],
         shouldStopBranch: false,
-        stopReason: '',
+        stopReason: "",
         suggestedAnswer: null,
         sourceReferences: [],
-        confidence: 'low',
-        topicsCovered: [],
-        parentTopic: '',
+        confidence: "low",
+        topicsCovered: ["core_features"],
+        parentTopic: "requirements",
         subtopics: []
-      };
+      });
     }
-
-    return NextResponse.json(response);
   } catch (error) {
     console.error('Error generating questions:', error);
     return NextResponse.json(

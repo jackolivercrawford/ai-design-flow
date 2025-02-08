@@ -18,12 +18,13 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
 
 async function processContent(content: string) {
   try {
+    console.log('Starting content processing...');
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "o3-mini",
       messages: [
         {
           role: "system",
-          content: `You are a knowledge base processor. Extract key information from the provided document that would be relevant for the design process. Focus on:
+          content: `You are a knowledge base processor. Extract key information from the provided document and return it as a JSON object. Focus on:
 1. Requirements and constraints
 2. Technical specifications
 3. Design guidelines
@@ -36,32 +37,39 @@ Return your response in this exact JSON format:
   "technicalSpecifications": [],
   "designGuidelines": [],
   "userPreferences": [],
-  "industryStandards": []
-}`
+  "industryStandards": []}`
         },
         {
           role: "user",
           content
         }
       ],
-      temperature: 0.7,
-      max_tokens: 2000
+      max_completion_tokens: 4000,
+      response_format: { type: "json_object" },
+      reasoning_effort: 'medium'
     });
 
+    console.log('OpenAI response received');
     const responseContent = completion.choices[0].message.content;
     if (!responseContent) {
+      console.error('Empty response content from OpenAI');
       throw new Error('Empty response from OpenAI');
     }
 
     try {
-      return JSON.parse(responseContent);
+      const parsedContent = JSON.parse(responseContent);
+      console.log('Successfully parsed OpenAI response');
+      return parsedContent;
     } catch (parseError) {
-      console.error('Error parsing OpenAI response:', parseError);
+      console.error('Error parsing OpenAI response:', parseError, '\nResponse content:', responseContent);
       throw new Error('Failed to parse OpenAI response');
     }
   } catch (error) {
-    console.error('Error processing content with OpenAI:', error);
-    throw new Error('Failed to process content');
+    console.error('Error in processContent:', error);
+    if (error instanceof Error) {
+      throw new Error(`Failed to process content: ${error.message}`);
+    }
+    throw new Error('Failed to process content: Unknown error');
   }
 }
 

@@ -36,4 +36,39 @@ export interface RequirementsDocument {
     refinements: RequirementCategory;
     constraints: RequirementCategory;
   };
+}
+
+export interface MockupVersion {
+  id: string;
+  timestamp: string;
+  name?: string;
+  qaTree: QANode;
+  requirementsDoc: RequirementsDocument;
+  mockupData: {
+    code: string;
+    colorScheme: {
+      primary: string;
+      secondary: string;
+      accent: string;
+      background: string;
+      text: string;
+    };
+    components: string[];
+    features: string[];
+    nextSteps: string[];
+  };
+}
+
+export interface SessionMetadata {
+  id: string;
+  prompt: string;
+  lastUpdated: string;
+  questionCount: number;
+  versions: MockupVersion[];
+  settings: {
+    traversalMode: 'bfs' | 'dfs';
+    unknownHandling: 'auto' | 'prompt';
+    conflictResolution: 'auto' | 'manual';
+  };
+  name?: string;
 } 

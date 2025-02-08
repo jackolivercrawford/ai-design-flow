@@ -26,6 +26,7 @@ AI-DESIGN-FLOW
   │   ├── CanvasTree.tsx
   │   ├── HeaderToolbar.tsx
   │   ├── PreviewArea.tsx
+  │   ├── PreviewPanel.tsx
   │   ├── PromptInput.tsx
   │   └── QAPanel.tsx
   ├── node_modules
@@ -61,18 +62,108 @@ File Contents:
 
 ----- /Users/jackcrawford/ai-design-flow/app/api/generate-mockup/route.ts -----
 import { NextRequest, NextResponse } from 'next/server';
+import OpenAI from 'openai';
+import { RequirementsDocument, RequirementCategory } from '@/types';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, answers } = await request.json();
+    const { requirementsDoc } = await request.json();
+    
+    if (!requirementsDoc) {
+      return NextResponse.json(
+        { error: 'Requirements document is required' },
+        { status: 400 }
+      );
+    }
 
-    // TODO: Implement mockup generation logic
-    const generatedContent = {
-      requirements: '- Requirement 1\n- Requirement 2\n- Requirement 3',
-      uiCode: '<div>Sample UI Code</div>',
-    };
+    // Format requirements for the prompt
+    const formattedRequirements = Object.entries(requirementsDoc.categories as Record<string, RequirementCategory>)
+      .map(([key, category]) => {
+        const reqs = category.requirements
+          .map(req => `- ${req.text} (${req.priority} priority)`)
+          .join('\n');
+        return `${category.title}:\n${reqs}`;
+      })
+      .join('\n\n');
 
-    return NextResponse.json(generatedContent);
+    // Check requirements size
+    const promptText = `Design Prompt: ${requirementsDoc.prompt}\n\nRequirements:\n${formattedRequirements}`;
+    const estimatedTokens = promptText.split(/\s+/).length; // Rough estimation
+    if (estimatedTokens > 2000) {
+      return NextResponse.json(
+        { error: 'Requirements document is too large. Please reduce the number of requirements or split into multiple requests.' },
+        { status: 400 }
+      );
+    }
+
+    const completion = await openai.chat.completions.create({
+      model: "o3-mini",
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert UI developer who creates React components with Tailwind CSS. Your task is to generate a beautiful, modern, and functional mockup based on the provided requirements and return it as a JSON object.
+
+Guidelines:
+1. Use only React and Tailwind CSS (no external libraries)
+2. Follow modern design principles and best practices
+3. Ensure the UI is responsive and accessible
+4. Include comments explaining key design decisions
+5. Structure the code in a clean, maintainable way
+6. Use semantic HTML elements
+7. Include hover states and transitions
+8. Implement proper spacing and hierarchy
+9. Use a consistent color scheme
+10. Include proper TypeScript types
+
+Return your response in this exact JSON format:
+{
+  "code": "Complete React/Tailwind component code",
+  "colorScheme": {
+    "primary": "hex color",
+    "secondary": "hex color",
+    "accent": "hex color",
+    "background": "hex color",
+    "text": "hex color"
+  },
+  "components": ["List of reusable components created"],
+  "features": ["List of implemented features"],
+  "nextSteps": ["Suggested improvements or additions"]
+}`
+        },
+        {
+          role: "user",
+          content: `Design Prompt: ${requirementsDoc.prompt}
+
+Requirements:
+${formattedRequirements}
+
+Generate a complete React/Tailwind mockup that satisfies these requirements. The mockup should be immediately usable and include all necessary types and styling.`
+        }
+      ],
+      max_completion_tokens: 4000,
+      response_format: { type: "json_object" },
+      reasoning_effort: 'medium'
+    });
+
+    const content = completion.choices[0].message.content;
+    if (!content) {
+      throw new Error('Empty response from OpenAI');
+    }
+
+    try {
+      const mockupData = JSON.parse(content);
+      return NextResponse.json(mockupData);
+    } catch (parseError) {
+      console.error('Error parsing mockup data:', parseError);
+      return NextResponse.json(
+        { error: 'Failed to parse mockup data' },
+        { status: 500 }
+      );
+    }
   } catch (error) {
     console.error('Error generating mockup:', error);
     return NextResponse.json(
@@ -128,11 +219,13 @@ Use this information to:
 
     console.log('Formatted knowledge base context:', knowledgeBaseContext);
 
-    const messages = [
-      {
-        role: 'system' as const,
-        content: isAutoPopulate 
-          ? `You are an expert UX design assistant that helps suggest answers based on the knowledge base and context. Your task is to provide a well-reasoned answer to the current question.
+    const completion = await openai.chat.completions.create({
+      model: 'o3-mini',
+      messages: [
+        {
+          role: 'system',
+          content: isAutoPopulate 
+            ? `You are an expert UX design assistant that helps suggest answers based on the knowledge base and context. Your task is to provide a well-reasoned answer to the current question and return it as a JSON object.
 
 Knowledge Base Context:
 ${knowledgeBaseContext}
@@ -152,8 +245,18 @@ Guidelines for suggesting answers:
 7. Make clear, direct suggestions even with low confidence
 8. If multiple knowledge base sources agree, use that information with high confidence
 9. If sources conflict, use the most relevant or recent information
-10. If no relevant information exists, provide a reasonable suggestion based on UX best practices`
-          : `You are an expert UX design assistant that helps generate follow-up questions for a design prompt. Your questions should follow a clear progression based on the traversal mode.
+10. If no relevant information exists, provide a reasonable suggestion based on UX best practices
+
+Return your response in this JSON format:
+{
+  "questions": [],
+  "shouldStopBranch": false,
+  "stopReason": "",
+  "suggestedAnswer": "Your suggested answer here",
+  "sourceReferences": [array of source indices that contributed],
+  "confidence": "high" | "medium" | "low"
+}`
+            : `You are an expert UX design assistant that helps generate follow-up questions for a design prompt. Your task is to generate ONE follow-up question based on the traversal mode and return it as a JSON object.
 
 ${parentContext ? `
 Current Parent Question Context:
@@ -161,7 +264,7 @@ Current Parent Question Context:
 - Parent Answer: "${parentContext.parentAnswer}"
 - Parent Topics: ${JSON.stringify(parentContext.parentTopics)}
 
-CRITICAL: Any generated question MUST:
+CRITICAL: The generated question MUST:
 1. Be more specific than the parent question
 2. Focus on a specific aspect mentioned in the parent's answer
 3. Not repeat information already covered in the parent's answer
@@ -223,7 +326,8 @@ Follow these guidelines:
    - Child questions must explore specific aspects mentioned in parent's answer
 
 5. Question Generation:
-   - Questions must be specific and focused
+   - Generate exactly ONE question
+   - Make it specific and focused
    - Include clear parent-child relationships
    - Maintain proper depth progression
    - Follow numbering conventions per mode
@@ -250,29 +354,23 @@ ${previousQuestions.map((q: { question: string; answer: string }, index: number)
 ).join('\n')}
 
 9. Response Format:
-   {
-     "questions": ["Next question to ask"],
-     "shouldStopBranch": boolean,
-     "stopReason": "Detailed explanation of why we should stop this branch",
-     "suggestedAnswer": "string with best guess answer based on knowledge base",
-     "sourceReferences": [array of source indices that contributed],
-     "confidence": "high" | "medium" | "low",
-     "topicsCovered": ["list of topics this question relates to"],
-     "parentTopic": "The main topic this question belongs to",
-     "subtopics": ["Potential child topics for this question"]
-   }
-
-10. Answer Generation Guidelines:
-   - Write answers in third person, making definitive statements
-   - Avoid second person pronouns (your, you, yours) entirely
-   - State suggestions as definitive facts that can be modified
-   - Avoid hedging words like "might", "could", "probably", "likely", "maybe"
-   - Make clear, direct suggestions even with low confidence`
-      },
-      {
-        role: 'user' as const,
-        content: isAutoPopulate
-          ? `The design prompt is: "${prompt}"
+Return your response in this exact JSON format:
+{
+  "questions": ["Next question to ask"],
+  "shouldStopBranch": boolean,
+  "stopReason": "Detailed explanation of why we should stop this branch",
+  "suggestedAnswer": "string with best guess answer based on knowledge base",
+  "sourceReferences": [array of source indices that contributed],
+  "confidence": "high" | "medium" | "low",
+  "topicsCovered": ["list of topics this question relates to"],
+  "parentTopic": "The main topic this question belongs to",
+  "subtopics": ["Potential child topics for this question"]
+}`
+        },
+        {
+          role: 'user',
+          content: isAutoPopulate
+            ? `The design prompt is: "${prompt}"
 
 Current Question: "${currentQuestion}"
 
@@ -292,7 +390,7 @@ Return your response in this format:
   "sourceReferences": [array of source indices that contributed],
   "confidence": "high" | "medium" | "low"
 }`
-          : `The design prompt is: "${prompt}".
+            : `The design prompt is: "${prompt}".
 Previous Q&A History:
 ${JSON.stringify(previousQuestions, null, 2)}
 
@@ -300,7 +398,7 @@ Current Question: ${previousQuestions[previousQuestions.length - 1]?.question ||
 
 CRITICAL REQUIREMENTS:
 1. Review ALL previous questions and their topics carefully
-2. Generate a question that explores a COMPLETELY DIFFERENT aspect not covered in ANY previous question
+2. Generate ONE question that explores a COMPLETELY DIFFERENT aspect not covered in ANY previous question
 3. For BFS mode, ensure the new question:
    - Stays at the same level
    - Covers a new topic not related to any previous questions
@@ -318,19 +416,28 @@ Remember:
 - In BFS mode, stay at the current level but explore new topics
 - Make clear, direct statements in suggested answers
 - Never use second person pronouns`
-      },
-    ];
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages,
-      temperature: 0.7,
-      max_tokens: 500
+        }
+      ],
+      max_completion_tokens: 4000,
+      response_format: { type: "json_object" },
+      reasoning_effort: 'medium'
     });
 
     const content = completion.choices[0].message.content?.trim();
     if (!content) {
-      throw new Error('Empty response from OpenAI');
+      console.error('Empty response from OpenAI');
+      // Return a default response instead of throwing
+      return NextResponse.json({
+        questions: ["What are the core features needed for this design?"],
+        shouldStopBranch: false,
+        stopReason: "",
+        suggestedAnswer: null,
+        sourceReferences: [],
+        confidence: "low",
+        topicsCovered: ["core_features"],
+        parentTopic: "requirements",
+        subtopics: []
+      });
     }
 
     console.log('Raw OpenAI response:', content);
@@ -348,71 +455,63 @@ Remember:
     };
 
     try {
+      // First try to parse the JSON response
       response = JSON.parse(content);
-      console.log('Initial parsed response:', response);
       
-      // Ensure we always have a suggested answer
-      if (!response.suggestedAnswer) {
-        console.log('No suggested answer provided, creating a default one');
-        response.suggestedAnswer = "Based on general UX principles, a reasonable approach would be...";
-        response.confidence = 'low';
-        response.sourceReferences = [];
-      }
-      
-      if (!Array.isArray(response.questions)) {
-        throw new Error("Questions is not an array");
-      }
-      
+      // Ensure required fields exist with defaults
+      response = {
+        questions: Array.isArray(response.questions) ? response.questions : [response.questions || "What are the core features needed for this design?"],
+        shouldStopBranch: response.shouldStopBranch || false,
+        stopReason: response.stopReason || "",
+        suggestedAnswer: response.suggestedAnswer || null,
+        sourceReferences: response.sourceReferences || [],
+        confidence: response.confidence || "low",
+        topicsCovered: response.topicsCovered || [],
+        parentTopic: response.parentTopic || "requirements",
+        subtopics: response.subtopics || []
+      };
+
       // Clean up questions to ensure they're plain text
       response.questions = response.questions.map((q: any) => {
-        if (typeof q === 'string') {
-          // Try to parse if it looks like JSON
-          try {
-            const parsed = JSON.parse(q);
-            return parsed.question || parsed.text || q;
-          } catch {
-            return q;
-          }
-        }
+        if (typeof q === 'string') return q;
         return q.question || q.text || JSON.stringify(q);
-      });
-      
-      // Ensure suggestedAnswer has the required format
-      if (response.suggestedAnswer) {
-        console.log('Found suggested answer:', response.suggestedAnswer);
-        
-        // Make sure suggestedAnswer is a string
-        const suggestedAnswerText = typeof response.suggestedAnswer === 'object' 
-          ? (response.suggestedAnswer as { text?: string }).text || JSON.stringify(response.suggestedAnswer)
-          : response.suggestedAnswer;
-        
-        response = {
-          ...response,
-          suggestedAnswer: suggestedAnswerText,
-          confidence: response.confidence || 'high',  // Default to high if we have a suggestion
-          sourceReferences: response.sourceReferences || []
-        };
-        console.log('Formatted response with suggestion:', response);
-      } else {
-        console.log('No suggested answer in response');
+      }).filter(Boolean);
+
+      // If no valid questions after cleanup, provide a default
+      if (response.questions.length === 0) {
+        response.questions = ["What are the core features needed for this design?"];
       }
+
+      console.log('Formatted response:', response);
+      return NextResponse.json(response);
     } catch (jsonError) {
       console.error("Error parsing API response:", jsonError);
-      // Fallback: extract questions from text
-      response = {
-        questions: [content], // Use the entire content as a single question
+      console.error("Raw content causing parse error:", content);
+      
+      // Try to extract a valid question from the partial response
+      let extractedQuestion = "What are the core features needed for this design?";
+      try {
+        const questionMatch = content.match(/"questions":\s*\[\s*"([^"]+)"/);
+        if (questionMatch && questionMatch[1]) {
+          extractedQuestion = questionMatch[1];
+        }
+      } catch (e) {
+        console.error("Failed to extract question from partial response");
+      }
+      
+      // Provide a default response using any extracted data
+      return NextResponse.json({
+        questions: [extractedQuestion],
         shouldStopBranch: false,
-        stopReason: '',
+        stopReason: "",
         suggestedAnswer: null,
         sourceReferences: [],
-        confidence: 'low',
-        topicsCovered: [],
-        parentTopic: '',
+        confidence: "low",
+        topicsCovered: ["core_features"],
+        parentTopic: "requirements",
         subtopics: []
-      };
+      });
     }
-
-    return NextResponse.json(response);
   } catch (error) {
     console.error('Error generating questions:', error);
     return NextResponse.json(
@@ -444,12 +543,13 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
 
 async function processContent(content: string) {
   try {
+    console.log('Starting content processing...');
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "o3-mini",
       messages: [
         {
           role: "system",
-          content: `You are a knowledge base processor. Extract key information from the provided document that would be relevant for the design process. Focus on:
+          content: `You are a knowledge base processor. Extract key information from the provided document and return it as a JSON object. Focus on:
 1. Requirements and constraints
 2. Technical specifications
 3. Design guidelines
@@ -462,32 +562,39 @@ Return your response in this exact JSON format:
   "technicalSpecifications": [],
   "designGuidelines": [],
   "userPreferences": [],
-  "industryStandards": []
-}`
+  "industryStandards": []}`
         },
         {
           role: "user",
           content
         }
       ],
-      temperature: 0.7,
-      max_tokens: 2000
+      max_completion_tokens: 4000,
+      response_format: { type: "json_object" },
+      reasoning_effort: 'medium'
     });
 
+    console.log('OpenAI response received');
     const responseContent = completion.choices[0].message.content;
     if (!responseContent) {
+      console.error('Empty response content from OpenAI');
       throw new Error('Empty response from OpenAI');
     }
 
     try {
-      return JSON.parse(responseContent);
+      const parsedContent = JSON.parse(responseContent);
+      console.log('Successfully parsed OpenAI response');
+      return parsedContent;
     } catch (parseError) {
-      console.error('Error parsing OpenAI response:', parseError);
+      console.error('Error parsing OpenAI response:', parseError, '\nResponse content:', responseContent);
       throw new Error('Failed to parse OpenAI response');
     }
   } catch (error) {
-    console.error('Error processing content with OpenAI:', error);
-    throw new Error('Failed to process content');
+    console.error('Error in processContent:', error);
+    if (error instanceof Error) {
+      throw new Error(`Failed to process content: ${error.message}`);
+    }
+    throw new Error('Failed to process content: Unknown error');
   }
 }
 
@@ -556,8 +663,9 @@ export async function POST(request: NextRequest) {
 ----- /Users/jackcrawford/ai-design-flow/app/api/update-requirements/route.ts -----
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import { RequirementsDocument, QANode } from '@/types';
+import { RequirementsDocument, QANode, RequirementCategory } from '@/types';
 import { KnowledgeBaseSource } from '@/types/settings';
+import { v4 as uuidv4 } from 'uuid';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -614,11 +722,11 @@ export async function POST(request: NextRequest) {
     });
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "o3-mini",
       messages: [
         {
           role: "system",
-          content: `You are a requirements document updater. Your task is to update a requirements document based on Q&A session information and knowledge base data.
+          content: `You are a requirements document updater. Your task is to update a requirements document based on Q&A session information and knowledge base data and return it as a JSON object.
 
 CRITICAL INSTRUCTIONS:
 1. You MUST return ONLY a valid JSON object.
@@ -659,25 +767,23 @@ CRITICAL INSTRUCTIONS:
         },
         {
           role: "user",
-          content: `Current Requirements Document:
-${JSON.stringify(existingDocument, null, 2)}
+          content: `Current Document: ${JSON.stringify(existingDocument)}
+Latest Q&A: ${qaContext}
+Knowledge Base: ${knowledgeBaseContext}
 
-Latest Q&A:
-${qaContext}
-
-Knowledge Base Information:
-${knowledgeBaseContext}
-
-Update the requirements document with any new information from the Q&A and knowledge base. Return ONLY the updated document as a JSON object. Do not include any additional text or formatting.`
+Update the requirements document with any new information from the Q&A and knowledge base. Return ONLY the updated document as a JSON object.`
         }
       ],
-      temperature: 0.3,
-      max_tokens: 2000
+      max_completion_tokens: 4000,
+      response_format: { type: "json_object" },
+      reasoning_effort: 'medium'
     });
 
     const content = completion.choices[0].message.content;
     if (!content) {
-      throw new Error('Empty response from OpenAI');
+      console.error('Empty response from OpenAI');
+      console.log('Returning existing document due to empty OpenAI response');
+      return NextResponse.json(existingDocument);
     }
 
     console.log('OpenAI response:', content.substring(0, 100) + '...');
@@ -688,8 +794,22 @@ Update the requirements document with any new information from the Q&A and knowl
       // Validate the document structure
       if (!updatedDocument.id || !updatedDocument.categories) {
         console.error('Invalid document structure:', updatedDocument);
+        console.log('Returning existing document due to invalid structure');
         return NextResponse.json(existingDocument);
       }
+      
+      // Ensure all requirements have IDs
+      (Object.values(updatedDocument.categories) as RequirementCategory[]).forEach((category: RequirementCategory) => {
+        if (Array.isArray(category.requirements)) {
+          category.requirements.forEach((req: { id?: string; createdAt?: string; updatedAt?: string }) => {
+            if (!req.id) {
+              req.id = uuidv4();
+              req.createdAt = new Date().toISOString();
+              req.updatedAt = new Date().toISOString();
+            }
+          });
+        }
+      });
       
       // Ensure all required categories exist
       const requiredCategories = [
@@ -707,6 +827,7 @@ Update the requirements document with any new information from the Q&A and knowl
       
       if (!hasAllCategories) {
         console.error('Missing required categories');
+        console.log('Returning existing document due to missing categories');
         return NextResponse.json(existingDocument);
       }
       
@@ -715,6 +836,7 @@ Update the requirements document with any new information from the Q&A and knowl
       console.error('Error parsing OpenAI response:', parseError);
       console.error('Raw response:', content);
       // If parsing fails, return the existing document unchanged
+      console.log('Returning existing document due to parse error');
       return NextResponse.json(existingDocument);
     }
   } catch (error) {
@@ -770,8 +892,9 @@ import { v4 as uuidv4 } from 'uuid';
 import HeaderToolbar from '../../components/HeaderToolbar';
 import QAPanel from '../../components/QAPanel';
 import CanvasTree from '../../components/CanvasTree';
-import { QANode, RequirementsDocument } from '@/types';
+import { QANode, RequirementsDocument, MockupVersion, SessionMetadata } from '@/types';
 import { QASettings } from '@/types/settings';
+import PreviewPanel from '../../components/PreviewPanel';
 
 interface SavedProgress {
   qaTree: QANode;
@@ -805,6 +928,11 @@ export default function QnAPage() {
   const [requirementsDoc, setRequirementsDoc] = useState<RequirementsDocument | null>(null);
   const [askedQuestions, setAskedQuestions] = useState<Set<string>>(new Set());
   const [askedTopics, setAskedTopics] = useState<Set<string>>(new Set());
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [sessionMetadata, setSessionMetadata] = useState<SessionMetadata | null>(null);
+  const [isLeavingPage, setIsLeavingPage] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   // Helper: Extract topics from a question
   const extractTopics = (question: string): string[] => {
@@ -855,7 +983,8 @@ export default function QnAPage() {
           prompt, 
           node,
           branchHistory,
-          depth
+          depth,
+          true // Enable suggestions for follow-up questions
         );
         
         // If the AI suggests stopping this branch, move to siblings
@@ -948,7 +1077,8 @@ export default function QnAPage() {
           prompt,
           parent,
           levelHistory,
-          currentDepth
+          currentDepth,
+          true // Enable suggestions for follow-up questions
         );
         
         if (!shouldStopBranch && newSiblings.length > 0) {
@@ -975,7 +1105,8 @@ export default function QnAPage() {
               prompt,
               sibling,
               siblingHistory,
-              currentDepth + 1
+              currentDepth + 1,
+              true // Enable suggestions for follow-up questions
             );
             
             if (!shouldStopBranch && children.length > 0) {
@@ -1057,7 +1188,7 @@ export default function QnAPage() {
   };
 
   // Helper: fetch questions for a node
-  const fetchQuestionsForNode = async (designPrompt: string, parentNode: QANode, questionHistory: QuestionHistoryItem[], depth: number): Promise<{ nodes: QANode[], shouldStopBranch: boolean, stopReason: string }> => {
+  const fetchQuestionsForNode = async (designPrompt: string, parentNode: QANode, questionHistory: QuestionHistoryItem[], depth: number, setSuggestion: boolean = false): Promise<{ nodes: QANode[], shouldStopBranch: boolean, stopReason: string, suggestedAnswer?: string }> => {
     try {
       console.log('Fetching questions with knowledge base:', settings?.knowledgeBase);
       
@@ -1077,7 +1208,8 @@ export default function QnAPage() {
           traversalMode: settings?.traversalMode,
           knowledgeBase: settings?.knowledgeBase,
           depth: depth,
-          parentContext: parentContext // Add parent context to help generate more specific child questions
+          parentContext: parentContext,
+          includeSuggestions: setSuggestion // Only request suggestions when needed
         }),
       });
 
@@ -1093,22 +1225,24 @@ export default function QnAPage() {
         throw new Error('Invalid response format or no questions received');
       }
 
-      // Set suggested answer if available
-      if (data.suggestedAnswer) {
-        console.log('Setting suggested answer:', {
-          text: data.suggestedAnswer,
-          confidence: data.confidence || 'low',
-          sourceReferences: data.sourceReferences || []
-        });
-        
-        setSuggestedAnswer({
-          text: data.suggestedAnswer,
-          confidence: data.confidence || 'low',
-          sourceReferences: data.sourceReferences || []
-        });
-      } else {
-        console.log('Clearing suggested answer');
-        setSuggestedAnswer(null);
+      // Only set suggested answer if explicitly requested
+      if (setSuggestion) {
+        if (data.suggestedAnswer) {
+          console.log('Setting suggested answer:', {
+            text: data.suggestedAnswer,
+            confidence: data.confidence || 'low',
+            sourceReferences: data.sourceReferences || []
+          });
+          
+          setSuggestedAnswer({
+            text: data.suggestedAnswer,
+            confidence: data.confidence || 'low',
+            sourceReferences: data.sourceReferences || []
+          });
+        } else {
+          console.log('Clearing suggested answer');
+          setSuggestedAnswer(null);
+        }
       }
       
       // Create a single child node with the next question number
@@ -1123,7 +1257,8 @@ export default function QnAPage() {
       return {
         nodes,
         shouldStopBranch: data.shouldStopBranch || false,
-        stopReason: data.stopReason || 'No more questions needed'
+        stopReason: data.stopReason || 'No more questions needed',
+        suggestedAnswer: data.suggestedAnswer
       };
     } catch (error) {
       console.error("Error in fetchQuestionsForNode:", error);
@@ -1137,7 +1272,8 @@ export default function QnAPage() {
       return { 
         nodes: [errorNode], 
         shouldStopBranch: true, 
-        stopReason: error instanceof Error ? error.message : "Error generating questions" 
+        stopReason: error instanceof Error ? error.message : "Error generating questions",
+        suggestedAnswer: undefined
       };
     }
   };
@@ -1192,28 +1328,112 @@ export default function QnAPage() {
     }
   };
 
-  // Helper: Save current progress to localStorage
-  const saveProgress = () => {
-    if (!qaTree || !settings) return;
-    
-    const progress: SavedProgress = {
-      qaTree,
-      currentNodeId: currentNode?.id || null,
-      questionCount,
-      prompt,
-      settings,
-      requirementsDoc: requirementsDoc!
+  // Auto-save timer
+  useEffect(() => {
+    const autoSaveInterval = setInterval(() => {
+      if (qaTree) {
+        saveProgress(true);
+      }
+    }, 60000); // Auto-save every minute
+
+    return () => clearInterval(autoSaveInterval);
+  }, [qaTree, currentNode, questionCount, prompt, settings]);
+
+  // Handle page leave
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!isLeavingPage) {
+        e.preventDefault();
+        e.returnValue = '';
+        saveProgress(true);
+      }
     };
-    
-    localStorage.setItem('qaProgress', JSON.stringify(progress));
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isLeavingPage]);
+
+  // Helper: Save current progress
+  const saveProgress = (isAutoSave = false) => {
+    if (!qaTree || !settings || !requirementsDoc) return;
+
+    try {
+      // Update session metadata
+      const currentTime = new Date().toISOString();
+      const metadata: SessionMetadata = {
+        id: sessionMetadata?.id || uuidv4(),
+        prompt,
+        lastUpdated: currentTime,
+        questionCount,
+        versions: [],
+        settings: {
+          traversalMode: settings.traversalMode,
+          unknownHandling: settings.unknownHandling,
+          conflictResolution: settings.conflictResolution
+        },
+        name: sessionMetadata?.name
+      };
+
+      // Save progress and metadata
+      localStorage.setItem('qaProgress', JSON.stringify({
+        qaTree,
+        currentNodeId: currentNode?.id || null,
+        questionCount,
+        prompt,
+        settings,
+        requirementsDoc
+      }));
+
+      localStorage.setItem('sessionMetadata', JSON.stringify(metadata));
+      setSessionMetadata(metadata);
+
+      if (!isAutoSave) {
+        // Show success message for manual saves
+        // TODO: Add a toast notification system
+        console.log('Progress saved successfully');
+      }
+    } catch (error) {
+      console.error('Error saving progress:', error);
+      // TODO: Add error notification
+    }
   };
 
-  // Effect to save progress whenever relevant state changes
-  useEffect(() => {
-    if (qaTree && !isLoading) {
+  const handleVersionRestore = (version: MockupVersion) => {
+    // Confirm before restoring
+    if (window.confirm('Restoring this version will replace your current progress. Continue?')) {
+      setQaTree(version.qaTree);
+      setRequirementsDoc(version.requirementsDoc);
+      
+      // Find the first unanswered question in the restored tree
+      const firstUnanswered = findFirstUnansweredChild(version.qaTree);
+      setCurrentNode(firstUnanswered);
+      
+      // Update question count
+      let count = 0;
+      const countAnswers = (node: QANode) => {
+        if (node.answer) count++;
+        node.children.forEach(countAnswers);
+      };
+      countAnswers(version.qaTree);
+      setQuestionCount(count);
+      
+      // Save the restored state
       saveProgress();
     }
-  }, [qaTree, currentNode, questionCount, prompt, settings]);
+  };
+
+  const handleSaveSession = (name?: string) => {
+    if (sessionMetadata) {
+      const updatedMetadata = {
+        ...sessionMetadata,
+        name,
+        lastUpdated: new Date().toISOString()
+      };
+      setSessionMetadata(updatedMetadata);
+      localStorage.setItem('sessionMetadata', JSON.stringify(updatedMetadata));
+      saveProgress();
+    }
+  };
 
   // On mount: try to load saved progress or start new session
   useEffect(() => {
@@ -1236,6 +1456,7 @@ export default function QnAPage() {
           setCurrentNode(node);
         }
         setIsLoading(false);
+        setIsInitialLoad(false);
         return;
       } catch (error) {
         console.error("Error loading saved progress:", error);
@@ -1254,7 +1475,7 @@ export default function QnAPage() {
         id: uuidv4(),
         question: `Prompt: ${storedPrompt}`,
         children: [],
-        questionNumber: 0, // Explicitly set prompt as Q0
+        questionNumber: 0,
       };
       setQaTree(rootNode);
       
@@ -1275,16 +1496,23 @@ export default function QnAPage() {
       setRequirementsDoc(initialRequirementsDoc);
       
       // Generate first question (Q1)
-      fetchQuestionsForNode(storedPrompt, rootNode, [], 0).then(({ nodes: children }) => {
+      fetchQuestionsForNode(storedPrompt, rootNode, [], 0, true).then(({ nodes: children, suggestedAnswer }) => {
         if (children.length > 0) {
-          // Set first actual question as Q1
           children[0].questionNumber = 1;
           rootNode.children = children;
           setQaTree({ ...rootNode });
           setCurrentNode(children[0]);
+          if (suggestedAnswer) {
+            setSuggestedAnswer({ 
+              text: suggestedAnswer, 
+              confidence: 'medium',
+              sourceReferences: []
+            });
+          }
           setQuestionCount(1);
         }
         setIsLoading(false);
+        setIsInitialLoad(false);
       });
     } else {
       console.error("No design prompt or settings found.");
@@ -1319,15 +1547,12 @@ export default function QnAPage() {
       if (nextNode) {
         // Verify this question hasn't been asked before
         if (!askedQuestions.has(nextNode.question)) {
-          // Add the question to the set of asked questions
           setAskedQuestions(prev => new Set(prev).add(nextNode.question));
-          
-          // In BFS mode, the next node should already be properly placed by getNextQuestion
-          // We don't need to add it to any parent's children here as that's handled in getNextQuestion
+          setIsInitialLoad(true); // Prevent auto-fetch when setting current node
           setCurrentNode(nextNode);
           setQuestionCount(prev => prev + 1);
-          // Update the tree state to trigger re-render
           setQaTree(prev => prev ? { ...prev } : prev);
+          setIsInitialLoad(false); // Reset flag after state updates
         } else {
           console.warn('Duplicate question detected:', nextNode.question);
           setCurrentNode(null);
@@ -1346,7 +1571,12 @@ export default function QnAPage() {
 
   const handleAutoPopulate = async (): Promise<string | null> => {
     try {
-      // Build the previous Q&A chain up to the current question
+      // If we already have a suggested answer, use it
+      if (suggestedAnswer) {
+        return suggestedAnswer.text;
+      }
+      
+      // Otherwise, build the previous Q&A chain up to the current question
       const questionHistory: QuestionHistoryItem[] = [];
       const collectHistory = (n: QANode) => {
         if (n.question !== `Prompt: ${prompt}`) {
@@ -1365,11 +1595,11 @@ export default function QnAPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt,
-          previousQuestions: questionHistory,  // Pass the full question history
+          previousQuestions: questionHistory,
           traversalMode: settings?.traversalMode,
           knowledgeBase: settings?.knowledgeBase,
           currentQuestion: currentNode?.question,
-          isAutoPopulate: true // Flag to indicate this is for auto-populate
+          isAutoPopulate: true
         }),
       });
 
@@ -1418,28 +1648,45 @@ export default function QnAPage() {
       prompt: prompt,
       lastUpdated: new Date().toISOString(),
       categories: {
-        basicNeeds: { title: 'Basic Needs', requirements: [] },
-        functionalRequirements: { title: 'Functional Requirements', requirements: [] },
-        userExperience: { title: 'User Experience', requirements: [] },
-        implementation: { title: 'Implementation', requirements: [] },
-        refinements: { title: 'Refinements', requirements: [] },
-        constraints: { title: 'Constraints', requirements: [] }
+        basicNeeds: { 
+          title: 'Basic Needs', 
+          requirements: [] 
+        },
+        functionalRequirements: { 
+          title: 'Functional Requirements', 
+          requirements: [] 
+        },
+        userExperience: { 
+          title: 'User Experience', 
+          requirements: [] 
+        },
+        implementation: { 
+          title: 'Implementation', 
+          requirements: [] 
+        },
+        refinements: { 
+          title: 'Refinements', 
+          requirements: [] 
+        },
+        constraints: { 
+          title: 'Constraints', 
+          requirements: [] 
+        }
       }
     };
     setRequirementsDoc(initialRequirementsDoc);
     
     // Generate first question (Q1)
-    fetchQuestionsForNode(prompt, rootNode, [], 0)
-      .then(({ nodes: children }) => {
-        if (children.length > 0) {
-          // Set first actual question as Q1
-          children[0].questionNumber = 1;
-          rootNode.children = children;
-          setQaTree({ ...rootNode });
-          setCurrentNode(children[0]);
-          setQuestionCount(1);
-        }
-      })
+    fetchQuestionsForNode(prompt, rootNode, [], 0, true).then(({ nodes: children }) => {
+      if (children.length > 0) {
+        // Set first actual question as Q1
+        children[0].questionNumber = 1;
+        rootNode.children = children;
+        setQaTree({ ...rootNode });
+        setCurrentNode(children[0]);
+        setQuestionCount(1);
+      }
+    })
       .catch(error => {
         console.error('Error generating first question:', error);
       })
@@ -1449,9 +1696,34 @@ export default function QnAPage() {
       });
   };
 
+  const handleGenerate = async () => {
+    setIsPreviewOpen(true);
+    setIsGenerating(true);
+    
+    try {
+      // Update requirements one final time before showing preview
+      await updateRequirements(currentNode?.id || null);
+      
+      // Wait a bit to ensure requirements are updated
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+    } catch (error) {
+      console.error('Error generating preview:', error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
-      <HeaderToolbar onRestart={handleRestart} showRestartButton={!isLoading} />
+      <HeaderToolbar 
+        onRestart={handleRestart} 
+        onGenerate={handleGenerate}
+        onSave={() => handleSaveSession()}
+        showRestartButton={!isLoading}
+        showGenerateButton={!isLoading && qaTree !== null}
+        showSaveButton={!isLoading && qaTree !== null}
+      />
       <div className="py-2 px-6 bg-white border-b border-gray-200">
         <div className="flex justify-between items-center">
           <div className="text-sm text-gray-600">
@@ -1491,6 +1763,15 @@ export default function QnAPage() {
           />
         </div>
       </main>
+      
+      <PreviewPanel
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        requirementsDoc={requirementsDoc!}
+        isGenerating={isGenerating}
+        qaTree={qaTree}
+        onVersionRestore={handleVersionRestore}
+      />
     </div>
   );
 }
@@ -1734,10 +2015,21 @@ import Link from 'next/link';
 
 interface HeaderToolbarProps {
   onRestart?: () => void;
+  onGenerate?: () => void;
+  onSave?: () => void;
   showRestartButton?: boolean;
+  showGenerateButton?: boolean;
+  showSaveButton?: boolean;
 }
 
-const HeaderToolbar: React.FC<HeaderToolbarProps> = ({ onRestart, showRestartButton = false }) => {
+const HeaderToolbar: React.FC<HeaderToolbarProps> = ({ 
+  onRestart, 
+  onGenerate,
+  onSave,
+  showRestartButton = false,
+  showGenerateButton = false,
+  showSaveButton = false
+}) => {
   return (
     <header className="bg-white border-b border-gray-200">
       <div className="w-full px-2">
@@ -1747,7 +2039,29 @@ const HeaderToolbar: React.FC<HeaderToolbarProps> = ({ onRestart, showRestartBut
               AI Design Flow
             </Link>
           </div>
-          <div className="pr-2">
+          <div className="pr-2 flex space-x-4">
+            {showSaveButton && onSave && (
+              <button
+                onClick={onSave}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center space-x-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                </svg>
+                <span>Save Progress</span>
+              </button>
+            )}
+            {showGenerateButton && onGenerate && (
+              <button
+                onClick={onGenerate}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <span>Generate Preview</span>
+              </button>
+            )}
             {showRestartButton && onRestart && (
               <button
                 onClick={onRestart}
@@ -1785,6 +2099,479 @@ export default function PreviewArea({ requirements, uiCode }: PreviewAreaProps) 
         <pre className="whitespace-pre-wrap font-mono text-sm bg-gray-50 p-4 rounded overflow-auto">
           {uiCode}
         </pre>
+      </div>
+    </div>
+  );
+} 
+
+----- /Users/jackcrawford/ai-design-flow/components/PreviewPanel.tsx -----
+import { RequirementsDocument, MockupVersion } from '@/types';
+import { useState, useEffect } from 'react';
+import { v4 as uuidv4 } from 'uuid';
+
+interface MockupData {
+  code: string;
+  colorScheme: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    background: string;
+    text: string;
+  };
+  components: string[];
+  features: string[];
+  nextSteps: string[];
+}
+
+interface PreviewPanelProps {
+  isOpen: boolean;
+  onClose: () => void;
+  requirementsDoc: RequirementsDocument;
+  isGenerating: boolean;
+  qaTree: any;
+  onVersionRestore?: (version: MockupVersion) => void;
+}
+
+export default function PreviewPanel({
+  isOpen,
+  onClose,
+  requirementsDoc,
+  isGenerating,
+  qaTree,
+  onVersionRestore
+}: PreviewPanelProps) {
+  const [activeTab, setActiveTab] = useState<'requirements' | 'mockup' | 'versions'>('requirements');
+  const [mockupData, setMockupData] = useState<MockupData | null>(null);
+  const [isMockupLoading, setIsMockupLoading] = useState(false);
+  const [versions, setVersions] = useState<MockupVersion[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState<MockupVersion | null>(null);
+  const [isCompareMode, setIsCompareMode] = useState(false);
+  const [compareVersion, setCompareVersion] = useState<MockupVersion | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Load versions from localStorage
+    try {
+      const storedVersions = localStorage.getItem('mockupVersions');
+      if (storedVersions) {
+        setVersions(JSON.parse(storedVersions));
+      }
+    } catch (error) {
+      console.error('Error loading versions:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'mockup' && !mockupData && !isMockupLoading && !error) {
+      generateMockup();
+    }
+  }, [activeTab, mockupData, isMockupLoading, error]);
+
+  const generateMockup = async () => {
+    setIsMockupLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/generate-mockup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requirementsDoc })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        throw new Error(errorData.error || 'Failed to generate mockup');
+      }
+
+      const data = await response.json();
+      
+      // Validate mockup data structure
+      if (!data.code || !data.colorScheme || !data.components || !data.features || !data.nextSteps) {
+        throw new Error('Invalid mockup data received');
+      }
+
+      setMockupData(data);
+
+      // Create new version
+      const newVersion: MockupVersion = {
+        id: uuidv4(),
+        timestamp: new Date().toISOString(),
+        qaTree,
+        requirementsDoc,
+        mockupData: data
+      };
+
+      // Add to versions and save to localStorage
+      const updatedVersions = [...versions, newVersion];
+      setVersions(updatedVersions);
+      localStorage.setItem('mockupVersions', JSON.stringify(updatedVersions));
+
+    } catch (error) {
+      console.error('Error generating mockup:', error);
+      setError(error instanceof Error ? error.message : 'Failed to generate mockup');
+    } finally {
+      setIsMockupLoading(false);
+    }
+  };
+
+  const handleVersionSelect = (version: MockupVersion) => {
+    setSelectedVersion(version);
+    setMockupData(version.mockupData);
+  };
+
+  const handleVersionRestore = (version: MockupVersion) => {
+    if (onVersionRestore) {
+      onVersionRestore(version);
+    }
+  };
+
+  const handleCompareSelect = (version: MockupVersion) => {
+    setCompareVersion(version);
+    setIsCompareMode(true);
+  };
+
+  const handleCopyCode = () => {
+    if (mockupData?.code) {
+      navigator.clipboard.writeText(mockupData.code);
+    }
+  };
+
+  const handleDownload = () => {
+    if (activeTab === 'requirements') {
+      // Download requirements as markdown
+      const requirementsText = Object.entries(requirementsDoc.categories)
+        .map(([key, category]) => {
+          const reqs = category.requirements
+            .map(req => `- ${req.text} (${req.priority} priority)`)
+            .join('\n');
+          return `## ${category.title}\n${reqs}`;
+        })
+        .join('\n\n');
+
+      const content = `# ${requirementsDoc.prompt}\n\n${requirementsText}`;
+      const blob = new Blob([content], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'requirements.md';
+      a.click();
+      URL.revokeObjectURL(url);
+    } else if (mockupData?.code) {
+      // Download mockup as TypeScript file
+      const blob = new Blob([mockupData.code], { type: 'text/typescript' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'mockup.tsx';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-end">
+      <div className={`${isCompareMode ? 'w-4/5' : 'w-2/5'} bg-white h-full shadow-lg flex flex-col`}>
+        {/* Header */}
+        <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+          <div className="flex space-x-4">
+            <button
+              onClick={() => setActiveTab('requirements')}
+              className={`px-4 py-2 rounded-lg ${
+                activeTab === 'requirements'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              Requirements
+            </button>
+            <button
+              onClick={() => setActiveTab('mockup')}
+              className={`px-4 py-2 rounded-lg ${
+                activeTab === 'mockup'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              Mockup
+            </button>
+            <button
+              onClick={() => setActiveTab('versions')}
+              className={`px-4 py-2 rounded-lg ${
+                activeTab === 'versions'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              Versions ({versions.length})
+            </button>
+          </div>
+          <div className="flex space-x-4">
+            {activeTab === 'versions' && selectedVersion && (
+              <>
+                <button
+                  onClick={() => handleVersionRestore(selectedVersion)}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                >
+                  Restore Version
+                </button>
+                <button
+                  onClick={() => handleCompareSelect(selectedVersion)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  Compare
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => {
+                setIsCompareMode(false);
+                setCompareVersion(null);
+                onClose();
+              }}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-auto">
+          {error ? (
+            <div className="p-6 text-center">
+              <div className="text-red-600 mb-4">{error}</div>
+              <button
+                onClick={() => {
+                  setError(null);
+                  generateMockup();
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Try Again
+              </button>
+            </div>
+          ) : isGenerating || isMockupLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="flex flex-col items-center space-y-4">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                <p className="text-gray-600">
+                  {isGenerating ? 'Generating preview...' : 'Generating mockup...'}
+                </p>
+              </div>
+            </div>
+          ) : activeTab === 'versions' ? (
+            <div className="p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Version History</h2>
+              <div className="space-y-4">
+                {versions.map((version) => (
+                  <div
+                    key={version.id}
+                    className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                      selectedVersion?.id === version.id
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-blue-300'
+                    }`}
+                    onClick={() => handleVersionSelect(version)}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-medium text-gray-900">
+                          Version from {new Date(version.timestamp).toLocaleString()}
+                        </p>
+                        <p className="text-sm text-gray-600 mt-1">
+                          {version.requirementsDoc.categories.basicNeeds.requirements.length} requirements,{' '}
+                          {version.mockupData.components.length} components
+                        </p>
+                      </div>
+                      {version.name && (
+                        <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">
+                          {version.name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className={`flex ${isCompareMode ? 'space-x-4' : ''}`}>
+              <div className={`${isCompareMode ? 'w-1/2' : 'w-full'} p-6`}>
+                {activeTab === 'requirements' ? (
+                  <div className="space-y-8">
+                    <div className="prose max-w-none">
+                      <h1 className="text-2xl font-bold text-gray-900 mb-4">
+                        {requirementsDoc.prompt}
+                      </h1>
+                      <p className="text-sm text-gray-500 mb-8">
+                        Last updated: {new Date(requirementsDoc.lastUpdated).toLocaleString()}
+                      </p>
+                    </div>
+
+                    {Object.entries(requirementsDoc.categories).map(([key, category]) => (
+                      <div key={key} className="space-y-4">
+                        <h2 className="text-xl font-semibold text-gray-900">
+                          {category.title}
+                        </h2>
+                        {category.requirements && category.requirements.length > 0 ? (
+                          <ul className="space-y-3">
+                            {category.requirements.map((req, index) => (
+                              <li
+                                key={req.id || `${key}-${index}-${req.text}`}
+                                className="bg-white rounded-lg border border-gray-200 p-4"
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <p className="text-gray-900">{req.text}</p>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      {req.priority && (
+                                        <span className={`px-2 py-1 rounded-full text-xs ${
+                                          req.priority === 'high'
+                                            ? 'bg-red-100 text-red-800'
+                                            : req.priority === 'medium'
+                                            ? 'bg-yellow-100 text-yellow-800'
+                                            : 'bg-green-100 text-green-800'
+                                        }`}>
+                                          {req.priority} priority
+                                        </span>
+                                      )}
+                                      {req.category && (
+                                        <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                                          {req.category}
+                                        </span>
+                                      )}
+                                      {req.tags?.map((tag, tagIndex) => (
+                                        <span
+                                          key={`${req.id || index}-tag-${tagIndex}`}
+                                          className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800"
+                                        >
+                                          {tag}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-gray-500 italic">No requirements in {category.title}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : mockupData ? (
+                  <div className="space-y-8">
+                    {/* Color Scheme */}
+                    <div>
+                      <h2 className="text-xl font-semibold text-gray-900 mb-4">Color Scheme</h2>
+                      <div className="flex flex-wrap gap-4">
+                        {Object.entries(mockupData.colorScheme).map(([name, color]) => (
+                          <div key={name} className="flex flex-col items-center">
+                            <div
+                              className="w-16 h-16 rounded-lg shadow-md"
+                              style={{ backgroundColor: color }}
+                            />
+                            <span className="mt-2 text-sm text-gray-600">{name}</span>
+                            <span className="text-xs text-gray-400">{color}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Components */}
+                    <div>
+                      <h2 className="text-xl font-semibold text-gray-900 mb-4">Components</h2>
+                      <ul className="list-disc list-inside space-y-2">
+                        {mockupData.components.map((component, index) => (
+                          <li key={index} className="text-gray-700">{component}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Features */}
+                    <div>
+                      <h2 className="text-xl font-semibold text-gray-900 mb-4">Implemented Features</h2>
+                      <ul className="list-disc list-inside space-y-2">
+                        {mockupData.features.map((feature, index) => (
+                          <li key={index} className="text-gray-700">{feature}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Code */}
+                    <div>
+                      <h2 className="text-xl font-semibold text-gray-900 mb-4">Generated Code</h2>
+                      <pre className="bg-gray-50 p-4 rounded-lg overflow-auto text-sm">
+                        <code className="text-gray-800">{mockupData.code}</code>
+                      </pre>
+                    </div>
+
+                    {/* Next Steps */}
+                    <div>
+                      <h2 className="text-xl font-semibold text-gray-900 mb-4">Next Steps</h2>
+                      <ul className="list-disc list-inside space-y-2">
+                        {mockupData.nextSteps.map((step, index) => (
+                          <li key={index} className="text-gray-700">{step}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+              {isCompareMode && compareVersion && (
+                <div className="w-1/2 p-6 border-l border-gray-200">
+                  <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                    Comparing with version from {new Date(compareVersion.timestamp).toLocaleString()}
+                  </h2>
+                  {/* Render comparison content */}
+                  {activeTab === 'requirements' ? (
+                    <div className="space-y-8">
+                      {/* ... requirements comparison rendering ... */}
+                    </div>
+                  ) : (
+                    <div className="space-y-8">
+                      {/* ... mockup comparison rendering ... */}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-gray-200">
+          <div className="flex justify-between">
+            <button
+              className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              onClick={handleDownload}
+            >
+              Download {activeTab === 'requirements' ? 'Requirements' : 'Code'}
+            </button>
+            {activeTab === 'mockup' && mockupData && (
+              <div className="flex space-x-4">
+                <button
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  onClick={handleCopyCode}
+                >
+                  Copy Code
+                </button>
+                <button
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                  onClick={() => {
+                    // TODO: Implement Figma export
+                    alert('Figma export coming soon!');
+                  }}
+                >
+                  Export to Figma
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -2288,6 +3075,41 @@ export interface RequirementsDocument {
     refinements: RequirementCategory;
     constraints: RequirementCategory;
   };
+}
+
+export interface MockupVersion {
+  id: string;
+  timestamp: string;
+  name?: string;
+  qaTree: QANode;
+  requirementsDoc: RequirementsDocument;
+  mockupData: {
+    code: string;
+    colorScheme: {
+      primary: string;
+      secondary: string;
+      accent: string;
+      background: string;
+      text: string;
+    };
+    components: string[];
+    features: string[];
+    nextSteps: string[];
+  };
+}
+
+export interface SessionMetadata {
+  id: string;
+  prompt: string;
+  lastUpdated: string;
+  questionCount: number;
+  versions: MockupVersion[];
+  settings: {
+    traversalMode: 'bfs' | 'dfs';
+    unknownHandling: 'auto' | 'prompt';
+    conflictResolution: 'auto' | 'manual';
+  };
+  name?: string;
 } 
 
 ----- /Users/jackcrawford/ai-design-flow/types/pdf-parse.d.ts -----
@@ -2330,7 +3152,7 @@ export interface QASettings {
 } 
 
 ----- /Users/jackcrawford/ai-design-flow/.env.local -----
-OPENAI_API_KEY=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 
+OPENAI_API_KEY=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
 
 ----- /Users/jackcrawford/ai-design-flow/.gitignore -----
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
@@ -2385,18 +3207,15 @@ next-env.d.ts
 
 
 ----- /Users/jackcrawford/ai-design-flow/next.config.ts -----
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   experimental: {
-    serverActions: {
-      bodySizeLimit: '2mb'
-    }
+    serverActions: true
   },
   serverExternalPackages: ['pdf-parse']
-};
+}
 
-export default nextConfig;
+module.exports = nextConfig
 
 
 ----- /Users/jackcrawford/ai-design-flow/package.json -----

@@ -1,12 +1,9 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   experimental: {
-    serverActions: {
-      bodySizeLimit: '2mb'
-    }
+    serverActions: true
   },
   serverExternalPackages: ['pdf-parse']
-};
+}
 
-export default nextConfig;
+module.exports = nextConfig
