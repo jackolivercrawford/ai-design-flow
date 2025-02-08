@@ -326,7 +326,12 @@ export default function PreviewPanel({
                             </h2>
                             {category.requirements && category.requirements.length > 0 ? (
                               <ul className="space-y-3">
-                                {category.requirements.map((req, index) => (
+                                {[...category.requirements]
+                                  .sort((a, b) => {
+                                    const priorityOrder = { high: 0, medium: 1, low: 2 };
+                                    return (priorityOrder[a.priority] || 1) - (priorityOrder[b.priority] || 1);
+                                  })
+                                  .map((req, index) => (
                                   <li
                                     key={req.id || `${key}-${index}-${req.text}`}
                                     className="bg-white rounded-lg border border-gray-200 p-4"
