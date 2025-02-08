@@ -292,7 +292,7 @@ export default function PreviewPanel({
           {activeTab === 'mockup' && mockupData && (
             <div className="w-2/3 h-full border-r border-gray-200 bg-gray-50 overflow-auto">
               <div className="h-full">
-                <LivePreview code={mockupData.code} />
+                <LivePreview code={mockupData.code} colorScheme={mockupData.colorScheme} />
               </div>
             </div>
           )}
@@ -434,106 +434,255 @@ export default function PreviewPanel({
                         {/* Color Scheme */}
                         <div>
                           <h2 className="text-xl font-semibold text-gray-900 mb-4">Color Scheme</h2>
-                          
-                          {/* Primary Colors */}
-                          <div className="mb-8">
-                            <h3 className="text-lg font-medium text-gray-800 mb-3">Primary Colors</h3>
-                            <div className="flex flex-wrap gap-4">
-                              {['primary', 'primary-focus', 'primary-content'].map((key) => (
-                                <div key={key} className="flex flex-col items-center">
-                                  <div
-                                    className="w-16 h-16 rounded-lg shadow-md"
-                                    style={{ backgroundColor: mockupData.colorScheme[key] }}
-                                  />
-                                  <span className="mt-2 text-sm text-gray-600">{key}</span>
-                                  <span className="text-xs text-gray-400">{mockupData.colorScheme[key]}</span>
+                          <div className="grid grid-cols-2 gap-6">
+                            {/* Primary Colors */}
+                            <div className="space-y-3">
+                              <h3 className="font-medium text-gray-900">Primary Colors</h3>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.primary }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['primary-content'] }}>
+                                    Aa
+                                  </div>
                                 </div>
-                              ))}
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Primary (--p)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.primary}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['primary-focus'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['primary-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Focus (--pf)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['primary-focus']}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['primary-content'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme.primary }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Content (--pc)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['primary-content']}</span>
+                                </div>
+                              </div>
                             </div>
-                          </div>
 
-                          {/* Secondary Colors */}
-                          <div className="mb-8">
-                            <h3 className="text-lg font-medium text-gray-800 mb-3">Secondary Colors</h3>
-                            <div className="flex flex-wrap gap-4">
-                              {['secondary', 'secondary-focus', 'secondary-content'].map((key) => (
-                                <div key={key} className="flex flex-col items-center">
-                                  <div
-                                    className="w-16 h-16 rounded-lg shadow-md"
-                                    style={{ backgroundColor: mockupData.colorScheme[key] }}
-                                  />
-                                  <span className="mt-2 text-sm text-gray-600">{key}</span>
-                                  <span className="text-xs text-gray-400">{mockupData.colorScheme[key]}</span>
+                            {/* Secondary Colors */}
+                            <div className="space-y-3">
+                              <h3 className="font-medium text-gray-900">Secondary Colors</h3>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.secondary }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['secondary-content'] }}>
+                                    Aa
+                                  </div>
                                 </div>
-                              ))}
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Secondary (--s)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.secondary}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['secondary-focus'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['secondary-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Focus (--sf)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['secondary-focus']}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['secondary-content'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme.secondary }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Content (--sc)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['secondary-content']}</span>
+                                </div>
+                              </div>
                             </div>
-                          </div>
 
-                          {/* Accent Colors */}
-                          <div className="mb-8">
-                            <h3 className="text-lg font-medium text-gray-800 mb-3">Accent Colors</h3>
-                            <div className="flex flex-wrap gap-4">
-                              {['accent', 'accent-focus', 'accent-content'].map((key) => (
-                                <div key={key} className="flex flex-col items-center">
-                                  <div
-                                    className="w-16 h-16 rounded-lg shadow-md"
-                                    style={{ backgroundColor: mockupData.colorScheme[key] }}
-                                  />
-                                  <span className="mt-2 text-sm text-gray-600">{key}</span>
-                                  <span className="text-xs text-gray-400">{mockupData.colorScheme[key]}</span>
+                            {/* Accent Colors */}
+                            <div className="space-y-3">
+                              <h3 className="font-medium text-gray-900">Accent Colors</h3>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.accent }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['accent-content'] }}>
+                                    Aa
+                                  </div>
                                 </div>
-                              ))}
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Accent (--a)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.accent}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['accent-focus'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['accent-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Focus (--af)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['accent-focus']}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['accent-content'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme.accent }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Content (--ac)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['accent-content']}</span>
+                                </div>
+                              </div>
                             </div>
-                          </div>
 
-                          {/* Neutral Colors */}
-                          <div className="mb-8">
-                            <h3 className="text-lg font-medium text-gray-800 mb-3">Neutral Colors</h3>
-                            <div className="flex flex-wrap gap-4">
-                              {['neutral', 'neutral-focus', 'neutral-content'].map((key) => (
-                                <div key={key} className="flex flex-col items-center">
-                                  <div
-                                    className="w-16 h-16 rounded-lg shadow-md"
-                                    style={{ backgroundColor: mockupData.colorScheme[key] }}
-                                  />
-                                  <span className="mt-2 text-sm text-gray-600">{key}</span>
-                                  <span className="text-xs text-gray-400">{mockupData.colorScheme[key]}</span>
+                            {/* Neutral Colors */}
+                            <div className="space-y-3">
+                              <h3 className="font-medium text-gray-900">Neutral Colors</h3>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.neutral }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['neutral-content'] }}>
+                                    Aa
+                                  </div>
                                 </div>
-                              ))}
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Neutral (--n)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.neutral}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['neutral-focus'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['neutral-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Focus (--nf)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['neutral-focus']}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['neutral-content'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme.neutral }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Content (--nc)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['neutral-content']}</span>
+                                </div>
+                              </div>
                             </div>
-                          </div>
 
-                          {/* Base Colors */}
-                          <div className="mb-8">
-                            <h3 className="text-lg font-medium text-gray-800 mb-3">Base Colors</h3>
-                            <div className="flex flex-wrap gap-4">
-                              {['base-100', 'base-200', 'base-300', 'base-content'].map((key) => (
-                                <div key={key} className="flex flex-col items-center">
-                                  <div
-                                    className="w-16 h-16 rounded-lg shadow-md"
-                                    style={{ backgroundColor: mockupData.colorScheme[key] }}
-                                  />
-                                  <span className="mt-2 text-sm text-gray-600">{key}</span>
-                                  <span className="text-xs text-gray-400">{mockupData.colorScheme[key]}</span>
+                            {/* Base Colors */}
+                            <div className="space-y-3">
+                              <h3 className="font-medium text-gray-900">Base Colors</h3>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['base-100'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
                                 </div>
-                              ))}
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Base 100 (--b1)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['base-100']}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['base-200'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Base 200 (--b2)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['base-200']}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['base-300'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Base 300 (--b3)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['base-300']}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['base-content'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ backgroundColor: mockupData.colorScheme['base-100'], color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Content (--bc)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['base-content']}</span>
+                                </div>
+                              </div>
                             </div>
-                          </div>
 
-                          {/* State Colors */}
-                          <div className="mb-8">
-                            <h3 className="text-lg font-medium text-gray-800 mb-3">State Colors</h3>
-                            <div className="flex flex-wrap gap-4">
-                              {['info', 'success', 'warning', 'error'].map((key) => (
-                                <div key={key} className="flex flex-col items-center">
-                                  <div
-                                    className="w-16 h-16 rounded-lg shadow-md"
-                                    style={{ backgroundColor: mockupData.colorScheme[key] }}
-                                  />
-                                  <span className="mt-2 text-sm text-gray-600">{key}</span>
-                                  <span className="text-xs text-gray-400">{mockupData.colorScheme[key]}</span>
+                            {/* State Colors */}
+                            <div className="space-y-3">
+                              <h3 className="font-medium text-gray-900">State Colors</h3>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.info }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
                                 </div>
-                              ))}
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Info (--in)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.info}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.success }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Success (--su)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.success}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.warning }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Warning (--wa)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.warning}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.error }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Error (--er)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.error}</span>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         </div>

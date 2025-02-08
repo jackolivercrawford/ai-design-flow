@@ -62,16 +62,26 @@ CRITICAL REQUIREMENTS:
 3. All interactive elements must have proper ARIA labels and roles.
 4. Handle error, loading, and success states appropriately.
 5. Export the main component as default.
-6. Use DaisyUI classes for all common components. Examples:
-   - Buttons: btn, btn-primary, btn-secondary, btn-accent, btn-ghost
+6. Use DaisyUI classes for components:
+   - Buttons: btn, btn-primary, btn-secondary, etc.
    - Cards: card, card-body, card-title
-   - Forms: input, select, textarea with appropriate modifiers
-   - Alerts: alert, alert-info, alert-success, alert-warning, alert-error
+   - Forms: input, select, textarea
+   - Alerts: alert, alert-info, alert-success, etc.
    - Modals: modal, modal-box
    - Dropdowns: dropdown, dropdown-content
-   - Tabs: tabs, tab, tab-active
+   - Tabs: tabs, tab
    - Loading states: loading, loading-spinner
-   
+
+COLOR SCHEME REQUIREMENTS:
+1. Generate a visually appealing and accessible color scheme
+2. Ensure sufficient contrast between text and background colors (minimum 4.5:1 for normal text, 3:1 for large text)
+3. Primary colors should be bold and attention-grabbing
+4. Secondary colors should complement the primary colors
+5. Accent colors should provide visual interest and highlight important elements
+6. Base colors should provide a clean, readable foundation
+7. State colors should be clearly distinguishable (info, success, warning, error)
+8. Content colors (--pc, --sc, --ac, --nc, --bc) must have excellent contrast with their backgrounds
+
 The color scheme must work with DaisyUI's theme system using these variables:
 - Primary: --p, --pf (focus), --pc (content)
 - Secondary: --s, --sf (focus), --sc (content)
@@ -203,26 +213,26 @@ Generate a complete React/Tailwind mockup that satisfies ALL these requirements.
 
       // Fill in any missing colors with defaults
       const defaultColors: Record<string, string> = {
-        'primary': '#1D4ED8',
-        'primary-focus': '#1E40AF',
+        'primary': '#374151',
+        'primary-focus': '#1F2937',
         'primary-content': '#FFFFFF',
-        'secondary': '#64748B',
-        'secondary-focus': '#475569',
+        'secondary': '#6B7280',
+        'secondary-focus': '#4B5563',
         'secondary-content': '#FFFFFF',
-        'accent': '#F59E0B',
-        'accent-focus': '#D97706',
+        'accent': '#111827',
+        'accent-focus': '#030712',
         'accent-content': '#FFFFFF',
-        'neutral': '#3D4451',
-        'neutral-focus': '#2A2E37',
+        'neutral': '#4B5563',
+        'neutral-focus': '#374151',
         'neutral-content': '#FFFFFF',
         'base-100': '#FFFFFF',
         'base-200': '#F3F4F6',
         'base-300': '#E5E7EB',
-        'base-content': '#1F2937',
-        'info': '#3ABFF8',
-        'success': '#36D399',
-        'warning': '#FBBD23',
-        'error': '#F87272'
+        'base-content': '#111827',
+        'info': '#4B5563',
+        'success': '#374151',
+        'warning': '#6B7280',
+        'error': '#1F2937'
       };
 
       // Ensure all required colors exist, use defaults if missing

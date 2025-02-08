@@ -49,6 +49,48 @@ function adjustColor(hex: string, amount: number): string {
   }
 }
 
+// Helper function to convert hex to HSL for DaisyUI
+function hexToHSL(hex: string): string {
+  // Remove the hash if present
+  hex = hex.replace('#', '');
+  
+  // Convert hex to RGB
+  const r = parseInt(hex.substring(0, 2), 16) / 255;
+  const g = parseInt(hex.substring(2, 4), 16) / 255;
+  const b = parseInt(hex.substring(4, 6), 16) / 255;
+  
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    
+    switch (max) {
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      case b:
+        h = (r - g) / d + 4;
+        break;
+    }
+    h /= 6;
+  }
+
+  // Convert to degrees and percentages
+  const hDeg = Math.round(h * 360);
+  const sPct = Math.round(s * 100);
+  const lPct = Math.round(l * 100);
+
+  return `${hDeg} ${sPct}% ${lPct}%`;
+}
+
 const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -86,39 +128,54 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
       // Build the DaisyUI theme style block using the colorScheme
       const daisyuiTheme = colorScheme
         ? `
+          <script>
+            tailwind.config = {
+              theme: {
+                extend: {},
+              },
+              daisyui: {
+                styled: true,
+                themes: false,
+                base: true,
+                utils: true,
+                logs: false,
+                rtl: false
+              }
+            }
+          </script>
           <style>
             [data-theme="custom"] {
               /* Primary colors */
-              --p: ${colorScheme.primary};
-              --pf: ${colorScheme['primary-focus']};
-              --pc: ${colorScheme['primary-content']};
+              --p: ${hexToHSL(colorScheme.primary)} !important;
+              --pf: ${hexToHSL(colorScheme['primary-focus'])} !important;
+              --pc: ${hexToHSL(colorScheme['primary-content'])} !important;
               
               /* Secondary colors */
-              --s: ${colorScheme.secondary};
-              --sf: ${colorScheme['secondary-focus']};
-              --sc: ${colorScheme['secondary-content']};
+              --s: ${hexToHSL(colorScheme.secondary)} !important;
+              --sf: ${hexToHSL(colorScheme['secondary-focus'])} !important;
+              --sc: ${hexToHSL(colorScheme['secondary-content'])} !important;
               
               /* Accent colors */
-              --a: ${colorScheme.accent};
-              --af: ${colorScheme['accent-focus']};
-              --ac: ${colorScheme['accent-content']};
+              --a: ${hexToHSL(colorScheme.accent)} !important;
+              --af: ${hexToHSL(colorScheme['accent-focus'])} !important;
+              --ac: ${hexToHSL(colorScheme['accent-content'])} !important;
               
               /* Neutral colors */
-              --n: ${colorScheme.neutral};
-              --nf: ${colorScheme['neutral-focus']};
-              --nc: ${colorScheme['neutral-content']};
+              --n: ${hexToHSL(colorScheme.neutral)} !important;
+              --nf: ${hexToHSL(colorScheme['neutral-focus'])} !important;
+              --nc: ${hexToHSL(colorScheme['neutral-content'])} !important;
               
               /* Base colors */
-              --b1: ${colorScheme['base-100']};
-              --b2: ${colorScheme['base-200']};
-              --b3: ${colorScheme['base-300']};
-              --bc: ${colorScheme['base-content']};
+              --b1: ${hexToHSL(colorScheme['base-100'])} !important;
+              --b2: ${hexToHSL(colorScheme['base-200'])} !important;
+              --b3: ${hexToHSL(colorScheme['base-300'])} !important;
+              --bc: ${hexToHSL(colorScheme['base-content'])} !important;
               
               /* State colors */
-              --in: ${colorScheme.info};
-              --su: ${colorScheme.success};
-              --wa: ${colorScheme.warning};
-              --er: ${colorScheme.error};
+              --in: ${hexToHSL(colorScheme.info)} !important;
+              --su: ${hexToHSL(colorScheme.success)} !important;
+              --wa: ${hexToHSL(colorScheme.warning)} !important;
+              --er: ${hexToHSL(colorScheme.error)} !important;
             }
           </style>
         `
