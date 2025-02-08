@@ -42,11 +42,34 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
       // 3. Remove inline type assertions
       transformedCode = transformedCode.replace(/\sas\s+\w+/g, '');
 
-      // Escape the final code
+      // Escape the final code so it can be safely embedded
       const safeCode = JSON.stringify(transformedCode);
 
+      // Build the custom theme style block using your colorScheme.
+      // Note: DaisyUI uses CSS variables like --p (primary), --s (secondary),
+      // --a (accent), --base-100 (background), and --base-content (text).
+      const customThemeStyle = colorScheme
+        ? `
+          <style>
+            :root {
+              --p: ${colorScheme.primary};
+              --primary: ${colorScheme.primary};
+              --p-content: #ffffff;
+              --s: ${colorScheme.secondary};
+              --secondary: ${colorScheme.secondary};
+              --s-content: #ffffff;
+              --a: ${colorScheme.accent};
+              --accent: ${colorScheme.accent};
+              --a-content: #ffffff;
+              --base-100: ${colorScheme.background};
+              --base-content: ${colorScheme.text};
+            }
+          </style>
+        `
+        : '';
+
       // Build the HTML content for the iframe.
-      // Load Tailwind CSS and DaisyUI via CDN so the generated UI always gets a modern, attractive style.
+      // IMPORTANT: Place the customThemeStyle right after the DaisyUI link so that it overrides the default colors.
       const html = `
         <!DOCTYPE html>
         <html>
@@ -57,6 +80,7 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
             <script src="https://cdn.tailwindcss.com"></script>
             <!-- Load DaisyUI (must be loaded after Tailwind) -->
             <link href="https://cdn.jsdelivr.net/npm/daisyui@2.51.5/dist/full.css" rel="stylesheet">
+            ${customThemeStyle}
             <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
             <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
             <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
