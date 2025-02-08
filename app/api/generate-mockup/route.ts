@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
 
     // Check requirements size
     const promptText = `Design Prompt: ${requirementsDoc.prompt}\n\nRequirements:\n${formattedRequirements}`;
-    const estimatedTokens = promptText.split(/\s+/).length; // Rough estimation
+    const estimatedTokens = promptText.split(/\s+/).length;
     if (estimatedTokens > 2000) {
       return NextResponse.json(
         { error: 'Requirements document is too large. Please reduce the number of requirements or split into multiple requests.' },
@@ -42,46 +42,26 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "system",
-          content: `You are an expert UI developer who creates React components with Tailwind CSS. Your task is to generate a beautiful, modern, and functional mockup based on the provided requirements and return it as a JSON object.
+          content: `You are an expert UI developer. Your task is to generate a complete, production-ready React component mockup based on the provided requirements. You must use React with Tailwind CSS for styling—and you are encouraged to integrate DaisyUI (a Tailwind CSS plugin) via CDN to ensure the UI is attractive, modern, and clean.
 
 Guidelines:
-1. Use only React and Tailwind CSS (no external libraries)
-2. Follow modern design principles and best practices
-3. Ensure the UI is responsive and accessible
-4. Include comments explaining key design decisions
-5. Structure the code in a clean, maintainable way
-6. Use semantic HTML elements
-7. Include hover states and transitions
-8. Implement proper spacing and hierarchy
-9. Use a consistent color scheme
-10. Include proper TypeScript types
+1. Use React as the core technology.
+2. Use Tailwind CSS, and where appropriate, include DaisyUI via CDN for enhanced styling.
+3. Follow modern design principles and best practices.
+4. Ensure the UI is responsive and accessible.
+5. Include comments explaining key design decisions.
+6. Structure the code in a clean, maintainable way.
+7. Use semantic HTML elements.
+8. Include hover states, transitions, and proper spacing.
+9. Use a consistent color scheme that matches the application's purpose.
+10. Include TypeScript types as comments only (avoid inline type assertions).
 
 CRITICAL REQUIREMENTS:
-1. The code MUST implement ALL features mentioned in the requirements
-2. Each requirement should be traceable to specific UI elements or functionality
-3. The color scheme should be carefully chosen to match the application's purpose
-4. Components should be modular and reusable
-5. All interactive elements must have proper ARIA labels and roles
-6. Error states, loading states, and success states must be handled
-7. The interface must be fully responsive
-8. All user inputs must be validated
-9. Emergency and critical functions must be easily accessible
-10. Real-time updates and status changes must be clearly visible
-
-Additional Guideline: Do not include inline type assertions (e.g. "as ElevatorMode") or other TypeScript-only syntax. Include type information only in comments. The code must be production-ready and immediately runnable in a plain JavaScript environment. The generated code must be production-ready and immediately runnable in a plain JavaScript environment.
-
-
-The code must be a complete, working React component that:
-1. Includes all necessary imports at the top
-2. Defines all required TypeScript interfaces (as comments or in a way that does not affect runtime)
-3. Implements a main component that uses the interfaces
-4. Uses React hooks (useState, useEffect) for state management
-5. Includes all event handlers and UI interactions
-6. Has proper error handling and loading states
-7. Uses the provided color scheme consistently
-8. Implements all features from the requirements
-9. Has proper ARIA labels and accessibility features
-10. Exports the main component as default
+1. Implement ALL features mentioned in the requirements.
+2. Each requirement must map to specific UI elements or functionality.
+3. All interactive elements must have proper ARIA labels and roles.
+4. Handle error, loading, and success states appropriately.
+5. Export the main component as default.
 
 Example structure:
 \`\`\`tsx
@@ -120,11 +100,11 @@ Return your response in this exact JSON format:
 {
   "code": "Complete React/Tailwind component code as shown in the example above",
   "colorScheme": {
-    "primary": "hex color (should be suitable for main actions and headers)",
-    "secondary": "hex color (should be suitable for supporting elements)",
-    "accent": "hex color (should be suitable for attention-grabbing elements)",
-    "background": "hex color (should be suitable for the main background)",
-    "text": "hex color (should be suitable for main text content)"
+    "primary": "hex color (for main actions and headers)",
+    "secondary": "hex color (for supporting elements)",
+    "accent": "hex color (for attention-grabbing elements)",
+    "background": "hex color (for the main background)",
+    "text": "hex color (for main text content)"
   },
   "components": [
     "Detailed list of all reusable components created, with their purposes"
@@ -160,9 +140,8 @@ Generate a complete React/Tailwind mockup that satisfies ALL these requirements.
     try {
       const mockupData = JSON.parse(content);
 
-      // Optionally, post-process the generated code to remove any inline type assertions
+      // Optionally, post-process the generated code to remove inline type assertions
       if (mockupData.code && typeof mockupData.code === 'string') {
-        // Remove inline type assertions like " as ElevatorMode"
         mockupData.code = mockupData.code.replace(/\sas\s+\w+/g, '');
       }
       return NextResponse.json(mockupData);
