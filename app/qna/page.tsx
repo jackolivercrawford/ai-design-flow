@@ -835,7 +835,7 @@ export default function QnAPage() {
   };
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-gray-100">
+    <div className="min-h-screen flex flex-col bg-gray-100">
       <HeaderToolbar 
         onRestart={handleRestart} 
         onGenerate={handleGenerate}
@@ -844,7 +844,7 @@ export default function QnAPage() {
         showGenerateButton={!isLoading && qaTree !== null}
         showSaveButton={!isLoading && qaTree !== null}
       />
-      <div className="flex-none py-2 px-6 bg-white border-b border-gray-200">
+      <div className="py-2 px-6 bg-white border-b border-gray-200">
         <div className="flex justify-between items-center">
           <div className="text-sm text-gray-600">
             Questions: {questionCount}{settings?.maxQuestions ? ` / ${settings.maxQuestions}` : ''}
@@ -854,37 +854,33 @@ export default function QnAPage() {
           </div>
         </div>
       </div>
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 flex">
         {/* Left: Canvas Tree view */}
-        <div className="w-2/3 h-full overflow-auto">
-          <div className="p-6">
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <h2 className="text-2xl font-bold mb-6 text-gray-900">Question Tree</h2>
-              {isLoading ? (
-                <div className="flex items-center justify-center h-32">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                </div>
-              ) : (
-                <CanvasTree node={qaTree} />
-              )}
-            </div>
+        <div className="w-2/3 p-6 overflow-auto">
+          <div className="bg-white rounded-lg shadow-lg p-6 min-h-full">
+            <h2 className="text-2xl font-bold mb-6 text-gray-900">Question Tree</h2>
+            {isLoading ? (
+              <div className="flex items-center justify-center h-32">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : (
+              <CanvasTree node={qaTree} />
+            )}
           </div>
         </div>
         {/* Right: Q&A Panel */}
-        <div className="w-1/3 h-full overflow-auto border-l border-gray-200">
-          <div className="p-6">
-            <QAPanel
-              currentQuestion={
-                currentNode
-                  ? currentNode.question
-                  : "No more questions. Q&A complete."
-              }
-              onSubmitAnswer={handleAnswer}
-              isLoading={isLoading || isLoadingNextQuestion}
-              hasKnowledgeBase={Boolean(settings?.knowledgeBase?.length)}
-              onAutoPopulate={handleAutoPopulate}
-            />
-          </div>
+        <div className="w-1/3 p-6 overflow-auto border-l border-gray-200">
+          <QAPanel
+            currentQuestion={
+              currentNode
+                ? currentNode.question
+                : "No more questions. Q&A complete."
+            }
+            onSubmitAnswer={handleAnswer}
+            isLoading={isLoading || isLoadingNextQuestion}
+            hasKnowledgeBase={Boolean(settings?.knowledgeBase?.length)}
+            onAutoPopulate={handleAutoPopulate}
+          />
         </div>
       </main>
       
