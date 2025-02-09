@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
 
     // Check requirements size
     const promptText = `Design Prompt: ${requirementsDoc.prompt}\n\nRequirements:\n${formattedRequirements}`;
-    const estimatedTokens = promptText.split(/\s+/).length; // Rough estimation
+    const estimatedTokens = promptText.split(/\s+/).length;
     if (estimatedTokens > 2000) {
       return NextResponse.json(
         { error: 'Requirements document is too large. Please reduce the number of requirements or split into multiple requests.' },
@@ -106,89 +106,216 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "system",
-          content: `You are an expert UI developer who creates React components with Tailwind CSS. Your task is to generate a beautiful, modern, and functional mockup based on the provided requirements and return it as a JSON object.
+          content: `You are an expert UI developer specializing in industrial and control system interfaces. Your task is to generate a complete, production-ready React component mockup based on the provided requirements. You MUST use React with Tailwind CSS and DaisyUI for styling. DaisyUI is already included via CDN in the preview environment.
 
-Guidelines:
-1. Use only React and Tailwind CSS (no external libraries)
-2. Follow modern design principles and best practices
-3. Ensure the UI is responsive and accessible
-4. Include comments explaining key design decisions
-5. Structure the code in a clean, maintainable way
-6. Use semantic HTML elements
-7. Include hover states and transitions
-8. Implement proper spacing and hierarchy
-9. Use a consistent color scheme
-10. Include proper TypeScript types
+CRITICAL: YOU MUST USE DAISYUI COMPONENTS INSTEAD OF RAW TAILWIND CLASSES. For example:
 
-CRITICAL REQUIREMENTS:
-1. The code MUST implement ALL features mentioned in the requirements
-2. Each requirement should be traceable to specific UI elements or functionality
-3. The color scheme should be carefully chosen to match the application's purpose
-4. Components should be modular and reusable
-5. All interactive elements must have proper ARIA labels and roles
-6. Error states, loading states, and success states must be handled
-7. The interface must be fully responsive
-8. All user inputs must be validated
-9. Emergency and critical functions must be easily accessible
-10. Real-time updates and status changes must be clearly visible
-
-Additional Guideline: Do not include inline type assertions (e.g. "as ElevatorMode") or other TypeScript-only syntax. Include type information only in comments. The code must be production-ready and immediately runnable in a plain JavaScript environment. The generated code must be production-ready and immediately runnable in a plain JavaScript environment.
-
-
-The code must be a complete, working React component that:
-1. Includes all necessary imports at the top
-2. Defines all required TypeScript interfaces (as comments or in a way that does not affect runtime)
-3. Implements a main component that uses the interfaces
-4. Uses React hooks (useState, useEffect) for state management
-5. Includes all event handlers and UI interactions
-6. Has proper error handling and loading states
-7. Uses the provided color scheme consistently
-8. Implements all features from the requirements
-9. Has proper ARIA labels and accessibility features
-10. Exports the main component as default
-
-Example structure:
+❌ WRONG (raw Tailwind):
 \`\`\`tsx
-import React, { useState, useEffect } from 'react';
+<div className="p-4 bg-white rounded-lg shadow-lg">
+  <h2 className="text-2xl font-bold mb-4">Title</h2>
+  <button className="px-4 py-2 bg-blue-500 text-white rounded">Click me</button>
+</div>
+\`\`\`
 
-interface ComponentProps {
-  // prop definitions
-}
+✅ CORRECT (DaisyUI components):
+\`\`\`tsx
+<div className="card bg-base-100">
+  <div className="card-body">
+    <h2 className="card-title">Title</h2>
+    <div className="card-actions">
+      <button className="btn btn-primary">Click me</button>
+    </div>
+  </div>
+</div>
+\`\`\`
 
-interface ComponentState {
-  // state definitions
-}
+REQUIRED DAISYUI COMPONENTS:
+1. Layout & Containers:
+   - Cards: \`card\`, \`card-body\`, \`card-title\`, \`card-actions\`
+   - Hero: \`hero\`, \`hero-content\`
+   - Divider: \`divider\`
 
-function MainComponent() {
-  const [state, setState] = useState<ComponentState>({});
-  
-  useEffect(() => {
-    // side effects
-  }, []);
+2. Navigation & Actions:
+   - Buttons: \`btn\`, \`btn-primary\`, \`btn-secondary\`, etc.
+   - Menu: \`menu\`, \`menu-title\`, \`menu-item\`
+   - Tabs: \`tabs\`, \`tab\`, \`tab-active\`
 
-  const handleEvent = () => {
-    // event handling
-  };
+3. Data Display:
+   - Stats: \`stats\`, \`stat\`, \`stat-title\`, \`stat-value\`, \`stat-desc\`
+   - Alert: \`alert\`, \`alert-info\`, \`alert-success\`, etc.
+   - Badge: \`badge\`, \`badge-primary\`, etc.
 
+4. Form Elements:
+   - Input: \`input\`, \`input-bordered\`
+   - Select: \`select\`, \`select-bordered\`
+   - Toggle: \`toggle\`
+   - Checkbox: \`checkbox\`
+   - Radio: \`radio\`
+
+5. Loading States:
+   - \`loading\`, \`loading-spinner\`, \`loading-dots\`
+
+Example of a proper DaisyUI industrial control panel:
+\`\`\`tsx
+function ControlPanel() {
   return (
-    <div>
-      {/* component JSX */}
+    <div className="p-4">
+      {/* Main Card */}
+      <div className="card bg-base-100 shadow-xl">
+        <div className="card-body">
+          <h2 className="card-title">Control Panel</h2>
+          
+          {/* Status Display */}
+          <div className="stats shadow">
+            <div className="stat">
+              <div className="stat-title">System Status</div>
+              <div className="stat-value">Operational</div>
+              <div className="stat-desc">All systems nominal</div>
+            </div>
+          </div>
+          
+          {/* Alerts */}
+          <div className="alert alert-info">
+            <span>System running at optimal efficiency</span>
+          </div>
+          
+          {/* Controls */}
+          <div className="form-control">
+            <label className="label">
+              <span className="label-text">Power Level</span>
+            </label>
+            <input type="range" className="range range-primary" />
+          </div>
+          
+          {/* Action Buttons */}
+          <div className="card-actions justify-end">
+            <button className="btn btn-error">Emergency Stop</button>
+            <button className="btn btn-primary">Start System</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
-
-export default MainComponent;
 \`\`\`
+
+CRITICAL COMPONENT STRUCTURE REQUIREMENTS:
+1. The component MUST be named with an uppercase first letter (e.g., 'MainInterface', 'ControlPanel')
+2. The component MUST be a function component with this exact structure:
+   \`\`\`tsx
+   function ComponentName() {
+     // Your component logic here
+     return (
+       // Your JSX here
+     );
+   }
+   \`\`\`
+3. The component MUST have a default export at the end:
+   \`export default ComponentName;\`
+
+Guidelines:
+1. Use React as the core technology.
+2. Use DaisyUI components as the PRIMARY building blocks - avoid raw Tailwind classes when DaisyUI components exist.
+3. Follow modern design principles while maintaining an industrial/control system aesthetic.
+4. Ensure the UI is responsive and accessible.
+5. Include comments explaining key design decisions.
+6. Structure the code in a clean, maintainable way.
+7. Use semantic HTML elements.
+8. Include hover states, transitions, and proper spacing.
+9. Generate a comprehensive color scheme that works with DaisyUI.
+10. Include TypeScript types as comments only (avoid inline type assertions).
+
+CRITICAL REQUIREMENTS FOR DAISYUI USAGE:
+1. ALL buttons MUST use DaisyUI button classes:
+   - Primary actions: \`btn btn-primary\`
+   - Secondary actions: \`btn btn-secondary\`
+   - Accent actions: \`btn btn-accent\`
+   - Emergency/Critical: \`btn btn-error\`
+   - Info/Status: \`btn btn-info\`
+   - Success/Confirm: \`btn btn-success\`
+   - Warning/Caution: \`btn btn-warning\`
+
+2. ALL cards/panels MUST use DaisyUI card classes:
+   - Container: \`card\`
+   - Body: \`card-body\`
+   - Title: \`card-title\`
+   - Actions: \`card-actions\`
+
+3. ALL status indicators MUST use DaisyUI alerts:
+   - Info states: \`alert alert-info\`
+   - Success states: \`alert alert-success\`
+   - Warning states: \`alert alert-warning\`
+   - Error states: \`alert alert-error\`
+
+4. ALL form controls MUST use DaisyUI classes:
+   - Inputs: \`input input-bordered\`
+   - Select: \`select select-bordered\`
+   - Range: \`range\` (with appropriate color classes)
+   - Toggle: \`toggle\` (with appropriate color classes)
+   - Checkbox: \`checkbox\`
+   - Radio: \`radio\`
+
+5. ALL stats/metrics MUST use DaisyUI stat components:
+   - Container: \`stats\`
+   - Individual stat: \`stat\`
+   - Stat title: \`stat-title\`
+   - Stat value: \`stat-value\`
+   - Stat description: \`stat-desc\`
+
+6. ALL loading states MUST use DaisyUI loading classes:
+   - \`loading loading-spinner\`
+   - \`loading loading-dots\`
+   - \`loading loading-ring\`
+   - \`loading loading-ball\`
+
+7. Proper use of DaisyUI modifiers:
+   - Sizes: \`btn-lg\`, \`btn-sm\`, \`input-lg\`, etc.
+   - Styles: \`btn-outline\`, \`btn-ghost\`, etc.
+   - States: \`btn-disabled\`, \`input-error\`, etc.
+
+COLOR SCHEME REQUIREMENTS:
+1. Generate a visually appealing and accessible color scheme suitable for industrial/control interfaces
+2. Ensure sufficient contrast between text and background colors (minimum 4.5:1 for normal text, 3:1 for large text)
+3. Primary colors should be bold and attention-grabbing
+4. Secondary colors should complement the primary colors
+5. Accent colors should provide visual interest and highlight important elements
+6. Base colors should provide a clean, readable foundation
+7. State colors should be clearly distinguishable (info, success, warning, error)
+8. Content colors (--pc, --sc, --ac, --nc, --bc) must have excellent contrast with their backgrounds
+
+The color scheme must work with DaisyUI's theme system using these variables:
+- Primary: --p, --pf (focus), --pc (content)
+- Secondary: --s, --sf (focus), --sc (content)
+- Accent: --a, --af (focus), --ac (content)
+- Neutral: --n, --nf (focus), --nc (content)
+- Base: --b1, --b2, --b3, --bc (content)
+- State: --in, --su, --wa, --er
 
 Return your response in this exact JSON format:
 {
-  "code": "Complete React/Tailwind component code as shown in the example above",
+  "code": "Complete React/Tailwind/DaisyUI component code as shown in the example above",
   "colorScheme": {
-    "primary": "hex color (should be suitable for main actions and headers)",
-    "secondary": "hex color (should be suitable for supporting elements)",
-    "accent": "hex color (should be suitable for attention-grabbing elements)",
-    "background": "hex color (should be suitable for the main background)",
-    "text": "hex color (should be suitable for main text content)"
+    "primary": "#hex (for main actions and headers)",
+    "primary-focus": "#hex (darker shade of primary for focus/hover)",
+    "primary-content": "#hex (text color on primary background)",
+    "secondary": "#hex (for supporting elements)",
+    "secondary-focus": "#hex (darker shade of secondary for focus/hover)",
+    "secondary-content": "#hex (text color on secondary background)",
+    "accent": "#hex (for attention-grabbing elements)",
+    "accent-focus": "#hex (darker shade of accent for focus/hover)",
+    "accent-content": "#hex (text color on accent background)",
+    "neutral": "#hex (for neutral elements)",
+    "neutral-focus": "#hex (darker shade of neutral for focus/hover)",
+    "neutral-content": "#hex (text color on neutral background)",
+    "base-100": "#hex (main background color)",
+    "base-200": "#hex (slightly darker background)",
+    "base-300": "#hex (even darker background)",
+    "base-content": "#hex (main text color)",
+    "info": "#hex (for informational elements)",
+    "success": "#hex (for success states)",
+    "warning": "#hex (for warning states)",
+    "error": "#hex (for error states)"
   },
   "components": [
     "Detailed list of all reusable components created, with their purposes"
@@ -213,7 +340,7 @@ Generate a complete React/Tailwind mockup that satisfies ALL these requirements.
       ],
       max_completion_tokens: 25000,
       response_format: { type: "json_object" },
-      reasoning_effort: 'high'
+      reasoning_effort: 'medium'
     });
 
     const content = completion.choices[0].message.content;
@@ -224,11 +351,71 @@ Generate a complete React/Tailwind mockup that satisfies ALL these requirements.
     try {
       const mockupData = JSON.parse(content);
 
-      // Optionally, post-process the generated code to remove any inline type assertions
+      // Validate mockup data structure
+      if (!mockupData.code || !mockupData.colorScheme || !mockupData.components || !mockupData.features || !mockupData.nextSteps) {
+        throw new Error('Invalid mockup data received');
+      }
+
+      // Ensure all required color scheme properties exist
+      const requiredColors = [
+        'primary',
+        'primary-focus',
+        'primary-content',
+        'secondary',
+        'secondary-focus',
+        'secondary-content',
+        'accent',
+        'accent-focus',
+        'accent-content',
+        'neutral',
+        'neutral-focus',
+        'neutral-content',
+        'base-100',
+        'base-200',
+        'base-300',
+        'base-content',
+        'info',
+        'success',
+        'warning',
+        'error'
+      ];
+
+      // Fill in any missing colors with defaults
+      const defaultColors: Record<string, string> = {
+        'primary': '#374151',
+        'primary-focus': '#1F2937',
+        'primary-content': '#FFFFFF',
+        'secondary': '#6B7280',
+        'secondary-focus': '#4B5563',
+        'secondary-content': '#FFFFFF',
+        'accent': '#111827',
+        'accent-focus': '#030712',
+        'accent-content': '#FFFFFF',
+        'neutral': '#4B5563',
+        'neutral-focus': '#374151',
+        'neutral-content': '#FFFFFF',
+        'base-100': '#FFFFFF',
+        'base-200': '#F3F4F6',
+        'base-300': '#E5E7EB',
+        'base-content': '#111827',
+        'info': '#4B5563',
+        'success': '#374151',
+        'warning': '#6B7280',
+        'error': '#1F2937'
+      };
+
+      // Ensure all required colors exist, use defaults if missing
+      requiredColors.forEach(color => {
+        if (!mockupData.colorScheme[color]) {
+          mockupData.colorScheme[color] = defaultColors[color];
+        }
+      });
+
+      // Remove inline type assertions from the code
       if (mockupData.code && typeof mockupData.code === 'string') {
-        // Remove inline type assertions like " as ElevatorMode"
         mockupData.code = mockupData.code.replace(/\sas\s+\w+/g, '');
       }
+
       return NextResponse.json(mockupData);
     } catch (parseError) {
       console.error('Error parsing mockup data:', parseError);
@@ -245,6 +432,7 @@ Generate a complete React/Tailwind mockup that satisfies ALL these requirements.
     );
   }
 }
+
 
 ----- /Users/jackcrawford/ai-design-flow/app/api/generate-questions/route.ts -----
 // /app/api/generate-questions/route.ts
@@ -2242,6 +2430,32 @@ export default HeaderToolbar;
 ----- /Users/jackcrawford/ai-design-flow/components/LivePreview.tsx -----
 import React, { useEffect, useRef } from 'react';
 
+interface LivePreviewProps {
+  code: string;
+  colorScheme?: {
+    primary: string;
+    'primary-focus': string;
+    'primary-content': string;
+    secondary: string;
+    'secondary-focus': string;
+    'secondary-content': string;
+    accent: string;
+    'accent-focus': string;
+    'accent-content': string;
+    neutral: string;
+    'neutral-focus': string;
+    'neutral-content': string;
+    'base-100': string;
+    'base-200': string;
+    'base-300': string;
+    'base-content': string;
+    info: string;
+    success: string;
+    warning: string;
+    error: string;
+  };
+}
+
 // Helper function to adjust hex colors
 function adjustColor(hex: string, amount: number): string {
   try {
@@ -2265,15 +2479,46 @@ function adjustColor(hex: string, amount: number): string {
   }
 }
 
-interface LivePreviewProps {
-  code: string;
-  colorScheme?: {
-    primary: string;
-    secondary: string;
-    accent: string;
-    background: string;
-    text: string;
-  };
+// Helper function to convert hex to HSL for DaisyUI
+function hexToHSL(hex: string): string {
+  // Remove the hash if present
+  hex = hex.replace('#', '');
+  
+  // Convert hex to RGB
+  const r = parseInt(hex.substring(0, 2), 16) / 255;
+  const g = parseInt(hex.substring(2, 4), 16) / 255;
+  const b = parseInt(hex.substring(4, 6), 16) / 255;
+  
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    
+    switch (max) {
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      case b:
+        h = (r - g) / d + 4;
+        break;
+    }
+    h /= 6;
+  }
+
+  // Convert to degrees and percentages
+  const hDeg = Math.round(h * 360);
+  const sPct = Math.round(s * 100);
+  const lPct = Math.round(l * 100);
+
+  return `${hDeg} ${sPct}% ${lPct}%`;
 }
 
 const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
@@ -2283,12 +2528,12 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
     if (!containerRef.current || !code) return;
 
     try {
-      // Clean up any previous content
+      // Clean up previous content
       while (containerRef.current.firstChild) {
         containerRef.current.removeChild(containerRef.current.firstChild);
       }
 
-      // Create a new iframe for the sandboxed preview
+      // Create an iframe for the preview
       const iframe = document.createElement('iframe');
       iframe.style.width = '100%';
       iframe.style.height = '100%';
@@ -2296,128 +2541,105 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
       containerRef.current.appendChild(iframe);
 
       // Transform the code:
-      // 1. Remove import statements (React is provided as a global)
+      // 1. Remove import statements (React is provided globally)
       let transformedCode = code;
       transformedCode = transformedCode.replace(/import\s+{([^}]+)}\s+from\s+['"]react['"];?/g, '');
       transformedCode = transformedCode.replace(/import\s+React\s*,?\s*{([^}]+)}\s+from\s+['"]react['"];?/g, '');
       transformedCode = transformedCode.replace(/import\s+.*?from\s+['"].*?['"];?\n?/g, '');
-      // 2. Remove export statements (keep the component definition)
-      transformedCode = transformedCode.replace(/export\s+default\s+/, '');
+      // 2. Remove export statements but preserve the component name
+      const exportMatch = transformedCode.match(/export\s+default\s+(\w+)/);
+      const componentName = exportMatch ? exportMatch[1] : null;
+      transformedCode = transformedCode.replace(/export\s+default\s+\w+;?/, '');
       transformedCode = transformedCode.replace(/export\s+/, '');
-      // 3. Remove inline type assertions (e.g. " as ElevatorMode")
+      // 3. Remove inline type assertions
       transformedCode = transformedCode.replace(/\sas\s+\w+/g, '');
 
       // Escape the final code so it can be safely embedded
       const safeCode = JSON.stringify(transformedCode);
 
+      // Build the DaisyUI theme style block using the colorScheme
+      const daisyuiTheme = colorScheme
+        ? `
+          <script>
+            tailwind.config = {
+              theme: {
+                extend: {},
+              },
+              daisyui: {
+                styled: true,
+                themes: false,
+                base: true,
+                utils: true,
+                logs: false,
+                rtl: false
+              }
+            }
+          </script>
+          <style>
+            [data-theme="custom"] {
+              /* Primary colors */
+              --p: ${hexToHSL(colorScheme.primary)} !important;
+              --pf: ${hexToHSL(colorScheme['primary-focus'])} !important;
+              --pc: ${hexToHSL(colorScheme['primary-content'])} !important;
+              
+              /* Secondary colors */
+              --s: ${hexToHSL(colorScheme.secondary)} !important;
+              --sf: ${hexToHSL(colorScheme['secondary-focus'])} !important;
+              --sc: ${hexToHSL(colorScheme['secondary-content'])} !important;
+              
+              /* Accent colors */
+              --a: ${hexToHSL(colorScheme.accent)} !important;
+              --af: ${hexToHSL(colorScheme['accent-focus'])} !important;
+              --ac: ${hexToHSL(colorScheme['accent-content'])} !important;
+              
+              /* Neutral colors */
+              --n: ${hexToHSL(colorScheme.neutral)} !important;
+              --nf: ${hexToHSL(colorScheme['neutral-focus'])} !important;
+              --nc: ${hexToHSL(colorScheme['neutral-content'])} !important;
+              
+              /* Base colors */
+              --b1: ${hexToHSL(colorScheme['base-100'])} !important;
+              --b2: ${hexToHSL(colorScheme['base-200'])} !important;
+              --b3: ${hexToHSL(colorScheme['base-300'])} !important;
+              --bc: ${hexToHSL(colorScheme['base-content'])} !important;
+              
+              /* State colors */
+              --in: ${hexToHSL(colorScheme.info)} !important;
+              --su: ${hexToHSL(colorScheme.success)} !important;
+              --wa: ${hexToHSL(colorScheme.warning)} !important;
+              --er: ${hexToHSL(colorScheme.error)} !important;
+            }
+          </style>
+        `
+        : '';
+
       // Build the HTML content for the iframe
       const html = `
         <!DOCTYPE html>
-        <html>
+        <html data-theme="custom">
           <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
+            <script src="https://cdn.tailwindcss.com"></script>
+            <link href="https://cdn.jsdelivr.net/npm/daisyui@2.51.5/dist/full.css" rel="stylesheet">
+            ${daisyuiTheme}
             <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
             <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
             <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-            <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
             <style>
               body { margin: 0; padding: 1rem; }
               * { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
-              
-              /* Custom color scheme */
-              :root {
-                --color-primary: ${colorScheme?.primary || '#1D4ED8'};
-                --color-secondary: ${colorScheme?.secondary || '#64748B'};
-                --color-accent: ${colorScheme?.accent || '#F59E0B'};
-                --color-background: ${colorScheme?.background || '#F3F4F6'};
-                --color-text: ${colorScheme?.text || '#111827'};
-                
-                --color-primary-light: ${colorScheme?.primary ? adjustColor(colorScheme.primary, 20) : '#3B82F6'};
-                --color-primary-dark: ${colorScheme?.primary ? adjustColor(colorScheme.primary, -20) : '#1E40AF'};
-                --color-secondary-light: ${colorScheme?.secondary ? adjustColor(colorScheme.secondary, 20) : '#94A3B8'};
-                --color-secondary-dark: ${colorScheme?.secondary ? adjustColor(colorScheme.secondary, -20) : '#475569'};
-                --color-accent-light: ${colorScheme?.accent ? adjustColor(colorScheme.accent, 20) : '#FBBF24'};
-                --color-accent-dark: ${colorScheme?.accent ? adjustColor(colorScheme.accent, -20) : '#D97706'};
-              }
-              
-              /* Text colors */
-              .text-primary { color: var(--color-primary); }
-              .text-primary-light { color: var(--color-primary-light); }
-              .text-primary-dark { color: var(--color-primary-dark); }
-              .text-secondary { color: var(--color-secondary); }
-              .text-secondary-light { color: var(--color-secondary-light); }
-              .text-secondary-dark { color: var(--color-secondary-dark); }
-              .text-accent { color: var(--color-accent); }
-              .text-accent-light { color: var(--color-accent-light); }
-              .text-accent-dark { color: var(--color-accent-dark); }
-              .text-text { color: var(--color-text); }
-              
-              /* Background colors */
-              .bg-primary { background-color: var(--color-primary); }
-              .bg-primary-light { background-color: var(--color-primary-light); }
-              .bg-primary-dark { background-color: var(--color-primary-dark); }
-              .bg-secondary { background-color: var(--color-secondary); }
-              .bg-secondary-light { background-color: var(--color-secondary-light); }
-              .bg-secondary-dark { background-color: var(--color-secondary-dark); }
-              .bg-accent { background-color: var(--color-accent); }
-              .bg-accent-light { background-color: var(--color-accent-light); }
-              .bg-accent-dark { background-color: var(--color-accent-dark); }
-              .bg-background { background-color: var(--color-background); }
-              
-              /* Border colors */
-              .border-primary { border-color: var(--color-primary); }
-              .border-primary-light { border-color: var(--color-primary-light); }
-              .border-primary-dark { border-color: var(--color-primary-dark); }
-              .border-secondary { border-color: var(--color-secondary); }
-              .border-secondary-light { border-color: var(--color-secondary-light); }
-              .border-secondary-dark { border-color: var(--color-secondary-dark); }
-              .border-accent { border-color: var(--color-accent); }
-              .border-accent-light { border-color: var(--color-accent-light); }
-              .border-accent-dark { border-color: var(--color-accent-dark); }
-              
-              /* Hover states */
-              .hover\\:text-primary:hover { color: var(--color-primary); }
-              .hover\\:text-primary-light:hover { color: var(--color-primary-light); }
-              .hover\\:text-primary-dark:hover { color: var(--color-primary-dark); }
-              .hover\\:text-secondary:hover { color: var(--color-secondary); }
-              .hover\\:text-accent:hover { color: var(--color-accent); }
-              
-              .hover\\:bg-primary:hover { background-color: var(--color-primary); }
-              .hover\\:bg-primary-light:hover { background-color: var(--color-primary-light); }
-              .hover\\:bg-primary-dark:hover { background-color: var(--color-primary-dark); }
-              .hover\\:bg-secondary:hover { background-color: var(--color-secondary); }
-              .hover\\:bg-accent:hover { background-color: var(--color-accent); }
-              
-              /* Focus states */
-              .focus\\:border-primary:focus { border-color: var(--color-primary); }
-              .focus\\:border-accent:focus { border-color: var(--color-accent); }
-              .focus\\:ring-primary:focus { --tw-ring-color: var(--color-primary); }
-              .focus\\:ring-accent:focus { --tw-ring-color: var(--color-accent); }
-              
-              /* Active states */
-              .active\\:bg-primary-dark:active { background-color: var(--color-primary-dark); }
-              .active\\:bg-secondary-dark:active { background-color: var(--color-secondary-dark); }
-              .active\\:bg-accent-dark:active { background-color: var(--color-accent-dark); }
-              
-              /* Disabled states */
-              .disabled\\:bg-gray-300:disabled { background-color: #D1D5DB; }
-              .disabled\\:text-gray-500:disabled { color: #6B7280; }
-              
-              /* Additional utility classes for transitions */
-              .transition { transition-property: all; transition-duration: 200ms; }
-              .transition-colors { transition-property: background-color, border-color, color, fill, stroke; transition-duration: 200ms; }
             </style>
           </head>
-          <body>
+          <body data-theme="custom">
             <div id="root"></div>
             <script type="text/babel" data-presets="react,typescript">
-              // Dummy type definitions as functions to avoid runtime errors
+              // Dummy type definitions to avoid runtime errors
               window.FormEvent = function(target) { return {}; };
               window.ChangeEvent = function(target) { return {}; };
               window.MouseEvent = function(target) { return {}; };
 
-              // Prepend React hook destructuring so that useState, useEffect, etc. are available
+              // Prepend React hook destructuring so hooks are available
               const prelude = "const { useState, useEffect, useRef, useMemo, useCallback, useContext, useReducer } = React;";
               
               // Retrieve the safe, escaped code string
@@ -2426,25 +2648,45 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
               // Combine the prelude with the generated code
               const fullCode = prelude + code;
 
-              // Transpile the code with Babel and provide a filename option
-              const transformed = Babel.transform(fullCode, { filename: 'file.tsx', presets: ['react', 'typescript'] }).code;
-              eval(transformed);
+              try {
+                // Transpile the code with Babel
+                const transformed = Babel.transform(fullCode, { 
+                  filename: 'file.tsx', 
+                  presets: ['react', 'typescript'],
+                  retainLines: true
+                }).code;
+                
+                // Evaluate the transformed code
+                eval(transformed);
 
-              // Find and render the main component
-              const components = Object.values(window).filter(
-                val => typeof val === 'function' && /^[A-Z]/.test(val?.name || '')
-              );
-              const MainComponent = components[components.length - 1];
-              if (MainComponent) {
-                const root = ReactDOM.createRoot(document.getElementById('root'));
-                root.render(
-                  <React.StrictMode>
-                    <MainComponent />
-                  </React.StrictMode>
-                );
-              } else {
+                // Try to find the component using the exported name first
+                let MainComponent = ${componentName ? componentName : 'null'};
+                
+                // If not found by name, try to find it by scanning window object
+                if (!MainComponent) {
+                  const components = Object.values(window).filter(
+                    val => typeof val === 'function' && 
+                          /^[A-Z]/.test(val?.name || '') &&
+                          val.toString().includes('React.createElement')
+                  );
+                  MainComponent = components[components.length - 1];
+                }
+
+                if (MainComponent) {
+                  const root = ReactDOM.createRoot(document.getElementById('root'));
+                  root.render(
+                    <React.StrictMode>
+                      <MainComponent />
+                    </React.StrictMode>
+                  );
+                } else {
+                  document.getElementById('root').innerHTML =
+                    '<div style="padding: 1rem; color: red;">No React component found in the code. Please ensure the code includes a properly named React component with a default export.</div>';
+                }
+              } catch (error) {
                 document.getElementById('root').innerHTML =
-                  '<div class="p-4 text-red-600 bg-red-50 rounded-lg">No React component found in the code</div>';
+                  '<div style="padding: 1rem; color: red;">Error evaluating component: ' + error.message + '</div>';
+                console.error('Component evaluation error:', error);
               }
             </script>
           </body>
@@ -2522,10 +2764,26 @@ interface MockupData {
   code: string;
   colorScheme: {
     primary: string;
+    'primary-focus': string;
+    'primary-content': string;
     secondary: string;
+    'secondary-focus': string;
+    'secondary-content': string;
     accent: string;
-    background: string;
-    text: string;
+    'accent-focus': string;
+    'accent-content': string;
+    neutral: string;
+    'neutral-focus': string;
+    'neutral-content': string;
+    'base-100': string;
+    'base-200': string;
+    'base-300': string;
+    'base-content': string;
+    info: string;
+    success: string;
+    warning: string;
+    error: string;
+    [key: string]: string; // Allow string indexing for dynamic access
   };
   components: string[];
   features: string[];
@@ -2540,6 +2798,40 @@ interface PreviewPanelProps {
   qaTree: any;
   onVersionRestore?: (version: MockupVersion) => void;
 }
+
+// Helper function to ensure complete color scheme
+const ensureCompleteColorScheme = (version: MockupVersion): MockupVersion => {
+  const defaultColors: Record<string, string> = {
+    'primary-focus': '#1E40AF',
+    'primary-content': '#FFFFFF',
+    'secondary-focus': '#475569',
+    'secondary-content': '#FFFFFF',
+    'accent-focus': '#D97706',
+    'accent-content': '#FFFFFF',
+    'neutral': '#3D4451',
+    'neutral-focus': '#2A2E37',
+    'neutral-content': '#FFFFFF',
+    'base-100': '#FFFFFF',
+    'base-200': '#F3F4F6',
+    'base-300': '#E5E7EB',
+    'base-content': '#1F2937',
+    'info': '#3ABFF8',
+    'success': '#36D399',
+    'warning': '#FBBD23',
+    'error': '#F87272'
+  };
+
+  return {
+    ...version,
+    mockupData: {
+      ...version.mockupData,
+      colorScheme: {
+        ...defaultColors,
+        ...version.mockupData.colorScheme,
+      }
+    }
+  };
+};
 
 export default function PreviewPanel({
   isOpen,
@@ -2623,8 +2915,9 @@ export default function PreviewPanel({
   };
 
   const handleVersionSelect = (version: MockupVersion) => {
-    setSelectedVersion(version);
-    setMockupData(version.mockupData);
+    const completeVersion = ensureCompleteColorScheme(version);
+    setSelectedVersion(completeVersion);
+    setMockupData(completeVersion.mockupData);
   };
 
   const handleVersionRestore = (version: MockupVersion) => {
@@ -2753,7 +3046,7 @@ export default function PreviewPanel({
           {activeTab === 'mockup' && mockupData && (
             <div className="w-2/3 h-full border-r border-gray-200 bg-gray-50 overflow-auto">
               <div className="h-full">
-                <LivePreview code={mockupData.code} />
+                <LivePreview code={mockupData.code} colorScheme={mockupData.colorScheme} />
               </div>
             </div>
           )}
@@ -2895,17 +3188,256 @@ export default function PreviewPanel({
                         {/* Color Scheme */}
                         <div>
                           <h2 className="text-xl font-semibold text-gray-900 mb-4">Color Scheme</h2>
-                          <div className="flex flex-wrap gap-4">
-                            {Object.entries(mockupData.colorScheme).map(([name, color]) => (
-                              <div key={name} className="flex flex-col items-center">
-                                <div
-                                  className="w-16 h-16 rounded-lg shadow-md"
-                                  style={{ backgroundColor: color }}
-                                />
-                                <span className="mt-2 text-sm text-gray-600">{name}</span>
-                                <span className="text-xs text-gray-400">{color}</span>
+                          <div className="grid grid-cols-2 gap-6">
+                            {/* Primary Colors */}
+                            <div className="space-y-3">
+                              <h3 className="font-medium text-gray-900">Primary Colors</h3>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.primary }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['primary-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Primary (--p)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.primary}</span>
+                                </div>
                               </div>
-                            ))}
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['primary-focus'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['primary-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Focus (--pf)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['primary-focus']}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['primary-content'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme.primary }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Content (--pc)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['primary-content']}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Secondary Colors */}
+                            <div className="space-y-3">
+                              <h3 className="font-medium text-gray-900">Secondary Colors</h3>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.secondary }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['secondary-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Secondary (--s)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.secondary}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['secondary-focus'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['secondary-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Focus (--sf)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['secondary-focus']}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['secondary-content'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme.secondary }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Content (--sc)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['secondary-content']}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Accent Colors */}
+                            <div className="space-y-3">
+                              <h3 className="font-medium text-gray-900">Accent Colors</h3>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.accent }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['accent-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Accent (--a)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.accent}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['accent-focus'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['accent-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Focus (--af)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['accent-focus']}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['accent-content'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme.accent }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Content (--ac)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['accent-content']}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Neutral Colors */}
+                            <div className="space-y-3">
+                              <h3 className="font-medium text-gray-900">Neutral Colors</h3>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.neutral }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['neutral-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Neutral (--n)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.neutral}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['neutral-focus'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['neutral-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Focus (--nf)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['neutral-focus']}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['neutral-content'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme.neutral }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Content (--nc)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['neutral-content']}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Base Colors */}
+                            <div className="space-y-3">
+                              <h3 className="font-medium text-gray-900">Base Colors</h3>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['base-100'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Base 100 (--b1)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['base-100']}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['base-200'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Base 200 (--b2)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['base-200']}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['base-300'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Base 300 (--b3)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['base-300']}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['base-content'] }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ backgroundColor: mockupData.colorScheme['base-100'], color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Content (--bc)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['base-content']}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* State Colors */}
+                            <div className="space-y-3">
+                              <h3 className="font-medium text-gray-900">State Colors</h3>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.info }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Info (--in)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.info}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.success }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Success (--su)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.success}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.warning }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Warning (--wa)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.warning}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.error }}>
+                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
+                                    Aa
+                                  </div>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">Error (--er)</span>
+                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.error}</span>
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         </div>
 
@@ -3522,10 +4054,26 @@ export interface MockupVersion {
     code: string;
     colorScheme: {
       primary: string;
+      'primary-focus': string;
+      'primary-content': string;
       secondary: string;
+      'secondary-focus': string;
+      'secondary-content': string;
       accent: string;
-      background: string;
-      text: string;
+      'accent-focus': string;
+      'accent-content': string;
+      neutral: string;
+      'neutral-focus': string;
+      'neutral-content': string;
+      'base-100': string;
+      'base-200': string;
+      'base-300': string;
+      'base-content': string;
+      info: string;
+      success: string;
+      warning: string;
+      error: string;
+      [key: string]: string;
     };
     components: string[];
     features: string[];
