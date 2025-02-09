@@ -219,9 +219,9 @@ export default function PreviewPanel({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-end">
-      <div className={`${isCompareMode ? 'w-4/5' : 'w-full'} bg-white h-full shadow-lg flex flex-col`}>
+      <div className={`${isCompareMode ? 'w-4/5' : 'w-full'} h-full bg-white flex flex-col`}>
         {/* Header */}
-        <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+        <div className="flex-none p-4 border-b border-gray-200 flex justify-between items-center">
           <div className="flex space-x-4">
             <button
               onClick={() => setActiveTab('requirements')}
@@ -287,10 +287,10 @@ export default function PreviewPanel({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden flex">
+        <div className="flex-1 flex overflow-hidden">
           {/* Live Preview (Left Side) */}
           {activeTab === 'mockup' && mockupData && (
-            <div className="w-2/3 h-full border-r border-gray-200 bg-gray-50 overflow-auto">
+            <div className="w-2/3 border-r border-gray-200 bg-gray-50 overflow-auto">
               <div className="h-full">
                 <LivePreview code={mockupData.code} colorScheme={mockupData.colorScheme} />
               </div>
@@ -298,7 +298,7 @@ export default function PreviewPanel({
           )}
 
           {/* Details Panel (Right Side) */}
-          <div className={`${activeTab === 'mockup' && mockupData ? 'w-1/3' : 'w-full'} h-full overflow-auto`}>
+          <div className={`${activeTab === 'mockup' && mockupData ? 'w-1/3' : 'w-full'} overflow-auto`}>
             <div className="p-6">
               {error ? (
                 <div className="p-6 text-center">
@@ -762,7 +762,7 @@ export default function PreviewPanel({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-gray-200">
+        <div className="flex-none p-4 border-t border-gray-200">
           <div className="flex justify-between">
             <button
               className="px-4 py-2 text-gray-600 hover:text-gray-800"
