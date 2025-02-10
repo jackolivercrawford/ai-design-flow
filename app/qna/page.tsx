@@ -94,60 +94,68 @@ export default function QnAPage() {
           current = parent;
         }
 
-        // Try to generate a child question that explores the current topic deeper
-        const { nodes: children, shouldStopBranch, stopReason } = await fetchQuestionsForNode(
-          prompt, 
-          node,
-          branchHistory,
-          depth,
-          true // Enable suggestions for follow-up questions
-        );
-        
-        // If the AI suggests stopping this branch, move to siblings
-        if (shouldStopBranch) {
-          console.log(`Stopping current branch: ${stopReason}`);
-          // Find the next sibling at the highest incomplete level
-          let searchNode: QANode | null = node;
-          while (searchNode) {
-            const parent = findParentNode(qaTree!, searchNode);
-            if (!parent) break;
-            
-            const siblings = parent.children;
-            const currentIndex = siblings.indexOf(searchNode);
-            
-            if (currentIndex < siblings.length - 1) {
-              return siblings[currentIndex + 1];
-            }
-            searchNode = parent;
-          }
-        } 
-        // If we got new questions, verify they explore the current topic deeper
-        else if (children.length > 0) {
-          const newQuestionTopics = extractTopics(children[0].question);
-          const currentTopics = extractTopics(node.question);
-          
-          // Check if the new question is related to the current topic
-          const isRelatedTopic = currentTopics.some(topic => 
-            newQuestionTopics.includes(topic) || 
-            newQuestionTopics.some(t => t.includes(topic))
+        // First try to go deeper by generating a child question
+        // Make multiple attempts to get a valid child question
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(
+            prompt, 
+            node,
+            branchHistory,
+            depth,
+            true
           );
+          
+          // If we can go deeper and got valid children
+          if (!shouldStopBranch && children.length > 0) {
+            const newQuestionTopics = extractTopics(children[0].question);
+            const currentTopics = extractTopics(node.question);
+            
+            // Verify the child question is related to current topic
+            const isRelatedTopic = currentTopics.some(topic => 
+              newQuestionTopics.includes(topic) || 
+              newQuestionTopics.some(t => t.includes(topic))
+            );
 
-          if (isRelatedTopic) {
-            // Set the question number based on exploration order
-            children[0].questionNumber = questionCount + 1;
-            node.children = children;
-            return children[0];
-          } else {
-            console.log('Generated question explores unrelated topic, trying siblings instead');
-            // Try to find the next sibling that continues the current topic
-            const parent = findParentNode(qaTree!, node);
-            if (parent) {
-              const siblings = parent.children;
-              const currentIndex = siblings.indexOf(node);
-              if (currentIndex < siblings.length - 1) {
-                return siblings[currentIndex + 1];
-              }
+            if (isRelatedTopic) {
+              children[0].questionNumber = questionCount + 1;
+              node.children = children;
+              return children[0];
             }
+          }
+          
+          // If shouldStopBranch is true, break the retry loop
+          if (shouldStopBranch) break;
+        }
+        
+        // If we can't go deeper after attempts, try to move to the next sibling
+        const parent = findParentNode(qaTree!, node);
+        if (parent) {
+          const siblings = parent.children;
+          const currentIndex = siblings.indexOf(node);
+          
+          // If there are more siblings at this level, move to the next sibling
+          if (currentIndex < siblings.length - 1) {
+            return siblings[currentIndex + 1];
+          }
+          
+          // If no more siblings at this level, go up one level and try those siblings
+          let ancestor = parent;
+          let previousNode = node;
+          
+          while (ancestor) {
+            const ancestorParent = findParentNode(qaTree!, ancestor);
+            if (!ancestorParent) break;
+            
+            const uncles = ancestorParent.children;
+            const ancestorIndex = uncles.indexOf(ancestor);
+            
+            // If there are more siblings at this ancestor's level, use the next one
+            if (ancestorIndex < uncles.length - 1) {
+              return uncles[ancestorIndex + 1];
+            }
+            
+            previousNode = ancestor;
+            ancestor = ancestorParent;
           }
         }
       }
@@ -164,6 +172,18 @@ export default function QnAPage() {
       const currentIndex = currentLevelNodes.indexOf(node);
       const currentDepth = getNodeDepth(node);
       
+      // Extract aspects from parent's answer that need to be covered
+      const parentAspects = parent.answer ? 
+        extractAspectsFromAnswer(parent.answer) : 
+        ['basic_requirements'];
+      
+      // Get aspects already covered by existing siblings
+      const coveredAspects = new Set(
+        currentLevelNodes
+          .map(n => extractTopics(n.question))
+          .flat()
+      );
+      
       // Build question history for current level
       const levelHistory: QuestionHistoryItem[] = currentLevelNodes.map(n => ({
         question: n.question,
@@ -179,35 +199,45 @@ export default function QnAPage() {
         return currentLevelNodes[currentIndex + 1];
       }
       
-      // For top level (depth 1), ensure we have enough broad coverage before going deeper
-      // We want at least 3-4 high-level questions answered before considering going deeper
+      // Determine if we need more siblings at this level
       const isTopLevel = currentDepth === 1;
-      const shouldGenerateMoreSiblings = isTopLevel ? 
-        currentLevelNodes.length < 4 : // At top level, always try to get at least 4 questions
-        !allCurrentLevelAnswered;      // At other levels, generate siblings until all are answered
+      const uncoveredAspects = parentAspects.filter(aspect => !coveredAspects.has(aspect));
+      const hasEnoughTopLevelQuestions = isTopLevel && currentLevelNodes.length >= 4;
       
+      const shouldGenerateMoreSiblings = 
+        // At top level, aim for 4-5 questions unless we have good coverage
+        (isTopLevel && !hasEnoughTopLevelQuestions && uncoveredAspects.length > 0) ||
+        // At other levels, ensure we have 2-3 questions per parent aspect
+        (!isTopLevel && currentLevelNodes.length < 2 * parentAspects.length) ||
+        // Or if there are critical uncovered aspects
+        (!hasEnoughTopLevelQuestions && uncoveredAspects.length > 0);
+
       // Only try to generate new siblings if we haven't completed the current level
-      // or if we need more top-level coverage
       if (shouldGenerateMoreSiblings) {
         const { nodes: newSiblings, shouldStopBranch } = await fetchQuestionsForNode(
           prompt,
           parent,
           levelHistory,
           currentDepth,
-          true // Enable suggestions for follow-up questions
+          true,
+          uncoveredAspects
         );
         
         if (!shouldStopBranch && newSiblings.length > 0) {
-          // Set the question number sequentially within the layer
           newSiblings[0].questionNumber = questionCount + 1;
           parent.children = [...currentLevelNodes, ...newSiblings];
           return newSiblings[0];
         }
       }
       
-      // Only if ALL nodes at current level are answered AND we have enough top-level coverage,
-      // start going deeper
-      if (allCurrentLevelAnswered && (!isTopLevel || currentLevelNodes.length >= 3)) {
+      // Move deeper if:
+      // 1. All current level questions are answered
+      // 2. We have enough coverage at top level (4-5 questions)
+      // 3. We have 2-3 questions per aspect at other levels
+      // 4. No critical uncovered aspects remain
+      if (allCurrentLevelAnswered && 
+          (isTopLevel ? hasEnoughTopLevelQuestions : currentLevelNodes.length >= 2 * parentAspects.length) &&
+          uncoveredAspects.length === 0) {
         // Find the first answered node that doesn't have children yet
         for (const sibling of currentLevelNodes) {
           if (sibling.answer && sibling.children.length === 0) {
@@ -222,11 +252,10 @@ export default function QnAPage() {
               sibling,
               siblingHistory,
               currentDepth + 1,
-              true // Enable suggestions for follow-up questions
+              true
             );
             
             if (!shouldStopBranch && children.length > 0) {
-              // Set the question number sequentially for the next layer
               children[0].questionNumber = questionCount + 1;
               sibling.children = children;
               return children[0];
@@ -304,7 +333,14 @@ export default function QnAPage() {
   };
 
   // Helper: fetch questions for a node
-  const fetchQuestionsForNode = async (designPrompt: string, parentNode: QANode, questionHistory: QuestionHistoryItem[], depth: number, setSuggestion: boolean = false): Promise<{ nodes: QANode[], shouldStopBranch: boolean, stopReason: string, suggestedAnswer?: string }> => {
+  const fetchQuestionsForNode = async (
+    designPrompt: string, 
+    parentNode: QANode, 
+    questionHistory: QuestionHistoryItem[], 
+    depth: number, 
+    setSuggestion: boolean = false,
+    uncoveredAspects?: string[]
+  ): Promise<{ nodes: QANode[], shouldStopBranch: boolean, stopReason: string, suggestedAnswer?: string }> => {
     try {
       console.log('Fetching questions with knowledge base:', settings?.knowledgeBase);
       
@@ -312,7 +348,8 @@ export default function QnAPage() {
       const parentContext = parentNode.question !== `Prompt: ${designPrompt}` ? {
         parentQuestion: parentNode.question,
         parentAnswer: parentNode.answer,
-        parentTopics: extractTopics(parentNode.question)
+        parentTopics: extractTopics(parentNode.question),
+        uncoveredAspects // Add uncovered aspects to parent context
       } : null;
       
       const response = await fetch('/api/generate-questions', {
@@ -325,7 +362,8 @@ export default function QnAPage() {
           knowledgeBase: settings?.knowledgeBase,
           depth: depth,
           parentContext: parentContext,
-          includeSuggestions: setSuggestion // Only request suggestions when needed
+          includeSuggestions: setSuggestion,
+          uncoveredAspects // Pass uncovered aspects to API
         }),
       });
 
@@ -832,6 +870,31 @@ export default function QnAPage() {
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  // Helper: Extract aspects from an answer that need to be covered by child questions
+  const extractAspectsFromAnswer = (answer: string): string[] => {
+    const aspects: string[] = [];
+    
+    // Split answer into sentences
+    const sentences = answer.split(/[.!?]+/).map(s => s.trim()).filter(Boolean);
+    
+    // Look for key phrases that indicate different aspects
+    sentences.forEach(sentence => {
+      // Look for lists or enumerations
+      if (sentence.includes(',') || /\band\b/.test(sentence)) {
+        const items = sentence
+          .split(/,|\band\b/)
+          .map(item => item.trim().toLowerCase())
+          .filter(Boolean);
+        aspects.push(...items);
+      } else {
+        // Single aspect in the sentence
+        aspects.push(sentence.toLowerCase());
+      }
+    });
+    
+    return aspects.length > 0 ? aspects : ['basic_requirements'];
   };
 
   return (

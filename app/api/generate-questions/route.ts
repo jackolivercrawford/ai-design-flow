@@ -124,42 +124,135 @@ Follow these guidelines:
 3. Traversal Rules (${traversalMode}):
    ${traversalMode === 'bfs' 
      ? `BFS Guidelines:
-        - At Level 1: Generate at least 3-4 broad, fundamental questions before going deeper
-        - Each level should be more specific than the last
-        - Questions at the same level should cover different aspects
-        - Example progression:
-          Level 1: "Who is the target audience?"
-          Level 2: "What main navigation sections are needed?"
-          Level 3: "What information should appear in the project cards?"
-          Level 4: "What should happen when a project card is clicked?"`
+        - CRITICAL: At Level 1 (top level), aim for 4-5 comprehensive questions that cover the main aspects
+        - Maximum depth is 5 levels, but can be less if topics are fully explored
+        - When all levels and siblings are exhausted, return to Level 1 with new aspects
+        
+        Level Structure and Progression:
+        - Level 1 (4-5 questions): Core requirements and fundamental aspects
+          Example: "What is the primary purpose?", "Who are the target users?"
+        
+        - Level 2 (2-3 per Level 1 answer): Detailed exploration of each Level 1 aspect
+          Example: If Level 1 answer mentions "need user profiles and content management":
+          * "What specific information should user profiles contain?"
+          * "What content management capabilities are required?"
+        
+        - Level 3+ (2-3 per parent aspect): Implementation details and specific requirements
+          * Level 3: Technical specifications and feature details
+          * Level 4: Edge cases and error handling
+          * Level 5: Final refinements and polish
+        
+        Cycling Behavior:
+        1. When a branch is fully explored (reached max depth or no more meaningful questions):
+           * Move to unexplored siblings at the same level
+           * If no siblings remain, move up one level and explore siblings there
+           * If all existing branches are explored, return to Level 1 with new aspects
+        
+        2. When generating new Level 1 questions after a cycle:
+           * Must cover completely different aspects than previous cycles
+           * Should maintain the same level of importance/fundamentality as original Level 1
+           * Example: If first cycle covered "user profiles" and "content management",
+             second cycle might cover "analytics" and "performance optimization"
+        
+        Progression Rules:
+        1. After getting 4-5 solid top-level questions answered:
+           * Start exploring Level 2 for each answered Level 1 question
+           * Only add new Level 1 questions if starting a new cycle
+        
+        2. When to move deeper:
+           * Parent question is fully answered
+           * Current level has 2-3 questions per parent aspect
+           * Questions at current level are becoming redundant
+        
+        3. When to stay at current level:
+           * Critical aspects still unexplored
+           * Parent's answer reveals new important topics
+           * Current level questions are still yielding valuable insights`
      : `DFS Guidelines:
-        - Start with a broad topic
-        - Each follow-up should be more specific about that topic
-        - Example progression:
-          Q1: "What project showcase features are needed?"
-          Q2: "How should individual project details be displayed?"
-          Q3: "What specific project metrics should be highlighted?"
-          Q4: "How should project success metrics be visualized?"`
+        - CRITICAL: In DFS mode, fully explore ONE topic branch before moving to siblings
+        - Maximum depth is 5 levels, but can be less if topics are fully explored
+        - When all branches are exhausted, return to Level 1 with new aspects
+        
+        Sibling Count Guidelines:
+        - Level 1: 4-5 main topic questions
+        - Level 2-5: 2-3 questions per parent aspect
+        
+        Example proper DFS progression:
+        Q1: "What are the core navigation features needed?"
+        Parent Answer: "Need a main menu, search bar, and user profile section."
+        
+        First Branch (Main Menu):
+        Q2: "What specific items should be in the main menu?"
+        Q3: "How should the menu items be organized?"
+        Q4: "What interactions should menu items have?"
+        [Only after fully exploring menu, move to next sibling]
+        
+        Second Branch (Search):
+        Q5: "What search functionality is required?"
+        Q6: "How should search results be displayed?"
+        Q7: "What advanced search options are needed?"
+        [Complete search branch before moving to user profile]
+        
+        Third Branch (User Profile):
+        Q8: "What user profile information should be shown?"
+        Q9: "What profile customization options are needed?"
+        
+        Cycling Behavior:
+        1. When a branch is fully explored:
+           * Move to next sibling at current level
+           * If no siblings remain, move up one level
+           * If all branches are explored, return to Level 1
+        
+        2. When returning to Level 1:
+           * Generate new top-level questions for unexplored aspects
+           * Maintain same level of importance as original Level 1
+           * Example: If first cycle covered "navigation features",
+             second cycle might cover "user authentication"
+        
+        Branch Completion Rules:
+        1. A branch is considered complete when:
+           - All aspects of the current topic are fully explored
+           - Questions have reached implementation-level detail
+           - Further questions would be redundant
+           - Reached maximum depth (5 levels)
+           
+        2. When to stop current branch (shouldStopBranch=true):
+           - Reached maximum depth (5 levels)
+           - All aspects from parent's answer are fully explored
+           - Questions would become too specific to be useful
+           - Current topic is fully defined with implementation details
+           
+        3. When to move to siblings:
+           - ONLY after current branch is fully explored
+           - When shouldStopBranch=true is returned
+           - When no more meaningful child questions can be generated
+           
+        4. Question Depth Progression:
+           Level 1: High-level feature/topic questions (4-5 questions)
+           Level 2: Specific requirements for that feature (2-3 per parent)
+           Level 3: Implementation details (2-3 per parent)
+           Level 4: Edge cases and refinements (2-3 per parent)
+           Level 5: Final optimizations (2-3 per parent)`
    }
 
 4. Topic Management:
-   - Each level should be distinctly more specific than the previous
-   - Questions should build upon previous answers
-   - Avoid repeating topics already covered
-   - Use previous answers to inform specificity
-   - Child questions must explore specific aspects mentioned in parent's answer
+   - In BFS mode:
+     * First identify ALL distinct aspects/topics from parent's answer
+     * Generate siblings to cover EACH aspect before going deeper
+     * Only mark shouldStopBranch=true if ALL aspects have been covered by siblings
+   - In DFS mode:
+     * Focus on exploring one aspect deeply before moving to siblings
+     * Mark shouldStopBranch=true when current aspect is fully explored
 
 5. Question Generation:
    - Generate exactly ONE question
-   - Make it specific and focused
-   - Include clear parent-child relationships
-   - Maintain proper depth progression
-   - Follow numbering conventions per mode
-   - For child questions:
-     * Extract key topics/features from parent's answer
-     * Ask about specific implementation details of those topics
-     * Focus on one specific aspect rather than broad concepts
-     * Ensure the question couldn't be answered by the parent's answer
+   - For BFS mode siblings:
+     * Look at parent's answer for unexplored aspects
+     * Each sibling should focus on a DIFFERENT aspect
+     * Return shouldStopBranch=true ONLY if no unexplored aspects remain
+   - For DFS mode:
+     * Focus on drilling deeper into current aspect
+     * Return shouldStopBranch=true when aspect is fully explored
 
 6. Stopping Criteria:
    - Stop current branch if:
