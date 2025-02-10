@@ -72,7 +72,6 @@ export default function QnAPage() {
     const isDFS = settings?.traversalMode === 'dfs';
     
     if (isDFS) {
-      // DFS: Try to go deeper first by exploring the current topic fully
       if (node.answer) {
         // Build complete question history including topics for the current branch
         const branchHistory: QuestionHistoryItem[] = [];
@@ -171,7 +170,7 @@ export default function QnAPage() {
             }
             
             previousNode = ancestor;
-            ancestor = ancestorParent as QANode;  // Fix type assertion
+            ancestor = ancestorParent as QANode;
           }
         }
       }
@@ -193,7 +192,7 @@ export default function QnAPage() {
       }
       
     } else {
-      // BFS: Complete all questions at the current level before going deeper
+      // BFS mode:
       const parent = findParentNode(qaTree!, node);
       if (!parent) {
         // We're at the root, generate new Level 1 questions
@@ -324,6 +323,34 @@ export default function QnAPage() {
         }
       }
       
+      // <-- INSERTED CODE START: Ensure all L3 children from L2 parents are created before moving on to L4 -->
+      // When the current depth is 3 or deeper, check all level-2 nodes (whose children would be level-3)
+      // and generate any missing children.
+      if (currentDepth >= 3) {
+        const l2Nodes = getAllNodesAtDepth(qaTree!, 2);
+        const incompleteL2 = l2Nodes.find(l2Node => {
+          if (!l2Node.answer) return false;
+          const expectedChildren = Math.min(3, extractAspectsFromAnswer(l2Node.answer).length);
+          return l2Node.children.length < expectedChildren;
+        });
+        if (incompleteL2) {
+          const nodeHistory = getAllAnsweredQuestions(incompleteL2);
+          const { nodes: newChild } = await fetchQuestionsForNode(
+            prompt,
+            incompleteL2,
+            nodeHistory,
+            2, // generate a level 3 child (child of a level 2 node)
+            true
+          );
+          if (newChild.length > 0) {
+            newChild[0].questionNumber = questionCount + 1;
+            incompleteL2.children = [...incompleteL2.children, ...newChild];
+            return newChild[0];
+          }
+        }
+      }
+      // <-- INSERTED CODE END -->
+
       // If all current level questions are answered and we have enough coverage, try to go deeper
       if (allCurrentLevelAnswered && 
           (isTopLevel ? hasEnoughTopLevelQuestions : currentLevelNodes.length >= 2)) {
@@ -337,19 +364,18 @@ export default function QnAPage() {
         const allNodesHaveEnoughChildren = allNodesAtCurrentDepth.every(n => {
           if (!n.answer) return true; // Skip unanswered nodes
           const aspects = extractAspectsFromAnswer(n.answer);
-          return n.children.length >= Math.min(3, aspects.length); // Each node should have 2-3 children based on its aspects
+          return n.children.length >= Math.min(3, aspects.length);
         });
 
         // Only proceed deeper if all nodes at current depth are properly explored
         if (allNodesAtCurrentDepthAnswered && allNodesHaveEnoughChildren) {
-          // Find the first Level N node that needs children
+          // Find the first node at the current level that needs children
           const nextNodeNeedingChildren = allNodesAtCurrentDepth.find(n => 
-            n.answer && // Has an answer
-            n.children.length < Math.min(3, extractAspectsFromAnswer(n.answer).length) // Needs more children
+            n.answer &&
+            n.children.length < Math.min(3, extractAspectsFromAnswer(n.answer).length)
           );
 
           if (nextNodeNeedingChildren) {
-            // Generate children for this node
             const nodeHistory = getAllAnsweredQuestions(nextNodeNeedingChildren);
             const { nodes: children } = await fetchQuestionsForNode(
               prompt,
@@ -366,7 +392,7 @@ export default function QnAPage() {
             }
           }
 
-          // If all nodes at current depth have enough children, start exploring the next depth
+          // If all nodes at current depth have enough children, explore the next depth
           const allChildrenAtNextDepth = allNodesAtCurrentDepth.flatMap(n => n.children);
           const unansweredChildAtNextDepth = allChildrenAtNextDepth.find(n => !n.answer);
           
@@ -374,10 +400,10 @@ export default function QnAPage() {
             return unansweredChildAtNextDepth;
           }
           
-          // If all children are answered, find a node at next depth that needs its own children
+          // If all children are answered, find a node at next depth that needs more children
           const nextDepthNodeNeedingChildren = allChildrenAtNextDepth.find(n => 
-            n.answer && // Has an answer
-            n.children.length < Math.min(3, extractAspectsFromAnswer(n.answer).length) // Needs more children
+            n.answer &&
+            n.children.length < Math.min(3, extractAspectsFromAnswer(n.answer).length)
           );
 
           if (nextDepthNodeNeedingChildren) {
@@ -386,7 +412,7 @@ export default function QnAPage() {
               prompt,
               nextDepthNodeNeedingChildren,
               nodeHistory,
-              currentDepth + 2, // Going two levels deeper
+              currentDepth + 2,
               true
             );
             
@@ -397,7 +423,7 @@ export default function QnAPage() {
             }
           }
         } else {
-          // If not all nodes are explored at current depth, find the next unexplored node
+          // If not all nodes are explored at current depth, return the next unanswered node
           const nextUnansweredNode = allNodesAtCurrentDepth.find(n => !n.answer);
           if (nextUnansweredNode) {
             return nextUnansweredNode;
@@ -405,8 +431,8 @@ export default function QnAPage() {
 
           // If all nodes are answered but some need more children, find the next one needing children
           const nextNodeNeedingChildren = allNodesAtCurrentDepth.find(n => 
-            n.answer && // Has an answer
-            n.children.length < Math.min(3, extractAspectsFromAnswer(n.answer).length) // Needs more children
+            n.answer &&
+            n.children.length < Math.min(3, extractAspectsFromAnswer(n.answer).length)
           );
 
           if (nextNodeNeedingChildren) {
@@ -445,7 +471,7 @@ export default function QnAPage() {
       }
     }
     
-    // If we reach here, try generating new Level 1 questions as a fallback
+    // Fallback: try generating new Level 1 questions
     const rootHistory = getAllAnsweredQuestions(qaTree!);
     const { nodes: newTopLevel } = await fetchQuestionsForNode(
       prompt,
@@ -755,27 +781,21 @@ export default function QnAPage() {
       setSessionMetadata(metadata);
 
       if (!isAutoSave) {
-        // Show success message for manual saves
-        // TODO: Add a toast notification system
         console.log('Progress saved successfully');
       }
     } catch (error) {
       console.error('Error saving progress:', error);
-      // TODO: Add error notification
     }
   };
 
   const handleVersionRestore = (version: MockupVersion) => {
-    // Confirm before restoring
     if (window.confirm('Restoring this version will replace your current progress. Continue?')) {
       setQaTree(version.qaTree);
       setRequirementsDoc(version.requirementsDoc);
       
-      // Find the first unanswered question in the restored tree
       const firstUnanswered = findFirstUnansweredChild(version.qaTree);
       setCurrentNode(firstUnanswered);
       
-      // Update question count
       let count = 0;
       const countAnswers = (node: QANode) => {
         if (node.answer) count++;
@@ -784,7 +804,6 @@ export default function QnAPage() {
       countAnswers(version.qaTree);
       setQuestionCount(count);
       
-      // Save the restored state
       saveProgress();
     }
   };
@@ -804,7 +823,6 @@ export default function QnAPage() {
 
   // On mount: try to load saved progress or start new session
   useEffect(() => {
-    // Prevent duplicate API call on initial load
     if (hasFetchedInitialQuestion.current) return;
     hasFetchedInitialQuestion.current = true;
 
@@ -813,7 +831,6 @@ export default function QnAPage() {
     const storedSettings = localStorage.getItem('qaSettings');
     
     if (savedProgress) {
-      // Load saved progress
       try {
         const progress: SavedProgress = JSON.parse(savedProgress);
         console.log('Loaded settings with knowledge base:', progress.settings.knowledgeBase);
@@ -834,14 +851,12 @@ export default function QnAPage() {
       }
     }
     
-    // Start new session
     if (storedPrompt && storedSettings) {
       const parsedSettings = JSON.parse(storedSettings);
       console.log('Starting new session with knowledge base:', parsedSettings.knowledgeBase);
       setPrompt(storedPrompt);
       setSettings(parsedSettings);
       
-      // Create and set up root node (Q0)
       const rootNode: QANode = {
         id: uuidv4(),
         question: `Prompt: ${storedPrompt}`,
@@ -850,7 +865,6 @@ export default function QnAPage() {
       };
       setQaTree(rootNode);
       
-      // Initialize requirements document
       const initialRequirementsDoc: RequirementsDocument = {
         id: uuidv4(),
         prompt: storedPrompt,
@@ -866,7 +880,6 @@ export default function QnAPage() {
       };
       setRequirementsDoc(initialRequirementsDoc);
       
-      // Generate first question (Q1)
       fetchQuestionsForNode(storedPrompt, rootNode, [], 0, false).then(({ nodes: children, suggestedAnswer }) => {
         if (children.length > 0) {
           children[0].questionNumber = 1;
@@ -898,7 +911,6 @@ export default function QnAPage() {
     setIsLoadingNextQuestion(true);
     setSuggestedAnswer(null);
     
-    // Check if we've hit the question limit
     if (settings.maxQuestions && questionCount >= settings.maxQuestions) {
       setCurrentNode(null);
       setIsLoadingNextQuestion(false);
@@ -906,31 +918,26 @@ export default function QnAPage() {
     }
     
     try {
-      // Record the answer
       currentNode.answer = answer;
       
-      // Update requirements document with new answer
       await updateRequirements(currentNode.id);
       
-      // Get the next question based on traversal mode
       const nextNode = await getNextQuestion(currentNode);
       
       if (nextNode) {
-        // Verify this question hasn't been asked before
         if (!askedQuestions.has(nextNode.question)) {
           setAskedQuestions(prev => new Set(prev).add(nextNode.question));
-          setIsInitialLoad(true); // Prevent auto-fetch when setting current node
+          setIsInitialLoad(true);
           setCurrentNode(nextNode);
           setQuestionCount(prev => prev + 1);
           setQaTree(prev => prev ? { ...prev } : prev);
-          setIsInitialLoad(false); // Reset flag after state updates
+          setIsInitialLoad(false);
         } else {
           console.warn('Duplicate question detected:', nextNode.question);
           setCurrentNode(null);
         }
       } else {
-        setCurrentNode(null); // No more questions
-        // Final requirements update with no current node
+        setCurrentNode(null);
         await updateRequirements(null);
       }
     } catch (error) {
@@ -942,12 +949,10 @@ export default function QnAPage() {
 
   const handleAutoPopulate = async (): Promise<string | null> => {
     try {
-      // If we already have a suggested answer, use it
       if (suggestedAnswer) {
         return suggestedAnswer.text;
       }
       
-      // Otherwise, build the previous Q&A chain up to the current question
       const questionHistory: QuestionHistoryItem[] = [];
       const collectHistory = (n: QANode) => {
         if (n.question !== `Prompt: ${prompt}`) {
@@ -981,7 +986,6 @@ export default function QnAPage() {
       const data = await response.json();
       console.log('Auto-populate response:', data);
       
-      // Return the suggestedAnswer text if it exists
       if (data.suggestedAnswer) {
         return data.suggestedAnswer;
       }
@@ -994,26 +998,22 @@ export default function QnAPage() {
   };
 
   const handleRestart = () => {
-    // Set loading state
     setIsLoading(true);
     setIsLoadingNextQuestion(true);
     
-    // Create new root node (Q0)
     const rootNode: QANode = {
       id: uuidv4(),
       question: `Prompt: ${prompt}`,
       children: [],
-      questionNumber: 0, // Explicitly set prompt as Q0
+      questionNumber: 0,
     };
     
-    // Reset all states
     setQaTree(rootNode);
     setQuestionCount(0);
     setCurrentNode(null);
     setAskedQuestions(new Set());
     setAskedTopics(new Set());
     
-    // Reset requirements document
     const initialRequirementsDoc: RequirementsDocument = {
       id: uuidv4(),
       prompt: prompt,
@@ -1047,10 +1047,8 @@ export default function QnAPage() {
     };
     setRequirementsDoc(initialRequirementsDoc);
     
-    // Generate first question (Q1)
     fetchQuestionsForNode(prompt, rootNode, [], 0, true).then(({ nodes: children }) => {
       if (children.length > 0) {
-        // Set first actual question as Q1
         children[0].questionNumber = 1;
         rootNode.children = children;
         setQaTree({ ...rootNode });
@@ -1072,10 +1070,8 @@ export default function QnAPage() {
     setIsGenerating(true);
     
     try {
-      // Update requirements one final time before showing preview
       await updateRequirements(currentNode?.id || null);
       
-      // Wait a bit to ensure requirements are updated
       await new Promise(resolve => setTimeout(resolve, 500));
       
     } catch (error) {
@@ -1089,23 +1085,19 @@ export default function QnAPage() {
   const extractAspectsFromAnswer = (answer: string): string[] => {
     const aspects: string[] = [];
     
-    // Split answer into sentences and clean them
     const sentences = answer.split(/[.!?]+/)
       .map(s => s.trim())
       .filter(Boolean);
     
     sentences.forEach(sentence => {
-      // Look for lists or enumerations with commas or 'and'
       if (sentence.includes(',') || /\band\b/.test(sentence)) {
         const items = sentence
           .split(/,|\band\b/)
           .map(item => item.trim().toLowerCase())
           .filter(Boolean)
-          // Filter out common connecting words and articles
           .filter(item => !['the', 'a', 'an', 'should', 'would', 'could', 'with'].includes(item));
         aspects.push(...items);
       } else {
-        // For single aspects, try to extract the key feature/concept
         const cleanedSentence = sentence.toLowerCase()
           .replace(/should|would|could|must|with|the|a|an/g, '')
           .trim();
@@ -1115,7 +1107,6 @@ export default function QnAPage() {
       }
     });
     
-    // Remove duplicates and very similar aspects
     const uniqueAspects = Array.from(new Set(aspects))
       .filter((aspect, index, self) => 
         !self.some((other, otherIndex) => 
@@ -1127,7 +1118,7 @@ export default function QnAPage() {
     return uniqueAspects.length > 0 ? uniqueAspects : ['basic_requirements'];
   };
 
-  // Add new helper function to get all nodes at a specific depth
+  // Helper: Get all nodes at a specific depth
   const getAllNodesAtDepth = (root: QANode, targetDepth: number): QANode[] => {
     const result: QANode[] = [];
     
@@ -1158,7 +1149,7 @@ export default function QnAPage() {
       <div className="py-2 px-6 bg-white border-b border-gray-200">
         <div className="flex justify-between items-center">
           <div className="text-sm text-gray-600">
-            Questions: {questionCount}{settings?.maxQuestions ? ` / ${settings.maxQuestions}` : ''}
+            Questions: {questionCount}{settings?.maxQuestions ?  ` / ${settings.maxQuestions}` : ''}
           </div>
           <div className="text-sm text-gray-600">
             Mode: {settings?.traversalMode === 'dfs' ? 'Depth-First' : 'Breadth-First'}
