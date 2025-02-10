@@ -239,7 +239,44 @@ export default function QnAPage() {
           })
           .flat()
       );
-      
+
+      // In BFS mode at Level 2, check if current Level 1 node has enough children
+      if (currentDepth === 2) {
+        const currentLevel1Node = findParentNode(qaTree!, node);
+        const hasEnoughChildren = currentLevel1Node && 
+          currentLevel1Node.children.length >= Math.min(3, extractAspectsFromAnswer(currentLevel1Node.answer || '').length);
+
+        if (hasEnoughChildren) {
+          // Get all Level 1 nodes
+          const level1Nodes = qaTree!.children;
+          
+          // Find the next Level 1 node that needs children
+          const nextLevel1WithoutChildren = level1Nodes.find(l1Node => 
+            l1Node !== currentLevel1Node && // Not current Level 1
+            l1Node.answer && // Has an answer
+            l1Node.children.length < Math.min(3, extractAspectsFromAnswer(l1Node.answer).length) // Needs more children
+          );
+
+          if (nextLevel1WithoutChildren) {
+            // Generate a child question for the next Level 1 node
+            const nodeHistory = getAllAnsweredQuestions(nextLevel1WithoutChildren);
+            const { nodes: newChildren } = await fetchQuestionsForNode(
+              prompt,
+              nextLevel1WithoutChildren,
+              nodeHistory,
+              2, // Level 2 depth
+              true
+            );
+            
+            if (newChildren.length > 0) {
+              newChildren[0].questionNumber = questionCount + 1;
+              nextLevel1WithoutChildren.children = [...nextLevel1WithoutChildren.children, ...newChildren];
+              return newChildren[0];
+            }
+          }
+        }
+      }
+
       // Build question history for current level
       const levelHistory: QuestionHistoryItem[] = currentLevelNodes
         .filter(n => n.answer)
@@ -290,32 +327,107 @@ export default function QnAPage() {
       // If all current level questions are answered and we have enough coverage, try to go deeper
       if (allCurrentLevelAnswered && 
           (isTopLevel ? hasEnoughTopLevelQuestions : currentLevelNodes.length >= 2)) {
-        // Find the first answered node that doesn't have children yet
-        for (const sibling of currentLevelNodes) {
-          if (sibling.answer && sibling.children.length === 0) {
-            const siblingHistory = levelHistory.filter(h => 
-              extractTopics(h.question).some(t => 
-                extractTopics(sibling.question).includes(t)
-              )
-            );
-            
+        
+        // For BFS, we need to ensure all nodes at the current level across all branches have been explored
+        // before going deeper
+        const allNodesAtCurrentDepth = getAllNodesAtDepth(qaTree!, currentDepth);
+        const allNodesAtCurrentDepthAnswered = allNodesAtCurrentDepth.every(n => n.answer);
+        
+        // Check if each node at current depth has enough children based on its aspects
+        const allNodesHaveEnoughChildren = allNodesAtCurrentDepth.every(n => {
+          if (!n.answer) return true; // Skip unanswered nodes
+          const aspects = extractAspectsFromAnswer(n.answer);
+          return n.children.length >= Math.min(3, aspects.length); // Each node should have 2-3 children based on its aspects
+        });
+
+        // Only proceed deeper if all nodes at current depth are properly explored
+        if (allNodesAtCurrentDepthAnswered && allNodesHaveEnoughChildren) {
+          // Find the first Level N node that needs children
+          const nextNodeNeedingChildren = allNodesAtCurrentDepth.find(n => 
+            n.answer && // Has an answer
+            n.children.length < Math.min(3, extractAspectsFromAnswer(n.answer).length) // Needs more children
+          );
+
+          if (nextNodeNeedingChildren) {
+            // Generate children for this node
+            const nodeHistory = getAllAnsweredQuestions(nextNodeNeedingChildren);
             const { nodes: children } = await fetchQuestionsForNode(
               prompt,
-              sibling,
-              siblingHistory,
+              nextNodeNeedingChildren,
+              nodeHistory,
               currentDepth + 1,
               true
             );
             
             if (children.length > 0) {
               children[0].questionNumber = questionCount + 1;
-              sibling.children = children;
+              nextNodeNeedingChildren.children = [...nextNodeNeedingChildren.children, ...children];
+              return children[0];
+            }
+          }
+
+          // If all nodes at current depth have enough children, start exploring the next depth
+          const allChildrenAtNextDepth = allNodesAtCurrentDepth.flatMap(n => n.children);
+          const unansweredChildAtNextDepth = allChildrenAtNextDepth.find(n => !n.answer);
+          
+          if (unansweredChildAtNextDepth) {
+            return unansweredChildAtNextDepth;
+          }
+          
+          // If all children are answered, find a node at next depth that needs its own children
+          const nextDepthNodeNeedingChildren = allChildrenAtNextDepth.find(n => 
+            n.answer && // Has an answer
+            n.children.length < Math.min(3, extractAspectsFromAnswer(n.answer).length) // Needs more children
+          );
+
+          if (nextDepthNodeNeedingChildren) {
+            const nodeHistory = getAllAnsweredQuestions(nextDepthNodeNeedingChildren);
+            const { nodes: children } = await fetchQuestionsForNode(
+              prompt,
+              nextDepthNodeNeedingChildren,
+              nodeHistory,
+              currentDepth + 2, // Going two levels deeper
+              true
+            );
+            
+            if (children.length > 0) {
+              children[0].questionNumber = questionCount + 1;
+              nextDepthNodeNeedingChildren.children = [...nextDepthNodeNeedingChildren.children, ...children];
+              return children[0];
+            }
+          }
+        } else {
+          // If not all nodes are explored at current depth, find the next unexplored node
+          const nextUnansweredNode = allNodesAtCurrentDepth.find(n => !n.answer);
+          if (nextUnansweredNode) {
+            return nextUnansweredNode;
+          }
+
+          // If all nodes are answered but some need more children, find the next one needing children
+          const nextNodeNeedingChildren = allNodesAtCurrentDepth.find(n => 
+            n.answer && // Has an answer
+            n.children.length < Math.min(3, extractAspectsFromAnswer(n.answer).length) // Needs more children
+          );
+
+          if (nextNodeNeedingChildren) {
+            const nodeHistory = getAllAnsweredQuestions(nextNodeNeedingChildren);
+            const { nodes: children } = await fetchQuestionsForNode(
+              prompt,
+              nextNodeNeedingChildren,
+              nodeHistory,
+              currentDepth + 1,
+              true
+            );
+            
+            if (children.length > 0) {
+              children[0].questionNumber = questionCount + 1;
+              nextNodeNeedingChildren.children = [...nextNodeNeedingChildren.children, ...children];
               return children[0];
             }
           }
         }
         
-        // If we couldn't go deeper, generate new Level 1 questions
+        // If we couldn't go deeper or find unexplored nodes, generate new Level 1 questions
         const rootHistory = getAllAnsweredQuestions(qaTree!);
         const { nodes: newTopLevel } = await fetchQuestionsForNode(
           prompt,
@@ -1013,6 +1125,24 @@ export default function QnAPage() {
       );
     
     return uniqueAspects.length > 0 ? uniqueAspects : ['basic_requirements'];
+  };
+
+  // Add new helper function to get all nodes at a specific depth
+  const getAllNodesAtDepth = (root: QANode, targetDepth: number): QANode[] => {
+    const result: QANode[] = [];
+    
+    const traverse = (node: QANode, currentDepth: number) => {
+      if (currentDepth === targetDepth) {
+        result.push(node);
+        return;
+      }
+      for (const child of node.children) {
+        traverse(child, currentDepth + 1);
+      }
+    };
+    
+    traverse(root, 0);
+    return result;
   };
 
   return (
