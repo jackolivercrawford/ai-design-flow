@@ -144,9 +144,25 @@ export default function QnAPage() {
           
           while (ancestor) {
             const ancestorParent = findParentNode(qaTree!, ancestor);
-            if (!ancestorParent) break;
+            if (!ancestorParent) {
+              // We've reached the root, generate new Level 1 questions
+              const rootHistory = getAllAnsweredQuestions(qaTree!);
+              const { nodes: newTopLevel } = await fetchQuestionsForNode(
+                prompt,
+                qaTree!,
+                rootHistory,
+                1,
+                true
+              );
+              
+              if (newTopLevel.length > 0) {
+                newTopLevel[0].questionNumber = questionCount + 1;
+                qaTree!.children = [...qaTree!.children, ...newTopLevel];
+                return newTopLevel[0];
+              }
+            }
             
-            const uncles = ancestorParent.children;
+            const uncles = ancestorParent?.children || [];
             const ancestorIndex = uncles.indexOf(ancestor);
             
             // If there are more siblings at this ancestor's level, use the next one
@@ -155,17 +171,48 @@ export default function QnAPage() {
             }
             
             previousNode = ancestor;
-            ancestor = ancestorParent;
+            ancestor = ancestorParent as QANode;  // Fix type assertion
           }
         }
       }
       
-      return null; // No more questions in this branch
+      // If we reach here, generate new Level 1 questions
+      const rootHistory = getAllAnsweredQuestions(qaTree!);
+      const { nodes: newTopLevel } = await fetchQuestionsForNode(
+        prompt,
+        qaTree!,
+        rootHistory,
+        1,
+        true
+      );
+      
+      if (newTopLevel.length > 0) {
+        newTopLevel[0].questionNumber = questionCount + 1;
+        qaTree!.children = [...qaTree!.children, ...newTopLevel];
+        return newTopLevel[0];
+      }
       
     } else {
       // BFS: Complete all questions at the current level before going deeper
       const parent = findParentNode(qaTree!, node);
-      if (!parent) return null;
+      if (!parent) {
+        // We're at the root, generate new Level 1 questions
+        const rootHistory = getAllAnsweredQuestions(qaTree!);
+        const { nodes: newTopLevel } = await fetchQuestionsForNode(
+          prompt,
+          qaTree!,
+          rootHistory,
+          1,
+          true
+        );
+        
+        if (newTopLevel.length > 0) {
+          newTopLevel[0].questionNumber = questionCount + 1;
+          qaTree!.children = [...qaTree!.children, ...newTopLevel];
+          return newTopLevel[0];
+        }
+        return null;
+      }
       
       // Get all nodes at the current level
       const currentLevelNodes = parent.children;
@@ -180,16 +227,27 @@ export default function QnAPage() {
       // Get aspects already covered by existing siblings
       const coveredAspects = new Set(
         currentLevelNodes
-          .map(n => extractTopics(n.question))
+          .filter(n => n.answer) // Only consider answered questions
+          .map(n => {
+            const topics = extractTopics(n.question);
+            // Also check if the question directly references parent aspects
+            return topics.filter(topic => 
+              parentAspects.some(aspect => 
+                topic.includes(aspect) || aspect.includes(topic)
+              )
+            );
+          })
           .flat()
       );
       
       // Build question history for current level
-      const levelHistory: QuestionHistoryItem[] = currentLevelNodes.map(n => ({
-        question: n.question,
-        answer: n.answer,
-        topics: extractTopics(n.question)
-      }));
+      const levelHistory: QuestionHistoryItem[] = currentLevelNodes
+        .filter(n => n.answer)
+        .map(n => ({
+          question: n.question,
+          answer: n.answer,
+          topics: extractTopics(n.question)
+        }));
       
       // Check if all nodes at current level are answered
       const allCurrentLevelAnswered = currentLevelNodes.every(n => n.answer);
@@ -203,18 +261,17 @@ export default function QnAPage() {
       const isTopLevel = currentDepth === 1;
       const uncoveredAspects = parentAspects.filter(aspect => !coveredAspects.has(aspect));
       const hasEnoughTopLevelQuestions = isTopLevel && currentLevelNodes.length >= 4;
+      const hasEnoughSiblingsForLevel = !isTopLevel && currentLevelNodes.length >= 3;
       
       const shouldGenerateMoreSiblings = 
-        // At top level, aim for 4-5 questions unless we have good coverage
+        // At top level, generate more if we don't have enough questions AND have uncovered aspects
         (isTopLevel && !hasEnoughTopLevelQuestions && uncoveredAspects.length > 0) ||
-        // At other levels, ensure we have 2-3 questions per parent aspect
-        (!isTopLevel && currentLevelNodes.length < 2 * parentAspects.length) ||
-        // Or if there are critical uncovered aspects
-        (!hasEnoughTopLevelQuestions && uncoveredAspects.length > 0);
+        // At other levels, only generate more if we have uncovered aspects AND haven't hit the sibling limit
+        (!isTopLevel && uncoveredAspects.length > 0 && !hasEnoughSiblingsForLevel);
 
-      // Only try to generate new siblings if we haven't completed the current level
+      // Try to generate new siblings if needed
       if (shouldGenerateMoreSiblings) {
-        const { nodes: newSiblings, shouldStopBranch } = await fetchQuestionsForNode(
+        const { nodes: newSiblings } = await fetchQuestionsForNode(
           prompt,
           parent,
           levelHistory,
@@ -223,21 +280,16 @@ export default function QnAPage() {
           uncoveredAspects
         );
         
-        if (!shouldStopBranch && newSiblings.length > 0) {
+        if (newSiblings.length > 0) {
           newSiblings[0].questionNumber = questionCount + 1;
           parent.children = [...currentLevelNodes, ...newSiblings];
           return newSiblings[0];
         }
       }
       
-      // Move deeper if:
-      // 1. All current level questions are answered
-      // 2. We have enough coverage at top level (4-5 questions)
-      // 3. We have 2-3 questions per aspect at other levels
-      // 4. No critical uncovered aspects remain
+      // If all current level questions are answered and we have enough coverage, try to go deeper
       if (allCurrentLevelAnswered && 
-          (isTopLevel ? hasEnoughTopLevelQuestions : currentLevelNodes.length >= 2 * parentAspects.length) &&
-          uncoveredAspects.length === 0) {
+          (isTopLevel ? hasEnoughTopLevelQuestions : currentLevelNodes.length >= 2)) {
         // Find the first answered node that doesn't have children yet
         for (const sibling of currentLevelNodes) {
           if (sibling.answer && sibling.children.length === 0) {
@@ -247,7 +299,7 @@ export default function QnAPage() {
               )
             );
             
-            const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(
+            const { nodes: children } = await fetchQuestionsForNode(
               prompt,
               sibling,
               siblingHistory,
@@ -255,17 +307,66 @@ export default function QnAPage() {
               true
             );
             
-            if (!shouldStopBranch && children.length > 0) {
+            if (children.length > 0) {
               children[0].questionNumber = questionCount + 1;
               sibling.children = children;
               return children[0];
             }
           }
         }
+        
+        // If we couldn't go deeper, generate new Level 1 questions
+        const rootHistory = getAllAnsweredQuestions(qaTree!);
+        const { nodes: newTopLevel } = await fetchQuestionsForNode(
+          prompt,
+          qaTree!,
+          rootHistory,
+          1,
+          true
+        );
+        
+        if (newTopLevel.length > 0) {
+          newTopLevel[0].questionNumber = questionCount + 1;
+          qaTree!.children = [...qaTree!.children, ...newTopLevel];
+          return newTopLevel[0];
+        }
       }
-      
-      return null; // No more questions at this level or deeper
     }
+    
+    // If we reach here, try generating new Level 1 questions as a fallback
+    const rootHistory = getAllAnsweredQuestions(qaTree!);
+    const { nodes: newTopLevel } = await fetchQuestionsForNode(
+      prompt,
+      qaTree!,
+      rootHistory,
+      1,
+      true
+    );
+    
+    if (newTopLevel.length > 0) {
+      newTopLevel[0].questionNumber = questionCount + 1;
+      qaTree!.children = [...qaTree!.children, ...newTopLevel];
+      return newTopLevel[0];
+    }
+    
+    return null; // This should never be reached in practice
+  };
+
+  // Helper: Get all answered questions from the tree
+  const getAllAnsweredQuestions = (root: QANode): QuestionHistoryItem[] => {
+    const history: QuestionHistoryItem[] = [];
+    const traverse = (node: QANode) => {
+      if (node.question !== `Prompt: ${prompt}` && node.answer) {
+        history.push({
+          question: node.question,
+          answer: node.answer,
+          topics: extractTopics(node.question)
+        });
+      }
+      node.children.forEach(traverse);
+    };
+    traverse(root);
+    return history;
   };
 
   // Helper: Get the depth of a node in the tree
@@ -876,25 +977,42 @@ export default function QnAPage() {
   const extractAspectsFromAnswer = (answer: string): string[] => {
     const aspects: string[] = [];
     
-    // Split answer into sentences
-    const sentences = answer.split(/[.!?]+/).map(s => s.trim()).filter(Boolean);
+    // Split answer into sentences and clean them
+    const sentences = answer.split(/[.!?]+/)
+      .map(s => s.trim())
+      .filter(Boolean);
     
-    // Look for key phrases that indicate different aspects
     sentences.forEach(sentence => {
-      // Look for lists or enumerations
+      // Look for lists or enumerations with commas or 'and'
       if (sentence.includes(',') || /\band\b/.test(sentence)) {
         const items = sentence
           .split(/,|\band\b/)
           .map(item => item.trim().toLowerCase())
-          .filter(Boolean);
+          .filter(Boolean)
+          // Filter out common connecting words and articles
+          .filter(item => !['the', 'a', 'an', 'should', 'would', 'could', 'with'].includes(item));
         aspects.push(...items);
       } else {
-        // Single aspect in the sentence
-        aspects.push(sentence.toLowerCase());
+        // For single aspects, try to extract the key feature/concept
+        const cleanedSentence = sentence.toLowerCase()
+          .replace(/should|would|could|must|with|the|a|an/g, '')
+          .trim();
+        if (cleanedSentence) {
+          aspects.push(cleanedSentence);
+        }
       }
     });
     
-    return aspects.length > 0 ? aspects : ['basic_requirements'];
+    // Remove duplicates and very similar aspects
+    const uniqueAspects = Array.from(new Set(aspects))
+      .filter((aspect, index, self) => 
+        !self.some((other, otherIndex) => 
+          index !== otherIndex && 
+          (other.includes(aspect) || aspect.includes(other))
+        )
+      );
+    
+    return uniqueAspects.length > 0 ? uniqueAspects : ['basic_requirements'];
   };
 
   return (

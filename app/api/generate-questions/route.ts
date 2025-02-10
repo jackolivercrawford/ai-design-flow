@@ -125,22 +125,45 @@ Follow these guidelines:
    ${traversalMode === 'bfs' 
      ? `BFS Guidelines:
         - CRITICAL: At Level 1 (top level), aim for 4-5 comprehensive questions that cover the main aspects
-        - Maximum depth is 5 levels, but can be less if topics are fully explored
-        - When all levels and siblings are exhausted, return to Level 1 with new aspects
-        
+        - For Level 2+, each child question MUST directly reference and explore a specific aspect from its parent's answer
+        - Each sibling at the same level should focus on a different aspect from the parent's answer
+        - Example progression:
+          Parent Q1: "What are the core user flows and functional requirements?"
+          Parent A1: "The interface should offer search, filtering, and zoom levels..."
+          Valid Child Q5: "What specific search capabilities should be implemented?"
+          Valid Child Q6: "What filtering options should be available to users?"
+          Valid Child Q7: "How should the zoom level functionality work?"
+
         Level Structure and Progression:
         - Level 1 (4-5 questions): Core requirements and fundamental aspects
-          Example: "What is the primary purpose?", "Who are the target users?"
+          Example: "What are the core user flows?", "What accessibility features are needed?"
         
-        - Level 2 (2-3 per Level 1 answer): Detailed exploration of each Level 1 aspect
-          Example: If Level 1 answer mentions "need user profiles and content management":
-          * "What specific information should user profiles contain?"
-          * "What content management capabilities are required?"
+        - Level 2 (1 question per major aspect in parent's answer): Direct exploration of parent aspects
+          Example: If Level 1 answer mentions "search, filtering, and zoom":
+          * Q5 explores search
+          * Q6 explores filtering
+          * Q7 explores zoom
         
-        - Level 3+ (2-3 per parent aspect): Implementation details and specific requirements
-          * Level 3: Technical specifications and feature details
-          * Level 4: Edge cases and error handling
-          * Level 5: Final refinements and polish
+        - Level 3+ (2-3 questions per parent aspect): Implementation details
+          Example: If parent answer about search mentions "real-time search and filters":
+          * "How should real-time search results be displayed?"
+          * "What search result filtering options are needed?"
+
+        Aspect Coverage Rules:
+        1. Each child question MUST:
+           * Directly reference a specific aspect from parent's answer
+           * Use similar terminology as the parent's answer
+           * Ask for more specific details about that aspect
+        
+        2. Sibling questions MUST:
+           * Each focus on a different aspect from parent's answer
+           * Not overlap in their focus areas
+           * Together cover all major aspects mentioned in parent's answer
+
+        3. Moving Deeper Rules:
+           * Only move deeper when all aspects of parent's answer are covered
+           * Each deeper question should make the parent aspect more specific
+           * Maintain clear topic lineage from Level 1 to current level
         
         Cycling Behavior:
         1. When a branch is fully explored (reached max depth or no more meaningful questions):
