@@ -1345,7 +1345,6 @@ export default function QnAPage() {
         isOpen={isPreviewOpen}
         onClose={() => setIsPreviewOpen(false)}
         requirementsDoc={requirementsDoc!}
-        isGenerating={isGenerating}
         qaTree={qaTree}
         onVersionRestore={handleVersionRestore}
       />

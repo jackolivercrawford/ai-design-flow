@@ -19,10 +19,7 @@ interface LivePreviewProps {
     'base-200': string;
     'base-300': string;
     'base-content': string;
-    info: string;
-    success: string;
-    warning: string;
-    error: string;
+    [key: string]: string;
   };
 }
 
@@ -172,12 +169,6 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
               --b2: ${hexToHSL(colorScheme['base-200'])} !important;
               --b3: ${hexToHSL(colorScheme['base-300'])} !important;
               --bc: ${hexToHSL(colorScheme['base-content'])} !important;
-              
-              /* State colors */
-              --in: ${hexToHSL(colorScheme.info)} !important;
-              --su: ${hexToHSL(colorScheme.success)} !important;
-              --wa: ${hexToHSL(colorScheme.warning)} !important;
-              --er: ${hexToHSL(colorScheme.error)} !important;
             }
           </style>
         `

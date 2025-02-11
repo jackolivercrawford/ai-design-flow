@@ -8,10 +8,28 @@ interface CanvasTreeProps {
   isRoot?: boolean;
 }
 
+const getQuestionColor = (depth: number): string => {
+  switch (depth) {
+    case 1:
+      return 'text-red-600';
+    case 2:
+      return 'text-orange-500';
+    case 3:
+      return 'text-yellow-500';
+    case 4:
+      return 'text-green-600';
+    case 5:
+      return 'text-blue-600';
+    default:
+      return 'text-gray-600';
+  }
+};
+
 const CanvasTree: React.FC<CanvasTreeProps> = ({ node, depth = 0, isRoot = true }) => {
   if (!node) return null;
 
   const isPromptNode = node.question.startsWith('Prompt:');
+  const questionColor = getQuestionColor(depth);
 
   return (
     <div style={{ marginLeft: depth * 16 }} className="mb-4">
@@ -21,14 +39,14 @@ const CanvasTree: React.FC<CanvasTreeProps> = ({ node, depth = 0, isRoot = true 
             node.question
           ) : (
             <>
-              <span className="text-blue-600 font-semibold">Q{node.questionNumber}: </span>
+              <span className={`${questionColor} font-semibold`}>Q{node.questionNumber}: </span>
               {node.question}
             </>
           )}
         </p>
         {!isPromptNode && node.answer && (
           <p className="text-gray-800 mt-1">
-            <span className="text-blue-600 font-semibold">A{node.questionNumber}: </span>
+            <span className={`${questionColor} font-semibold`}>A{node.questionNumber}: </span>
             {node.answer}
           </p>
         )}

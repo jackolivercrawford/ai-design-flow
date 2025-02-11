@@ -25,10 +25,6 @@ interface MockupData {
     'base-200': string;
     'base-300': string;
     'base-content': string;
-    info: string;
-    success: string;
-    warning: string;
-    error: string;
     [key: string]: string; // Allow string indexing for dynamic access
   };
   components: string[];
@@ -40,7 +36,6 @@ interface PreviewPanelProps {
   isOpen: boolean;
   onClose: () => void;
   requirementsDoc: RequirementsDocument;
-  isGenerating: boolean;
   qaTree: any;
   onVersionRestore?: (version: MockupVersion) => void;
 }
@@ -60,11 +55,7 @@ const ensureCompleteColorScheme = (version: MockupVersion): MockupVersion => {
     'base-100': '#FFFFFF',
     'base-200': '#F3F4F6',
     'base-300': '#E5E7EB',
-    'base-content': '#1F2937',
-    'info': '#3ABFF8',
-    'success': '#36D399',
-    'warning': '#FBBD23',
-    'error': '#F87272'
+    'base-content': '#1F2937'
   };
 
   return {
@@ -83,7 +74,6 @@ export default function PreviewPanel({
   isOpen,
   onClose,
   requirementsDoc,
-  isGenerating,
   qaTree,
   onVersionRestore
 }: PreviewPanelProps) {
@@ -92,8 +82,7 @@ export default function PreviewPanel({
   const [isMockupLoading, setIsMockupLoading] = useState(false);
   const [versions, setVersions] = useState<MockupVersion[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<MockupVersion | null>(null);
-  const [isCompareMode, setIsCompareMode] = useState(false);
-  const [compareVersion, setCompareVersion] = useState<MockupVersion | null>(null);
+  const [activeVersion, setActiveVersion] = useState<MockupVersion | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -101,22 +90,43 @@ export default function PreviewPanel({
     try {
       const storedVersions = localStorage.getItem('mockupVersions');
       if (storedVersions) {
-        setVersions(JSON.parse(storedVersions));
+        const parsedVersions = JSON.parse(storedVersions);
+        setVersions(parsedVersions);
+        // Set the most recent version as active if it exists
+        if (parsedVersions.length > 0) {
+          setActiveVersion(parsedVersions[parsedVersions.length - 1]);
+        }
+      }
+
+      // Load current mockup state
+      const currentMockup = localStorage.getItem('currentMockup');
+      if (currentMockup) {
+        setMockupData(JSON.parse(currentMockup));
       }
     } catch (error) {
-      console.error('Error loading versions:', error);
+      console.error('Error loading data:', error);
     }
   }, []);
 
-  useEffect(() => {
-    if (activeTab === 'mockup' && !mockupData && !isMockupLoading && !error) {
-      generateMockup();
-    }
-  }, [activeTab, mockupData, isMockupLoading, error]);
-
-  const generateMockup = async () => {
+  const generateMockup = async (saveCurrentVersion: boolean = false) => {
     setIsMockupLoading(true);
     setError(null);
+
+    // If requested, save current version before generating new one
+    if (saveCurrentVersion && mockupData) {
+      const currentVersion: MockupVersion = {
+        id: uuidv4(),
+        timestamp: new Date().toISOString(),
+        qaTree,
+        requirementsDoc,
+        mockupData
+      };
+
+      const updatedVersions = [...versions, currentVersion];
+      setVersions(updatedVersions);
+      localStorage.setItem('mockupVersions', JSON.stringify(updatedVersions));
+    }
+
     try {
       const response = await fetch('/api/generate-mockup', {
         method: 'POST',
@@ -132,11 +142,13 @@ export default function PreviewPanel({
       const data = await response.json();
       
       // Validate mockup data structure
-      if (!data.code || !data.colorScheme || !data.components || !data.features || !data.nextSteps) {
+      if (!data.code || !data.components || !data.features || !data.nextSteps) {
         throw new Error('Invalid mockup data received');
       }
 
       setMockupData(data);
+      // Save current mockup state
+      localStorage.setItem('currentMockup', JSON.stringify(data));
 
       // Create new version
       const newVersion: MockupVersion = {
@@ -151,6 +163,10 @@ export default function PreviewPanel({
       const updatedVersions = [...versions, newVersion];
       setVersions(updatedVersions);
       localStorage.setItem('mockupVersions', JSON.stringify(updatedVersions));
+      
+      // Set as active version and clear selected version
+      setActiveVersion(newVersion);
+      setSelectedVersion(null);
 
     } catch (error) {
       console.error('Error generating mockup:', error);
@@ -161,20 +177,27 @@ export default function PreviewPanel({
   };
 
   const handleVersionSelect = (version: MockupVersion) => {
-    const completeVersion = ensureCompleteColorScheme(version);
-    setSelectedVersion(completeVersion);
-    setMockupData(completeVersion.mockupData);
-  };
-
-  const handleVersionRestore = (version: MockupVersion) => {
-    if (onVersionRestore) {
-      onVersionRestore(version);
+    if (version.id === activeVersion?.id) {
+      // If clicking the active version, just toggle selection
+      setSelectedVersion(selectedVersion?.id === version.id ? null : version);
+    } else {
+      // If clicking a different version, select it
+      setSelectedVersion(version);
     }
   };
 
-  const handleCompareSelect = (version: MockupVersion) => {
-    setCompareVersion(version);
-    setIsCompareMode(true);
+  const handleVersionRestore = (version: MockupVersion) => {
+    const completeVersion = ensureCompleteColorScheme(version);
+    setMockupData(completeVersion.mockupData);
+    setActiveVersion(completeVersion);
+    setSelectedVersion(null);
+    // Save restored mockup as current
+    localStorage.setItem('currentMockup', JSON.stringify(completeVersion.mockupData));
+    setActiveTab('mockup');
+    
+    if (onVersionRestore) {
+      onVersionRestore(version);
+    }
   };
 
   const handleCopyCode = () => {
@@ -215,11 +238,252 @@ export default function PreviewPanel({
     }
   };
 
+  const renderContent = () => {
+    if (activeTab === 'mockup') {
+      return (
+        <>
+          {/* Live Preview (Left Side) */}
+          <div className="w-2/3 h-full border-r border-gray-200 bg-gray-50 overflow-auto">
+            <div className="h-full">
+              {mockupData ? (
+                <LivePreview code={mockupData.code} colorScheme={mockupData.colorScheme} />
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-500">
+                  Click "Generate Mockup" to create a mockup based on your requirements
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Details Panel (Right Side) */}
+          <div className="w-1/3 h-full overflow-auto">
+            <div className="p-6">
+              {error ? (
+                <div className="p-6 text-center">
+                  <div className="text-red-600 mb-4">{error}</div>
+                  <button
+                    onClick={() => {
+                      setError(null);
+                      generateMockup();
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              ) : isMockupLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="flex flex-col items-center space-y-4">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                    <p className="text-gray-600">
+                      Generating mockup...
+                    </p>
+                  </div>
+                </div>
+              ) : mockupData ? (
+                <div className="space-y-8">
+                  {/* Code */}
+                  <div>
+                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Generated Code</h2>
+                    <div className="relative">
+                      <pre className="bg-gray-50 p-4 rounded-lg overflow-auto text-sm max-h-96">
+                        <code className="text-gray-800">{mockupData.code}</code>
+                      </pre>
+                      <button
+                        onClick={handleCopyCode}
+                        className="absolute top-2 right-2 p-2 bg-white rounded-md shadow-sm hover:bg-gray-50"
+                        title="Copy code"
+                      >
+                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Components */}
+                  <div>
+                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Components</h2>
+                    <ul className="list-disc list-inside space-y-2">
+                      {mockupData.components.map((component, index) => (
+                        <li key={index} className="text-gray-700">{component}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Features */}
+                  <div>
+                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Implemented Features</h2>
+                    <ul className="list-disc list-inside space-y-2">
+                      {mockupData.features.map((feature, index) => (
+                        <li key={index} className="text-gray-700">{feature}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Next Steps */}
+                  <div>
+                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Next Steps</h2>
+                    <ul className="list-disc list-inside space-y-2">
+                      {mockupData.nextSteps.map((step, index) => (
+                        <li key={index} className="text-gray-700">{step}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    if (activeTab === 'versions') {
+      return (
+        <>
+          {/* Version History (Left Side) */}
+          <div className="w-1/3 h-full border-r border-gray-200 overflow-auto">
+            <div className="p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Version History</h2>
+              <div className="space-y-4">
+                {[...versions].reverse().map((version) => (
+                  <div
+                    key={version.id}
+                    className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                      version.id === activeVersion?.id
+                        ? 'border-green-500 bg-green-50'
+                        : version.id === selectedVersion?.id
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-blue-300'
+                    }`}
+                    onClick={() => handleVersionSelect(version)}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-gray-900">
+                            Version from {new Date(version.timestamp).toLocaleString()}
+                          </p>
+                          {version.id === activeVersion?.id && (
+                            <span className="px-2 py-1 bg-green-100 text-green-800 text-sm rounded-full">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">
+                          {version.requirementsDoc.categories.basicNeeds.requirements.length} requirements,{' '}
+                          {version.mockupData.components.length} components
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Version Preview (Right Side) */}
+          <div className="w-2/3 h-full overflow-auto">
+            {(selectedVersion || activeVersion) ? (
+              <div className="h-full">
+                <LivePreview 
+                  code={(selectedVersion || activeVersion)!.mockupData.code} 
+                  colorScheme={(selectedVersion || activeVersion)!.mockupData.colorScheme} 
+                />
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                No versions available
+              </div>
+            )}
+          </div>
+        </>
+      );
+    }
+
+    // Requirements tab content
+    return (
+      <div className="w-full h-full overflow-auto">
+        <div className="p-6">
+          <div className="space-y-8">
+            <div className="prose max-w-none">
+              <h1 className="text-2xl font-bold text-gray-900 mb-4">
+                {requirementsDoc.prompt}
+              </h1>
+              <p className="text-sm text-gray-500 mb-8">
+                Last updated: {new Date(requirementsDoc.lastUpdated).toLocaleString()}
+              </p>
+            </div>
+
+            {Object.entries(requirementsDoc.categories).map(([key, category]) => (
+              <div key={key} className="space-y-4">
+                <h2 className="text-xl font-semibold text-gray-900">
+                  {category.title}
+                </h2>
+                {category.requirements && category.requirements.length > 0 ? (
+                  <ul className="space-y-3">
+                    {[...category.requirements]
+                      .sort((a, b) => {
+                        const priorityOrder: Record<string, number> = { 'high': 0, 'medium': 1, 'low': 2 };
+                        const aPriority = (a.priority && priorityOrder[a.priority.toLowerCase()]) ?? 1;
+                        const bPriority = (b.priority && priorityOrder[b.priority.toLowerCase()]) ?? 1;
+                        return aPriority - bPriority;
+                      })
+                      .map((req, index) => (
+                      <li
+                        key={req.id || `${key}-${index}-${req.text}`}
+                        className="bg-white rounded-lg border border-gray-200 p-4"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <p className="text-gray-900">{req.text}</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {req.priority && (
+                                <span className={`px-2 py-1 rounded-full text-xs ${
+                                  req.priority === 'high'
+                                    ? 'bg-red-100 text-red-800'
+                                    : req.priority === 'medium'
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : 'bg-green-100 text-green-800'
+                                }`}>
+                                  {req.priority} priority
+                                </span>
+                              )}
+                              {req.category && (
+                                <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                                  {req.category}
+                                </span>
+                              )}
+                              {req.tags?.map((tag, tagIndex) => (
+                                <span
+                                  key={`${req.id || index}-tag-${tagIndex}`}
+                                  className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-gray-500 italic">No requirements in {category.title}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-end">
-      <div className={`${isCompareMode ? 'w-4/5' : 'w-full'} bg-white h-full shadow-lg flex flex-col`}>
+      <div className="w-full bg-white h-full shadow-lg flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-gray-200 flex justify-between items-center">
           <div className="flex space-x-4">
@@ -255,28 +519,24 @@ export default function PreviewPanel({
             </button>
           </div>
           <div className="flex space-x-4">
-            {activeTab === 'versions' && selectedVersion && (
-              <>
-                <button
-                  onClick={() => handleVersionRestore(selectedVersion)}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                >
-                  Restore Version
-                </button>
-                <button
-                  onClick={() => handleCompareSelect(selectedVersion)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Compare
-                </button>
-              </>
+            {activeTab === 'mockup' && (
+              <button
+                onClick={() => generateMockup(!!mockupData)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                {versions.length > 0 ? 'Regenerate Mockup' : 'Generate Mockup'}
+              </button>
+            )}
+            {activeTab === 'versions' && selectedVersion && selectedVersion.id !== activeVersion?.id && (
+              <button
+                onClick={() => handleVersionRestore(selectedVersion)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                Restore Version
+              </button>
             )}
             <button
-              onClick={() => {
-                setIsCompareMode(false);
-                setCompareVersion(null);
-                onClose();
-              }}
+              onClick={onClose}
               className="text-gray-500 hover:text-gray-700"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -288,477 +548,7 @@ export default function PreviewPanel({
 
         {/* Content */}
         <div className="flex-1 overflow-hidden flex">
-          {/* Live Preview (Left Side) */}
-          {activeTab === 'mockup' && mockupData && (
-            <div className="w-2/3 h-full border-r border-gray-200 bg-gray-50 overflow-auto">
-              <div className="h-full">
-                <LivePreview code={mockupData.code} colorScheme={mockupData.colorScheme} />
-              </div>
-            </div>
-          )}
-
-          {/* Details Panel (Right Side) */}
-          <div className={`${activeTab === 'mockup' && mockupData ? 'w-1/3' : 'w-full'} h-full overflow-auto`}>
-            <div className="p-6">
-              {error ? (
-                <div className="p-6 text-center">
-                  <div className="text-red-600 mb-4">{error}</div>
-                  <button
-                    onClick={() => {
-                      setError(null);
-                      generateMockup();
-                    }}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Try Again
-                  </button>
-                </div>
-              ) : isGenerating || isMockupLoading ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="flex flex-col items-center space-y-4">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                    <p className="text-gray-600">
-                      {isGenerating ? 'Generating preview...' : 'Generating mockup...'}
-                    </p>
-                  </div>
-                </div>
-              ) : activeTab === 'versions' ? (
-                <div className="p-6">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4">Version History</h2>
-                  <div className="space-y-4">
-                    {versions.map((version) => (
-                      <div
-                        key={version.id}
-                        className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                          selectedVersion?.id === version.id
-                            ? 'border-blue-500 bg-blue-50'
-                            : 'border-gray-200 hover:border-blue-300'
-                        }`}
-                        onClick={() => handleVersionSelect(version)}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-medium text-gray-900">
-                              Version from {new Date(version.timestamp).toLocaleString()}
-                            </p>
-                            <p className="text-sm text-gray-600 mt-1">
-                              {version.requirementsDoc.categories.basicNeeds.requirements.length} requirements,{' '}
-                              {version.mockupData.components.length} components
-                            </p>
-                          </div>
-                          {version.name && (
-                            <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">
-                              {version.name}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className={`flex ${isCompareMode ? 'space-x-4' : ''}`}>
-                  <div className={`${isCompareMode ? 'w-1/2' : 'w-full'}`}>
-                    {activeTab === 'requirements' ? (
-                      <div className="space-y-8">
-                        <div className="prose max-w-none">
-                          <h1 className="text-2xl font-bold text-gray-900 mb-4">
-                            {requirementsDoc.prompt}
-                          </h1>
-                          <p className="text-sm text-gray-500 mb-8">
-                            Last updated: {new Date(requirementsDoc.lastUpdated).toLocaleString()}
-                          </p>
-                        </div>
-
-                        {Object.entries(requirementsDoc.categories).map(([key, category]) => (
-                          <div key={key} className="space-y-4">
-                            <h2 className="text-xl font-semibold text-gray-900">
-                              {category.title}
-                            </h2>
-                            {category.requirements && category.requirements.length > 0 ? (
-                              <ul className="space-y-3">
-                                {[...category.requirements]
-                                  .sort((a, b) => {
-                                    const priorityOrder: Record<string, number> = { 'high': 0, 'medium': 1, 'low': 2 };
-                                    const aPriority = (a.priority && priorityOrder[a.priority.toLowerCase()]) ?? 1;
-                                    const bPriority = (b.priority && priorityOrder[b.priority.toLowerCase()]) ?? 1;
-                                    return aPriority - bPriority;
-                                  })
-                                  .map((req, index) => (
-                                  <li
-                                    key={req.id || `${key}-${index}-${req.text}`}
-                                    className="bg-white rounded-lg border border-gray-200 p-4"
-                                  >
-                                    <div className="flex items-start justify-between">
-                                      <div className="flex-1">
-                                        <p className="text-gray-900">{req.text}</p>
-                                        <div className="mt-2 flex flex-wrap gap-2">
-                                          {req.priority && (
-                                            <span className={`px-2 py-1 rounded-full text-xs ${
-                                              req.priority === 'high'
-                                                ? 'bg-red-100 text-red-800'
-                                                : req.priority === 'medium'
-                                                ? 'bg-yellow-100 text-yellow-800'
-                                                : 'bg-green-100 text-green-800'
-                                            }`}>
-                                              {req.priority} priority
-                                            </span>
-                                          )}
-                                          {req.category && (
-                                            <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                                              {req.category}
-                                            </span>
-                                          )}
-                                          {req.tags?.map((tag, tagIndex) => (
-                                            <span
-                                              key={`${req.id || index}-tag-${tagIndex}`}
-                                              className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800"
-                                            >
-                                              {tag}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <p className="text-gray-500 italic">No requirements in {category.title}</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : mockupData ? (
-                      <div className="space-y-8">
-                        {/* Color Scheme */}
-                        <div>
-                          <h2 className="text-xl font-semibold text-gray-900 mb-4">Color Scheme</h2>
-                          <div className="grid grid-cols-2 gap-6">
-                            {/* Primary Colors */}
-                            <div className="space-y-3">
-                              <h3 className="font-medium text-gray-900">Primary Colors</h3>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.primary }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['primary-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Primary (--p)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.primary}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['primary-focus'] }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['primary-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Focus (--pf)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['primary-focus']}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['primary-content'] }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme.primary }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Content (--pc)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['primary-content']}</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Secondary Colors */}
-                            <div className="space-y-3">
-                              <h3 className="font-medium text-gray-900">Secondary Colors</h3>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.secondary }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['secondary-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Secondary (--s)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.secondary}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['secondary-focus'] }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['secondary-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Focus (--sf)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['secondary-focus']}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['secondary-content'] }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme.secondary }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Content (--sc)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['secondary-content']}</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Accent Colors */}
-                            <div className="space-y-3">
-                              <h3 className="font-medium text-gray-900">Accent Colors</h3>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.accent }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['accent-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Accent (--a)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.accent}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['accent-focus'] }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['accent-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Focus (--af)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['accent-focus']}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['accent-content'] }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme.accent }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Content (--ac)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['accent-content']}</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Neutral Colors */}
-                            <div className="space-y-3">
-                              <h3 className="font-medium text-gray-900">Neutral Colors</h3>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.neutral }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['neutral-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Neutral (--n)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.neutral}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['neutral-focus'] }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['neutral-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Focus (--nf)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['neutral-focus']}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['neutral-content'] }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme.neutral }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Content (--nc)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['neutral-content']}</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Base Colors */}
-                            <div className="space-y-3">
-                              <h3 className="font-medium text-gray-900">Base Colors</h3>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['base-100'] }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Base 100 (--b1)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['base-100']}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['base-200'] }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Base 200 (--b2)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['base-200']}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['base-300'] }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Base 300 (--b3)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['base-300']}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme['base-content'] }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ backgroundColor: mockupData.colorScheme['base-100'], color: mockupData.colorScheme['base-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Content (--bc)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme['base-content']}</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* State Colors */}
-                            <div className="space-y-3">
-                              <h3 className="font-medium text-gray-900">State Colors</h3>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.info }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Info (--in)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.info}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.success }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Success (--su)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.success}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.warning }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Warning (--wa)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.warning}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <div className="w-10 h-10 rounded border border-gray-200 shadow-sm" style={{ backgroundColor: mockupData.colorScheme.error }}>
-                                  <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: mockupData.colorScheme['base-content'] }}>
-                                    Aa
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm text-gray-900">Error (--er)</span>
-                                  <span className="text-xs text-gray-500">{mockupData.colorScheme.error}</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Components */}
-                        <div>
-                          <h2 className="text-xl font-semibold text-gray-900 mb-4">Components</h2>
-                          <ul className="list-disc list-inside space-y-2">
-                            {mockupData.components.map((component, index) => (
-                              <li key={index} className="text-gray-700">{component}</li>
-                            ))}
-                          </ul>
-                        </div>
-
-                        {/* Features */}
-                        <div>
-                          <h2 className="text-xl font-semibold text-gray-900 mb-4">Implemented Features</h2>
-                          <ul className="list-disc list-inside space-y-2">
-                            {mockupData.features.map((feature, index) => (
-                              <li key={index} className="text-gray-700">{feature}</li>
-                            ))}
-                          </ul>
-                        </div>
-
-                        {/* Code */}
-                        <div>
-                          <h2 className="text-xl font-semibold text-gray-900 mb-4">Generated Code</h2>
-                          <div className="relative">
-                            <pre className="bg-gray-50 p-4 rounded-lg overflow-auto text-sm max-h-96">
-                              <code className="text-gray-800">{mockupData.code}</code>
-                            </pre>
-                            <button
-                              onClick={handleCopyCode}
-                              className="absolute top-2 right-2 p-2 bg-white rounded-md shadow-sm hover:bg-gray-50"
-                              title="Copy code"
-                            >
-                              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Next Steps */}
-                        <div>
-                          <h2 className="text-xl font-semibold text-gray-900 mb-4">Next Steps</h2>
-                          <ul className="list-disc list-inside space-y-2">
-                            {mockupData.nextSteps.map((step, index) => (
-                              <li key={index} className="text-gray-700">{step}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                  {isCompareMode && compareVersion && (
-                    <div className="w-1/2 p-6 border-l border-gray-200">
-                      <h2 className="text-xl font-semibold text-gray-900 mb-4">
-                        Comparing with version from {new Date(compareVersion.timestamp).toLocaleString()}
-                      </h2>
-                      {/* Render comparison content */}
-                      {activeTab === 'requirements' ? (
-                        <div className="space-y-8">
-                          {/* ... requirements comparison rendering ... */}
-                        </div>
-                      ) : (
-                        <div className="space-y-8">
-                          {/* ... mockup comparison rendering ... */}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          {renderContent()}
         </div>
 
         {/* Footer */}

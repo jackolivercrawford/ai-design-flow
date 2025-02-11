@@ -63,10 +63,6 @@ export interface MockupVersion {
       'base-200': string;
       'base-300': string;
       'base-content': string;
-      info: string;
-      success: string;
-      warning: string;
-      error: string;
       [key: string]: string;
     };
     components: string[];
