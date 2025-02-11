@@ -162,7 +162,7 @@ export default function QnAPage() {
             if (index >= 0 && index < siblings.length - 1) {
               return siblings[index + 1];
             }
-            // Only if there’s no next sibling, attempt to fetch new candidate siblings.
+            // Only if there's no next sibling, attempt to fetch new candidate siblings.
             // (This check prevents repeated sibling generation when one is already available.)
             if (siblings.length === 1) {
               const parentHistory = getAllAnsweredQuestions(parent);
@@ -174,7 +174,7 @@ export default function QnAPage() {
                 true
               );
               if (generatedSiblings.length > 0) {
-                // Append only new candidates that aren’t already present.
+                // Append only new candidates that aren't already present.
                 parent.children = [
                   ...parent.children,
                   ...generatedSiblings.filter(s => !parent.children.some(ex => ex.id === s.id))
@@ -713,16 +713,22 @@ export default function QnAPage() {
 
   const startAutomation = () => {
     console.log('startAutomation called - Setting isAutomating to true');
+    // Clear any existing timeouts first
     if (automationTimeoutRef.current) {
       clearTimeout(automationTimeoutRef.current);
       automationTimeoutRef.current = null;
     }
     setIsAutomating(true);
+    // If we have a current node and aren't loading, kick off automation immediately
+    if (currentNode && !isLoadingNextQuestion) {
+      automationTimeoutRef.current = setTimeout(runNextAutomatedStep, 500);
+    }
   };
 
   const stopAutomation = () => {
     console.log('stopAutomation called - Setting isAutomating to false');
     setIsAutomating(false);
+    // Always clean up timeout on stop
     if (automationTimeoutRef.current) {
       console.log('Clearing automation timeout');
       clearTimeout(automationTimeoutRef.current);
@@ -737,11 +743,20 @@ export default function QnAPage() {
       isLoadingNextQuestion,
     });
 
-    if (!isAutomating || !currentNode) {
-      console.log('Stopping automation - conditions not met:', {
-        isAutomating,
-        hasCurrentNode: !!currentNode,
-      });
+    // Clear any existing timeout first
+    if (automationTimeoutRef.current) {
+      clearTimeout(automationTimeoutRef.current);
+      automationTimeoutRef.current = null;
+    }
+
+    // Exit early if automation is off or we're in a loading state
+    if (!isAutomating || isLoadingNextQuestion) {
+      console.log('Automation is off or loading, not proceeding');
+      return;
+    }
+
+    if (!currentNode) {
+      console.log('No current node, stopping automation');
       stopAutomation();
       return;
     }
@@ -750,16 +765,25 @@ export default function QnAPage() {
       console.log('Getting suggested answer');
       const autoAnswer = await handleAutoPopulate();
 
-      if (autoAnswer && isAutomating) {
+      // Check if automation was stopped during the async operation
+      if (!isAutomating) {
+        console.log('Automation was turned off during answer generation');
+        return;
+      }
+
+      if (autoAnswer) {
         console.log('Got suggested answer, submitting after delay');
         await new Promise((resolve) => setTimeout(resolve, 500));
-        if (isAutomating) {
-          await handleAnswer(autoAnswer);
-        } else {
-          console.log('Automation stopped during delay, skipping answer submission');
+        
+        // Check automation state again after delay
+        if (!isAutomating) {
+          console.log('Automation was turned off during delay');
+          return;
         }
+
+        await handleAnswer(autoAnswer);
       } else {
-        console.log('No suggested answer available or automation stopped, stopping automation');
+        console.log('No suggested answer available, stopping automation');
         stopAutomation();
       }
     } catch (error) {
@@ -775,42 +799,43 @@ export default function QnAPage() {
       hasCurrentNode: !!currentNode,
     });
 
-    if (!isAutomating) {
-      if (automationTimeoutRef.current) {
-        clearTimeout(automationTimeoutRef.current);
-        automationTimeoutRef.current = null;
-      }
-      return;
-    }
-
-    if (!currentNode) {
-      stopAutomation();
-      return;
-    }
-
-    if (isLoadingNextQuestion) {
-      return;
-    }
-
     let isEffectActive = true;
-    (async () => {
-      try {
-        if (isEffectActive && isAutomating) {
-          await runNextAutomatedStep();
-        }
-      } catch (error) {
-        console.error('Error in automation effect:', error);
-        stopAutomation();
-      }
-    })();
 
-    return () => {
+    // Clean up function to handle unmounting or dependency changes
+    const cleanup = () => {
       isEffectActive = false;
       if (automationTimeoutRef.current) {
         clearTimeout(automationTimeoutRef.current);
         automationTimeoutRef.current = null;
       }
     };
+
+    // If automation is off or we're in a loading state, clean up and return
+    if (!isAutomating || isLoadingNextQuestion) {
+      cleanup();
+      return cleanup;
+    }
+
+    // If there's no current node, stop automation and clean up
+    if (!currentNode) {
+      stopAutomation();
+      cleanup();
+      return cleanup;
+    }
+
+    // Start automation with a slight delay
+    automationTimeoutRef.current = setTimeout(async () => {
+      if (isEffectActive && isAutomating && !isLoadingNextQuestion) {
+        try {
+          await runNextAutomatedStep();
+        } catch (error) {
+          console.error('Error in automation effect:', error);
+          stopAutomation();
+        }
+      }
+    }, 500);
+
+    return cleanup;
   }, [isAutomating, isLoadingNextQuestion, currentNode]);
 
   // -------------------- Save, Restart, and Version Functions --------------------
@@ -977,9 +1002,21 @@ export default function QnAPage() {
       console.log('Setting answer and updating requirements');
       currentNode.answer = answer;
       await updateRequirements(currentNode.id);
-      if (isAutomating) {
+      
+      // Store automation state before async operations
+      const wasAutomating = isAutomating;
+      
+      if (wasAutomating) {
         console.log('Getting next question (automation active)');
         const nextNode = await getNextQuestion(currentNode);
+        
+        // Check if automation was stopped during the async operation
+        if (!isAutomating) {
+          console.log('Automation was stopped during question generation');
+          setIsLoadingNextQuestion(false);
+          return;
+        }
+        
         if (nextNode) {
           if (!askedQuestions.has(nextNode.question)) {
             console.log('Setting new question');
@@ -989,13 +1026,13 @@ export default function QnAPage() {
             setQuestionCount(prev => prev + 1);
             setQaTree(prev => prev ? { ...prev } : prev);
             setIsInitialLoad(false);
+            
+            // Only schedule next step if automation is still active
             if (isAutomating) {
               if (automationTimeoutRef.current) {
                 clearTimeout(automationTimeoutRef.current);
               }
               automationTimeoutRef.current = setTimeout(runNextAutomatedStep, 1000);
-            } else {
-              console.log('Automation stopped during question generation');
             }
           } else {
             console.warn('Duplicate question detected:', nextNode.question);
