@@ -156,32 +156,40 @@ export default function QnAPage() {
           while (temp) {
             const parent = findParentNode(qaTree, temp);
             if (!parent) break;
-            // Force-generate new candidate siblings for the parent's children.
-            const parentHistory = getAllAnsweredQuestions(parent);
-            const { nodes: generatedSiblings } = await fetchQuestionsForNode(
-              prompt,
-              parent,
-              parentHistory,
-              getNodeDepth(parent),
-              true
-            );
-            // Append only new candidates (if not already present).
-            if (generatedSiblings.length > 0) {
-              parent.children = [
-                ...parent.children,
-                ...generatedSiblings.filter(s => !parent.children.some(ex => ex.id === s.id))
-              ];
-            }
             const siblings = parent.children;
-            if (parent && temp) {
-              const index = siblings.findIndex(n => temp?.id && n.id === temp.id);
-              if (index >= 0 && index < siblings.length - 1) {
-                return siblings[index + 1];
-              }
-              temp = parent;
+            const index = siblings.findIndex(n => n.id === temp!.id);
+            // First: if a next sibling already exists, return it.
+            if (index >= 0 && index < siblings.length - 1) {
+              return siblings[index + 1];
             }
+            // Only if there’s no next sibling, attempt to fetch new candidate siblings.
+            // (This check prevents repeated sibling generation when one is already available.)
+            if (siblings.length === 1) {
+              const parentHistory = getAllAnsweredQuestions(parent);
+              const { nodes: generatedSiblings } = await fetchQuestionsForNode(
+                prompt,
+                parent,
+                parentHistory,
+                getNodeDepth(parent),
+                true
+              );
+              if (generatedSiblings.length > 0) {
+                // Append only new candidates that aren’t already present.
+                parent.children = [
+                  ...parent.children,
+                  ...generatedSiblings.filter(s => !parent.children.some(ex => ex.id === s.id))
+                ];
+                // Check again if a next sibling now exists.
+                const newIndex = parent.children.findIndex(n => n.id === temp!.id);
+                if (newIndex >= 0 && newIndex < parent.children.length - 1) {
+                  return parent.children[newIndex + 1];
+                }
+              }
+            }
+            // If no next sibling is found, move up one level.
+            temp = parent;
           }
-          // If backtracking yields nothing, force generate new Level 1 questions.
+          // If backtracking through all levels fails, generate new Level 1 questions.
           const rootHistory = getAllAnsweredQuestions(qaTree!);
           const { nodes: newTopLevel, suggestedAnswer } = await fetchQuestionsForNode(
             prompt,
@@ -193,7 +201,11 @@ export default function QnAPage() {
           if (newTopLevel.length > 0) {
             newTopLevel[0].questionNumber = questionCount + 1;
             qaTree!.children = newTopLevel;
-            setSuggestedAnswer(suggestedAnswer ? { text: suggestedAnswer, confidence: 'medium', sourceReferences: [] } : null);
+            setSuggestedAnswer(
+              suggestedAnswer
+                ? { text: suggestedAnswer, confidence: 'medium', sourceReferences: [] }
+                : null
+            );
             return newTopLevel[0];
           }
           return null;
