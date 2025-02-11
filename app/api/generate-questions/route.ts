@@ -90,6 +90,7 @@ Use this information to:
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
+      temperature: 0.3,
       messages: [
         {
           role: 'system',
@@ -137,7 +138,7 @@ Return your response in this JSON format:
 ${
   parentContext
     ? `
-Current Parent Question Context:
+Current Parent Context:
 - Parent Question: "${parentContext.parentQuestion}"
 - Parent Answer: "${parentContext.parentAnswer}"
 - Parent Topics: ${JSON.stringify(parentContext.parentTopics)}
@@ -150,28 +151,34 @@ Current Parent Question Context:
 Extracted Parent Answer Subtopics:
 ${parentAnswerSubtopics.map((t) => `- ${t}`).join('\n')}
 
+IMPORTANT: The follow-up question MUST directly reference both the parent's question and its answer. For example, it should mention or quote key parts of:
+   • The parent's question: "${parentContext.parentQuestion}"
+   • The parent's answer: "${parentContext.parentAnswer}"
+This ensures that the generated question builds upon the specific details already provided.
+
 CRITICAL: The generated question MUST:
 1. Be more specific than the parent question.
 2. Focus on a specific aspect mentioned in the parent's answer (see subtopics above).
 3. Not repeat information already covered in the parent's answer.
 4. Not duplicate any topics that have already been addressed by siblings or previous questions.
 5. Ask for implementation details or specific requirements about that aspect.
+6. Directly reference both the parent's question and its answer.
 `
     : ''
 }
 
 // ------------------------------------------------------------
-// STRONGER CRITICAL RELEVANCE RULE - forces quoting a subtopic
+// STRONGER CRITICAL RELEVANCE RULE - forces quoting a subtopic and referencing both parent's question and answer
 // ------------------------------------------------------------
 CRITICAL RELEVANCE RULE:
 1. The new question MUST explicitly quote at least one exact phrase from the parent's answer in quotes 
    (e.g., "voice-activated controls" or "categorized floor directory").
 2. The new question MUST demand deeper detail or specific implementation guidelines for that phrase.
-3. If the parent’s answer already covers that phrase fully, the new question must explore edge cases, 
-   advanced features, or constraints related to it.
-4. The new question must NOT be fully answerable by the parent's answer alone; it must prompt for additional 
-   clarifications or deeper specifics.
+3. If the parent’s answer already covers that phrase fully, the new question must explore edge cases, advanced features, or constraints related to it.
+4. The new question must NOT be fully answerable by the parent's answer alone; it must prompt for additional clarifications or deeper specifics.
 5. Failure to quote the parent's exact phrase is not permitted for the new child question.
+6. The new question MUST explicitly reference both the parent's question and its answer (for example, by quoting key parts of each).
+7. Use the parent's question and answer as anchors to drive the follow-up inquiry.
 
 Follow these guidelines:
 1. Question Progression Levels:
@@ -349,11 +356,11 @@ Follow these guidelines:
            - NEVER move to siblings until current topic is complete.
 
         4. Question Depth Progression:
-           Level 1: High-level feature questions (exactly 4-5)
-           Level 2: Specific requirements (exactly 2-3 per parent)
-           Level 3: Technical implementation details (exactly 2-3 per parent)
-           Level 4: Edge cases (exactly 2-3 per parent)
-           Level 5: Optimizations (exactly 2-3 per parent)
+           Level 1: High-level feature questions (exactly 4-5).
+           Level 2: Specific requirements (Specific requirements (exactly 2-3 per parent).
+           Level 3: Technical implementation details (exactly 2-3 per parent).
+           Level 4: Edge cases (exactly 2-3 per parent).
+           Level 5: Performance optimization (exactly 2-3 per parent).
 
         Topic Lineage Rules:
         1. Each question MUST:
@@ -370,7 +377,7 @@ Follow these guidelines:
 
         3. Starting New Level 1 Questions:
            * Only after ALL current Level 1 branches are complete.
-           * Must cover completely different aspects than ALL previous Level 1s.
+           * Must cover completely different aspects than ALL previous Level 1 questions.
            * Maintain same level of importance as original Level 1s.
            * Example: If first set covered "navigation" and "search",
              second set might cover "performance" and "security".
