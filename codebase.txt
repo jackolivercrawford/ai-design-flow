@@ -481,7 +481,7 @@ Use this information to:
     console.log('Formatted knowledge base context:', knowledgeBaseContext);
 
     const completion = await openai.chat.completions.create({
-      model: 'o3-mini',
+      model: 'gpt-4o',
       messages: [
         {
           role: 'system',
@@ -561,9 +561,10 @@ Follow these guidelines:
 3. Traversal Rules (${traversalMode}):
    ${traversalMode === 'bfs' 
      ? `BFS Guidelines:
-        - CRITICAL: At Level 1 (top level), aim for 4-5 comprehensive questions that cover the main aspects
-        - For Level 2+, each child question MUST directly reference and explore a specific aspect from its parent's answer
-        - Each sibling at the same level should focus on a different aspect from the parent's answer
+        - CRITICAL: At Level 1 (top level), generate exactly 4-5 comprehensive questions that cover the main aspects
+        - For Level 2+, generate exactly 2-3 questions per parent aspect from the parent's answer
+        - Each sibling at the same level MUST focus on a different aspect from the parent's answer
+        - CRITICAL: ALL Level 2 children of ALL Level 1 questions must be generated before ANY Level 3 questions
         - Example progression:
           Parent Q1: "What are the core user flows and functional requirements?"
           Parent A1: "The interface should offer search, filtering, and zoom levels..."
@@ -572,127 +573,185 @@ Follow these guidelines:
           Valid Child Q7: "How should the zoom level functionality work?"
 
         Level Structure and Progression:
-        - Level 1 (4-5 questions): Core requirements and fundamental aspects
+        - Level 1 (exactly 4-5 questions): Core requirements and fundamental aspects
           Example: "What are the core user flows?", "What accessibility features are needed?"
         
-        - Level 2 (1 question per major aspect in parent's answer): Direct exploration of parent aspects
+        - Level 2 (exactly 2-3 questions per parent aspect): Direct exploration of parent aspects
           Example: If Level 1 answer mentions "search, filtering, and zoom":
-          * Q5 explores search
-          * Q6 explores filtering
-          * Q7 explores zoom
+          * Q5-Q7 explores search aspects
+          * Q8-Q10 explores filtering aspects
+          * Q11-Q13 explores zoom aspects
+          CRITICAL: Generate Level 2 questions for ALL Level 1 answers before moving to Level 3
         
-        - Level 3+ (2-3 questions per parent aspect): Implementation details
-          Example: If parent answer about search mentions "real-time search and filters":
+        - Level 3+ (exactly 2-3 questions per parent aspect): Implementation details
+          Example: If Level 2 answer about search mentions "real-time search and filters":
           * "How should real-time search results be displayed?"
           * "What search result filtering options are needed?"
+          * "What performance requirements for search response time?"
 
         Aspect Coverage Rules:
         1. Each child question MUST:
-           * Directly reference a specific aspect from parent's answer
-           * Use similar terminology as the parent's answer
+           * Directly reference a specific aspect from parent's answer using exact terminology
+           * Maintain clear topic lineage from Level 1 through current level
            * Ask for more specific details about that aspect
         
         2. Sibling questions MUST:
            * Each focus on a different aspect from parent's answer
            * Not overlap in their focus areas
            * Together cover all major aspects mentioned in parent's answer
+           * Stay at the same depth level as each other
 
         3. Moving Deeper Rules:
-           * Only move deeper when all aspects of parent's answer are covered
-           * Each deeper question should make the parent aspect more specific
-           * Maintain clear topic lineage from Level 1 to current level
+           * NEVER generate Level 3 questions until ALL Level 2 questions for ALL Level 1 parents are complete
+           * Each deeper question must make the parent aspect more specific
+           * Maintain clear topic lineage by referencing both direct parent and Level 1 ancestor
         
         Cycling Behavior:
-        1. When a branch is fully explored (reached max depth or no more meaningful questions):
-           * Move to unexplored siblings at the same level
-           * If no siblings remain, move up one level and explore siblings there
-           * If all existing branches are explored, return to Level 1 with new aspects
+        1. When a branch is fully explored:
+           * First complete all siblings at current level
+           * Only move deeper when ALL nodes at current level across ALL branches are complete
+           * If all branches are explored, return to Level 1 with new aspects
         
         2. When generating new Level 1 questions after a cycle:
-           * Must cover completely different aspects than previous cycles
-           * Should maintain the same level of importance/fundamentality as original Level 1
+           * Must cover completely different aspects than ALL previous Level 1 questions
+           * Should maintain the same level of importance as original Level 1 questions
            * Example: If first cycle covered "user profiles" and "content management",
              second cycle might cover "analytics" and "performance optimization"
         
         Progression Rules:
-        1. After getting 4-5 solid top-level questions answered:
-           * Start exploring Level 2 for each answered Level 1 question
+        1. After getting exactly 4-5 Level 1 questions answered:
+           * Generate Level 2 questions for EACH answered Level 1 question
            * Only add new Level 1 questions if starting a new cycle
         
         2. When to move deeper:
-           * Parent question is fully answered
-           * Current level has 2-3 questions per parent aspect
-           * Questions at current level are becoming redundant
+           * ALL questions at current level are answered
+           * EACH parent has exactly 2-3 child questions
+           * ALL aspects from ALL parent answers are covered
         
         3. When to stay at current level:
-           * Critical aspects still unexplored
-           * Parent's answer reveals new important topics
-           * Current level questions are still yielding valuable insights`
+           * ANY aspects from ANY parent answer are still unexplored
+           * ANY parent has fewer than 2 child questions
+           * ANY questions at current level are unanswered`
      : `DFS Guidelines:
         - CRITICAL: In DFS mode, fully explore ONE topic branch before moving to siblings
         - Maximum depth is 5 levels, but can be less if topics are fully explored
         - When all branches are exhausted, return to Level 1 with new aspects
         
         Sibling Count Guidelines:
-        - Level 1: 4-5 main topic questions
-        - Level 2-5: 2-3 questions per parent aspect
+        - Level 1: Exactly 4-5 main topic questions
+        - Level 2-5: Exactly 2-3 questions per parent aspect
         
         Example proper DFS progression:
         Q1: "What are the core navigation features needed?"
-        Parent Answer: "Need a main menu, search bar, and user profile section."
+        Parent A1: "Need a main menu, search bar, and user profile section."
         
-        First Branch (Main Menu):
+        First Branch (Main Menu) - Complete this ENTIRE branch before siblings:
         Q2: "What specific items should be in the main menu?"
+        A2: "Home, Products, Categories, Cart, and User Profile links"
         Q3: "How should the menu items be organized?"
+        A3: "Primary items visible, secondary in dropdown"
         Q4: "What interactions should menu items have?"
-        [Only after fully exploring menu, move to next sibling]
+        A4: "Hover previews and dropdown menus"
+        [MUST complete ALL menu questions before moving to search]
         
-        Second Branch (Search):
+        Second Branch (Search) - Only start after menu is complete:
         Q5: "What search functionality is required?"
+        A5: "Real-time search with filters and suggestions"
         Q6: "How should search results be displayed?"
+        A6: "Grid layout with quick preview cards"
         Q7: "What advanced search options are needed?"
-        [Complete search branch before moving to user profile]
+        A7: "Category filters and price range selectors"
+        [MUST complete ALL search questions before user profile]
         
-        Third Branch (User Profile):
+        Third Branch (User Profile) - Only start after search is complete:
         Q8: "What user profile information should be shown?"
         Q9: "What profile customization options are needed?"
         
-        Cycling Behavior:
-        1. When a branch is fully explored:
-           * Move to next sibling at current level
-           * If no siblings remain, move up one level
-           * If all branches are explored, return to Level 1
+        Topic Exploration Rules:
+        1. Each branch MUST:
+           * Start with broad feature questions
+           * Progress to specific implementation details
+           * End with edge cases and optimizations
+           * Maintain clear topic lineage throughout
         
-        2. When returning to Level 1:
-           * Generate new top-level questions for unexplored aspects
-           * Maintain same level of importance as original Level 1
-           * Example: If first cycle covered "navigation features",
-             second cycle might cover "user authentication"
+        2. Question Depth Requirements:
+           * Level 1: Broad feature questions (exactly 4-5)
+             Example: "What core navigation features are needed?"
+           * Level 2: Feature breakdown (exactly 2-3 per feature)
+             Example: "What specific items in the main menu?"
+           * Level 3: Implementation details (exactly 2-3 per Level 2 answer)
+             Example: "How should dropdown menus behave?"
+           * Level 4: Edge cases (exactly 2-3 per Level 3 answer)
+             Example: "How to handle menu overflow on mobile?"
+           * Level 5: Optimizations (exactly 2-3 per Level 4 answer)
+             Example: "What menu item preloading strategy to use?"
         
         Branch Completion Rules:
-        1. A branch is considered complete when:
-           - All aspects of the current topic are fully explored
+        1. A branch is ONLY complete when:
+           - ALL aspects of the current topic are fully explored
            - Questions have reached implementation-level detail
-           - Further questions would be redundant
-           - Reached maximum depth (5 levels)
+           - Edge cases and optimizations are addressed
+           - Reached maximum depth (5 levels) OR
+           - ALL possible questions about the topic are answered
            
         2. When to stop current branch (shouldStopBranch=true):
-           - Reached maximum depth (5 levels)
-           - All aspects from parent's answer are fully explored
-           - Questions would become too specific to be useful
+           - Reached maximum depth (5 levels) OR
+           - ALL aspects from parent's answer are fully explored AND
+           - Questions would become too specific to be useful OR
            - Current topic is fully defined with implementation details
            
         3. When to move to siblings:
-           - ONLY after current branch is fully explored
-           - When shouldStopBranch=true is returned
-           - When no more meaningful child questions can be generated
+           - ONLY after current branch is FULLY explored
+           - When shouldStopBranch=true is returned AND
+           - No more meaningful child questions can be generated
+           - NEVER move to siblings until current topic is complete
            
         4. Question Depth Progression:
-           Level 1: High-level feature/topic questions (4-5 questions)
-           Level 2: Specific requirements for that feature (2-3 per parent)
-           Level 3: Implementation details (2-3 per parent)
-           Level 4: Edge cases and refinements (2-3 per parent)
-           Level 5: Final optimizations (2-3 per parent)`
+           Level 1: High-level feature questions (exactly 4-5)
+           Level 2: Specific requirements (exactly 2-3 per parent)
+           Level 3: Implementation details (exactly 2-3 per parent)
+           Level 4: Edge cases (exactly 2-3 per parent)
+           Level 5: Optimizations (exactly 2-3 per parent)
+        
+        Topic Lineage Rules:
+        1. Each question MUST:
+           * Directly reference its parent topic
+           * Use exact terminology from parent's answer
+           * Maintain clear connection to Level 1 ancestor
+           * Progress logically deeper into the topic
+        
+        2. Moving Between Siblings:
+           * NEVER move to a sibling until current branch is complete
+           * Each sibling must explore a different main topic
+           * Siblings must be at the same depth level
+           * Complete ALL aspects of current topic before moving
+        
+        3. Starting New Level 1 Questions:
+           * Only after ALL current Level 1 branches are complete
+           * Must cover completely different aspects than ALL previous Level 1s
+           * Maintain same level of importance as original Level 1s
+           * Example: If first set covered "navigation" and "search",
+             second set might cover "performance" and "security"
+        
+        Question Generation Rules:
+        1. Each new question MUST:
+           * Be more specific than its parent
+           * Focus on unexplored aspects of parent's answer
+           * Maintain clear topic focus
+           * Progress logically deeper into implementation
+        
+        2. Depth Requirements:
+           * Level 1: Core feature identification
+           * Level 2: Feature requirement specification
+           * Level 3: Technical implementation details
+           * Level 4: Edge case handling
+           * Level 5: Performance optimization
+        
+        3. When generating questions:
+           * Use exact terminology from parent's answer
+           * Focus on one specific aspect at a time
+           * Ensure logical progression of detail
+           * Maintain clear topic boundaries`
    }
 
 4. Topic Management:
@@ -795,9 +854,9 @@ Remember:
 - Never use second person pronouns`
         }
       ],
-      max_completion_tokens: 4000,
+      // max_completion_tokens: 4000,
       response_format: { type: "json_object" },
-      reasoning_effort: 'medium'
+      // reasoning_effort: 'medium'
     });
 
     const content = completion.choices[0].message.content?.trim();
@@ -1370,9 +1429,17 @@ interface QuestionHistoryItem {
   topics: string[];
 }
 
+interface SuggestedAnswer {
+  text: string;
+  confidence: 'high' | 'medium' | 'low';
+  sourceReferences: number[];
+}
+
 export default function QnAPage() {
   const router = useRouter();
   const hasFetchedInitialQuestion = useRef(false);
+  const [isAutomating, setIsAutomating] = useState(false);
+  const automationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [prompt, setPrompt] = useState<string>('');
   const [settings, setSettings] = useState<QASettings | null>(null);
   const [qaTree, setQaTree] = useState<QANode | null>(null);
@@ -1380,11 +1447,7 @@ export default function QnAPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingNextQuestion, setIsLoadingNextQuestion] = useState(false);
   const [questionCount, setQuestionCount] = useState(0);
-  const [suggestedAnswer, setSuggestedAnswer] = useState<{
-    text: string;
-    confidence: 'high' | 'medium' | 'low';
-    sourceReferences: number[];
-  } | null>(null);
+  const [suggestedAnswer, setSuggestedAnswer] = useState<SuggestedAnswer | null>(null);
   const [requirementsDoc, setRequirementsDoc] = useState<RequirementsDocument | null>(null);
   const [askedQuestions, setAskedQuestions] = useState<Set<string>>(new Set());
   const [askedTopics, setAskedTopics] = useState<Set<string>>(new Set());
@@ -1394,309 +1457,39 @@ export default function QnAPage() {
   const [isLeavingPage, setIsLeavingPage] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
 
-  // Helper: Extract topics from a question
+  // -------------------- Helpers --------------------
+
+  // Extract topics from a question.
   const extractTopics = (question: string): string[] => {
-    const topics = [];
-    // Common topic indicators in questions
-    if (question.toLowerCase().includes('audience') || 
-        question.toLowerCase().includes('user') || 
-        question.toLowerCase().includes('visitor')) {
+    const topics: string[] = [];
+    if (
+      question.toLowerCase().includes('audience') ||
+      question.toLowerCase().includes('user') ||
+      question.toLowerCase().includes('visitor')
+    ) {
       topics.push('audience');
     }
-    if (question.toLowerCase().includes('purpose') || 
-        question.toLowerCase().includes('goal')) {
+    if (
+      question.toLowerCase().includes('purpose') ||
+      question.toLowerCase().includes('goal')
+    ) {
       topics.push('purpose');
     }
-    // Add more topic extractors as needed
     return topics;
   };
 
-  // Helper: Get the next question based on traversal mode
-  const getNextQuestion = async (node: QANode): Promise<QANode | null> => {
-    const isDFS = settings?.traversalMode === 'dfs';
-    
-    if (isDFS) {
-      // DFS: Try to go deeper first by exploring the current topic fully
-      if (node.answer) {
-        // Build complete question history including topics for the current branch
-        const branchHistory: QuestionHistoryItem[] = [];
-        let current: QANode | null = node;
-        let depth = 0;
-        
-        // Collect the current branch's history and calculate depth
-        while (current) {
-          if (current.question !== `Prompt: ${prompt}`) {
-            branchHistory.unshift({
-              question: current.question,
-              answer: current.answer,
-              topics: extractTopics(current.question)
-            });
-            depth++;
-          }
-          const parent = findParentNode(qaTree!, current);
-          if (!parent || parent === current) break;
-          current = parent;
-        }
-
-        // First try to go deeper by generating a child question
-        // Make multiple attempts to get a valid child question
-        for (let attempt = 0; attempt < 3; attempt++) {
-          const { nodes: children, shouldStopBranch } = await fetchQuestionsForNode(
-            prompt, 
-            node,
-            branchHistory,
-            depth,
-            true
-          );
-          
-          // If we can go deeper and got valid children
-          if (!shouldStopBranch && children.length > 0) {
-            const newQuestionTopics = extractTopics(children[0].question);
-            const currentTopics = extractTopics(node.question);
-            
-            // Verify the child question is related to current topic
-            const isRelatedTopic = currentTopics.some(topic => 
-              newQuestionTopics.includes(topic) || 
-              newQuestionTopics.some(t => t.includes(topic))
-            );
-
-            if (isRelatedTopic) {
-              children[0].questionNumber = questionCount + 1;
-              node.children = children;
-              return children[0];
-            }
-          }
-          
-          // If shouldStopBranch is true, break the retry loop
-          if (shouldStopBranch) break;
-        }
-        
-        // If we can't go deeper after attempts, try to move to the next sibling
-        const parent = findParentNode(qaTree!, node);
-        if (parent) {
-          const siblings = parent.children;
-          const currentIndex = siblings.indexOf(node);
-          
-          // If there are more siblings at this level, move to the next sibling
-          if (currentIndex < siblings.length - 1) {
-            return siblings[currentIndex + 1];
-          }
-          
-          // If no more siblings at this level, go up one level and try those siblings
-          let ancestor = parent;
-          let previousNode = node;
-          
-          while (ancestor) {
-            const ancestorParent = findParentNode(qaTree!, ancestor);
-            if (!ancestorParent) {
-              // We've reached the root, generate new Level 1 questions
-              const rootHistory = getAllAnsweredQuestions(qaTree!);
-              const { nodes: newTopLevel } = await fetchQuestionsForNode(
-                prompt,
-                qaTree!,
-                rootHistory,
-                1,
-                true
-              );
-              
-              if (newTopLevel.length > 0) {
-                newTopLevel[0].questionNumber = questionCount + 1;
-                qaTree!.children = [...qaTree!.children, ...newTopLevel];
-                return newTopLevel[0];
-              }
-            }
-            
-            const uncles = ancestorParent?.children || [];
-            const ancestorIndex = uncles.indexOf(ancestor);
-            
-            // If there are more siblings at this ancestor's level, use the next one
-            if (ancestorIndex < uncles.length - 1) {
-              return uncles[ancestorIndex + 1];
-            }
-            
-            previousNode = ancestor;
-            ancestor = ancestorParent as QANode;  // Fix type assertion
-          }
-        }
-      }
-      
-      // If we reach here, generate new Level 1 questions
-      const rootHistory = getAllAnsweredQuestions(qaTree!);
-      const { nodes: newTopLevel } = await fetchQuestionsForNode(
-        prompt,
-        qaTree!,
-        rootHistory,
-        1,
-        true
-      );
-      
-      if (newTopLevel.length > 0) {
-        newTopLevel[0].questionNumber = questionCount + 1;
-        qaTree!.children = [...qaTree!.children, ...newTopLevel];
-        return newTopLevel[0];
-      }
-      
-    } else {
-      // BFS: Complete all questions at the current level before going deeper
-      const parent = findParentNode(qaTree!, node);
-      if (!parent) {
-        // We're at the root, generate new Level 1 questions
-        const rootHistory = getAllAnsweredQuestions(qaTree!);
-        const { nodes: newTopLevel } = await fetchQuestionsForNode(
-          prompt,
-          qaTree!,
-          rootHistory,
-          1,
-          true
-        );
-        
-        if (newTopLevel.length > 0) {
-          newTopLevel[0].questionNumber = questionCount + 1;
-          qaTree!.children = [...qaTree!.children, ...newTopLevel];
-          return newTopLevel[0];
-        }
-        return null;
-      }
-      
-      // Get all nodes at the current level
-      const currentLevelNodes = parent.children;
-      const currentIndex = currentLevelNodes.indexOf(node);
-      const currentDepth = getNodeDepth(node);
-      
-      // Extract aspects from parent's answer that need to be covered
-      const parentAspects = parent.answer ? 
-        extractAspectsFromAnswer(parent.answer) : 
-        ['basic_requirements'];
-      
-      // Get aspects already covered by existing siblings
-      const coveredAspects = new Set(
-        currentLevelNodes
-          .filter(n => n.answer) // Only consider answered questions
-          .map(n => {
-            const topics = extractTopics(n.question);
-            // Also check if the question directly references parent aspects
-            return topics.filter(topic => 
-              parentAspects.some(aspect => 
-                topic.includes(aspect) || aspect.includes(topic)
-              )
-            );
-          })
-          .flat()
-      );
-      
-      // Build question history for current level
-      const levelHistory: QuestionHistoryItem[] = currentLevelNodes
-        .filter(n => n.answer)
-        .map(n => ({
-          question: n.question,
-          answer: n.answer,
-          topics: extractTopics(n.question)
-        }));
-      
-      // Check if all nodes at current level are answered
-      const allCurrentLevelAnswered = currentLevelNodes.every(n => n.answer);
-      
-      // If there are existing unanswered siblings, move to the next one
-      if (currentIndex < currentLevelNodes.length - 1) {
-        return currentLevelNodes[currentIndex + 1];
-      }
-      
-      // Determine if we need more siblings at this level
-      const isTopLevel = currentDepth === 1;
-      const uncoveredAspects = parentAspects.filter(aspect => !coveredAspects.has(aspect));
-      const hasEnoughTopLevelQuestions = isTopLevel && currentLevelNodes.length >= 4;
-      const hasEnoughSiblingsForLevel = !isTopLevel && currentLevelNodes.length >= 3;
-      
-      const shouldGenerateMoreSiblings = 
-        // At top level, generate more if we don't have enough questions AND have uncovered aspects
-        (isTopLevel && !hasEnoughTopLevelQuestions && uncoveredAspects.length > 0) ||
-        // At other levels, only generate more if we have uncovered aspects AND haven't hit the sibling limit
-        (!isTopLevel && uncoveredAspects.length > 0 && !hasEnoughSiblingsForLevel);
-
-      // Try to generate new siblings if needed
-      if (shouldGenerateMoreSiblings) {
-        const { nodes: newSiblings } = await fetchQuestionsForNode(
-          prompt,
-          parent,
-          levelHistory,
-          currentDepth,
-          true,
-          uncoveredAspects
-        );
-        
-        if (newSiblings.length > 0) {
-          newSiblings[0].questionNumber = questionCount + 1;
-          parent.children = [...currentLevelNodes, ...newSiblings];
-          return newSiblings[0];
-        }
-      }
-      
-      // If all current level questions are answered and we have enough coverage, try to go deeper
-      if (allCurrentLevelAnswered && 
-          (isTopLevel ? hasEnoughTopLevelQuestions : currentLevelNodes.length >= 2)) {
-        // Find the first answered node that doesn't have children yet
-        for (const sibling of currentLevelNodes) {
-          if (sibling.answer && sibling.children.length === 0) {
-            const siblingHistory = levelHistory.filter(h => 
-              extractTopics(h.question).some(t => 
-                extractTopics(sibling.question).includes(t)
-              )
-            );
-            
-            const { nodes: children } = await fetchQuestionsForNode(
-              prompt,
-              sibling,
-              siblingHistory,
-              currentDepth + 1,
-              true
-            );
-            
-            if (children.length > 0) {
-              children[0].questionNumber = questionCount + 1;
-              sibling.children = children;
-              return children[0];
-            }
-          }
-        }
-        
-        // If we couldn't go deeper, generate new Level 1 questions
-        const rootHistory = getAllAnsweredQuestions(qaTree!);
-        const { nodes: newTopLevel } = await fetchQuestionsForNode(
-          prompt,
-          qaTree!,
-          rootHistory,
-          1,
-          true
-        );
-        
-        if (newTopLevel.length > 0) {
-          newTopLevel[0].questionNumber = questionCount + 1;
-          qaTree!.children = [...qaTree!.children, ...newTopLevel];
-          return newTopLevel[0];
-        }
-      }
+  // Get the depth of a node in the tree.
+  const getNodeDepth = (node: QANode): number => {
+    let depth = 0;
+    let current = node;
+    while (findParentNode(qaTree, current)) {
+      depth++;
+      current = findParentNode(qaTree, current)!;
     }
-    
-    // If we reach here, try generating new Level 1 questions as a fallback
-    const rootHistory = getAllAnsweredQuestions(qaTree!);
-    const { nodes: newTopLevel } = await fetchQuestionsForNode(
-      prompt,
-      qaTree!,
-      rootHistory,
-      1,
-      true
-    );
-    
-    if (newTopLevel.length > 0) {
-      newTopLevel[0].questionNumber = questionCount + 1;
-      qaTree!.children = [...qaTree!.children, ...newTopLevel];
-      return newTopLevel[0];
-    }
-    
-    return null; // This should never be reached in practice
+    return depth;
   };
 
-  // Helper: Get all answered questions from the tree
+  // Get all answered questions from the tree.
   const getAllAnsweredQuestions = (root: QANode): QuestionHistoryItem[] => {
     const history: QuestionHistoryItem[] = [];
     const traverse = (node: QANode) => {
@@ -1713,18 +1506,7 @@ export default function QnAPage() {
     return history;
   };
 
-  // Helper: Get the depth of a node in the tree
-  const getNodeDepth = (node: QANode): number => {
-    let depth = 0;
-    let current = node;
-    while (findParentNode(qaTree!, current)) {
-      depth++;
-      current = findParentNode(qaTree!, current)!;
-    }
-    return depth;
-  };
-
-  // Helper: Find parent node
+  // Find the parent of a given node.
   const findParentNode = (root: QANode | null, target: QANode): QANode | null => {
     if (!root) return null;
     if (root.children.includes(target)) return root;
@@ -1735,21 +1517,442 @@ export default function QnAPage() {
     return null;
   };
 
-  // Helper: Find all nodes at the same level as the target node
+  // -------------------- DFS Ordering with Automation --------------------
+
+  // getNextQuestion follows DFS:
+  // – If the current node is not at max depth (less than 5), it attempts to generate a child.
+  // – When at depth 5 (or if no child candidate is available), it forces generation of 1–2 sibling candidates at the parent level.
+  // – It then returns the next candidate; if none exists at that level, it recursively backtracks.
+  // The suggested answer from the candidate is saved so that the UI displays the answer corresponding to the shown question.
+  const getNextQuestion = async (node: QANode): Promise<QANode | null> => {
+    // If automation has been stopped, exit early.
+    if (!isAutomating) {
+      console.log('Automation stopped, not generating next question');
+      return null;
+    }
+
+    const isDFS = settings?.traversalMode === 'dfs';
+    if (isDFS) {
+      if (node.answer) {
+        // Build branch history and calculate depth.
+        const branchHistory: QuestionHistoryItem[] = [];
+        let current: QANode | null = node;
+        let depth = 0;
+        while (current) {
+          if (current.question !== `Prompt: ${prompt}`) {
+            branchHistory.unshift({
+              question: current.question,
+              answer: current.answer,
+              topics: extractTopics(current.question)
+            });
+            depth++;
+          }
+          const parent = findParentNode(qaTree, current);
+          if (!parent || parent === current) break;
+          current = parent;
+        }
+    
+        // ----- DFS DEPTH CAP: Limit depth to 5 -----
+        if (depth >= 5) {
+          // At depth 5, backtrack incrementally.
+          let temp: QANode | null = node;
+          while (temp) {
+            const parent = findParentNode(qaTree, temp);
+            if (!parent) break;
+            const siblings = parent.children;
+            const index = siblings.findIndex(n => n.id === temp!.id);
+            // First: if a next sibling already exists, return it.
+            if (index >= 0 && index < siblings.length - 1) {
+              return siblings[index + 1];
+            }
+            // Only if there's no next sibling, attempt to fetch new candidate siblings.
+            // (This check prevents repeated sibling generation when one is already available.)
+            if (siblings.length === 1) {
+              const parentHistory = getAllAnsweredQuestions(parent);
+              const { nodes: generatedSiblings } = await fetchQuestionsForNode(
+                prompt,
+                parent,
+                parentHistory,
+                getNodeDepth(parent),
+                true
+              );
+              if (generatedSiblings.length > 0) {
+                // Append only new candidates that aren't already present.
+                parent.children = [
+                  ...parent.children,
+                  ...generatedSiblings.filter(s => !parent.children.some(ex => ex.id === s.id))
+                ];
+                // Check again if a next sibling now exists.
+                const newIndex = parent.children.findIndex(n => n.id === temp!.id);
+                if (newIndex >= 0 && newIndex < parent.children.length - 1) {
+                  return parent.children[newIndex + 1];
+                }
+              }
+            }
+            // If no next sibling is found, move up one level.
+            temp = parent;
+          }
+          // If backtracking through all levels fails, generate new Level 1 questions.
+          const rootHistory = getAllAnsweredQuestions(qaTree!);
+          const { nodes: newTopLevel, suggestedAnswer } = await fetchQuestionsForNode(
+            prompt,
+            qaTree!,
+            rootHistory,
+            1,
+            true
+          );
+          if (newTopLevel.length > 0) {
+            newTopLevel[0].questionNumber = questionCount + 1;
+            qaTree!.children = newTopLevel;
+            setSuggestedAnswer(
+              suggestedAnswer
+                ? { text: suggestedAnswer, confidence: 'medium', sourceReferences: [] }
+                : null
+            );
+            return newTopLevel[0];
+          }
+          return null;
+        }
+        // ----- End DFS DEPTH CAP -----
+    
+        // If depth is less than 5, force a deeper dive.
+        const { nodes: children, shouldStopBranch, suggestedAnswer } = await fetchQuestionsForNode(
+          prompt,
+          node,
+          branchHistory,
+          depth,
+          true
+        );
+        if (children.length > 0 && (!shouldStopBranch || depth < 5)) {
+          const child = children[0];
+          // Append the candidate if not already present.
+          if (!node.children.find(c => c.id === child.id)) {
+            node.children.push(child);
+          }
+          child.questionNumber = questionCount + 1;
+          setSuggestedAnswer(
+            suggestedAnswer
+              ? { text: suggestedAnswer, confidence: 'medium', sourceReferences: [] }
+              : null
+          );
+          return child;
+        }
+    
+        // If no child candidate was generated (or we're at depth 5),
+        // backtrack by forcing generation of sibling candidates at the parent's level.
+        const parentNode = findParentNode(qaTree, node);
+        if (parentNode) {
+          const parentHistory = getAllAnsweredQuestions(parentNode);
+          const { nodes: newSiblings } = await fetchQuestionsForNode(
+            prompt,
+            parentNode,
+            parentHistory,
+            getNodeDepth(parentNode),
+            true
+          );
+          if (newSiblings.length > 0) {
+            // Append new candidates that are not already present.
+            parentNode.children = [
+              ...parentNode.children,
+              ...newSiblings.filter(s => !parentNode.children.find(ex => ex.id === s.id))
+            ];
+            const index = parentNode.children.findIndex(n => n.id === node.id);
+            if (index >= 0 && index < parentNode.children.length - 1) {
+              return parentNode.children[index + 1];
+            } else if (parentNode.children.length > 0) {
+              return parentNode.children[0];
+            }
+          }
+          // As a fallback, recursively try generating a candidate from the parent.
+          return await getNextQuestion(parentNode);
+        }
+    
+        // Fallback: Generate new Level 1 questions.
+        const rootHistory2 = getAllAnsweredQuestions(qaTree!);
+        const { nodes: newTopLevel, suggestedAnswer: fallbackAnswer } = await fetchQuestionsForNode(
+          prompt,
+          qaTree!,
+          rootHistory2,
+          1,
+          true
+        );
+        if (newTopLevel.length > 0) {
+          newTopLevel[0].questionNumber = questionCount + 1;
+          qaTree!.children = newTopLevel;
+          setSuggestedAnswer(
+            fallbackAnswer
+              ? { text: fallbackAnswer, confidence: 'medium', sourceReferences: [] }
+              : null
+          );
+          return newTopLevel[0];
+        }
+        return null;
+      }
+      // Fallback for DFS if node.answer is falsy.
+      const rootHistory = getAllAnsweredQuestions(qaTree!);
+      const { nodes: newTopLevel, suggestedAnswer: fallbackAnswer } = await fetchQuestionsForNode(
+        prompt,
+        qaTree!,
+        rootHistory,
+        1,
+        true
+      );
+      if (newTopLevel.length > 0) {
+        newTopLevel[0].questionNumber = questionCount + 1;
+        qaTree!.children = newTopLevel;
+        setSuggestedAnswer(
+          fallbackAnswer
+            ? { text: fallbackAnswer, confidence: 'medium', sourceReferences: [] }
+            : null
+        );
+        return newTopLevel[0];
+      }
+      return null;
+    } else {
+      // BFS mode remains unchanged.
+      const parent = findParentNode(qaTree, node);
+      if (!parent) {
+        const rootHistory = getAllAnsweredQuestions(qaTree!);
+        const { nodes: newTopLevel } = await fetchQuestionsForNode(
+          prompt,
+          qaTree!,
+          rootHistory,
+          1,
+          true
+        );
+        if (newTopLevel.length > 0) {
+          newTopLevel[0].questionNumber = questionCount + 1;
+          qaTree!.children = [...qaTree!.children, ...newTopLevel];
+          return newTopLevel[0];
+        }
+        return null;
+      }
+      const currentLevelNodes = parent.children;
+      const currentIndex = currentLevelNodes.indexOf(node);
+      const currentDepth = getNodeDepth(node);
+      const parentAspects = parent.answer ? extractAspectsFromAnswer(parent.answer) : ['basic_requirements'];
+      const coveredAspects = new Set(
+        currentLevelNodes
+          .filter(n => n.answer)
+          .map(n => {
+            const topics = extractTopics(n.question);
+            return topics.filter(topic =>
+              parentAspects.some(aspect =>
+                topic.includes(aspect) || aspect.includes(topic)
+              )
+            );
+          })
+          .flat()
+      );
+      if (currentDepth === 2) {
+        const currentLevel1Node = findParentNode(qaTree, node);
+        const hasEnoughChildren = currentLevel1Node &&
+          currentLevel1Node.children.length >= Math.min(3, extractAspectsFromAnswer(currentLevel1Node.answer || '').length);
+        if (hasEnoughChildren) {
+          const level1Nodes = qaTree!.children;
+          const nextLevel1WithoutChildren = level1Nodes.find(l1Node =>
+            l1Node !== currentLevel1Node &&
+            l1Node.answer &&
+            l1Node.children.length < Math.min(3, extractAspectsFromAnswer(l1Node.answer).length)
+          );
+          if (nextLevel1WithoutChildren) {
+            const nodeHistory = getAllAnsweredQuestions(nextLevel1WithoutChildren);
+            const { nodes: newChildren } = await fetchQuestionsForNode(
+              prompt,
+              nextLevel1WithoutChildren,
+              nodeHistory,
+              2,
+              true
+            );
+            if (newChildren.length > 0) {
+              newChildren[0].questionNumber = questionCount + 1;
+              nextLevel1WithoutChildren.children = [...nextLevel1WithoutChildren.children, ...newChildren];
+              return newChildren[0];
+            }
+          }
+        }
+      }
+      const levelHistory: QuestionHistoryItem[] = currentLevelNodes
+        .filter(n => n.answer)
+        .map(n => ({
+          question: n.question,
+          answer: n.answer,
+          topics: extractTopics(n.question)
+        }));
+      if (currentIndex < currentLevelNodes.length - 1) {
+        return currentLevelNodes[currentIndex + 1];
+      }
+      const isTopLevel = currentDepth === 1;
+      const uncoveredAspects = parentAspects.filter(aspect => !coveredAspects.has(aspect));
+      const hasEnoughTopLevelQuestions = isTopLevel && currentLevelNodes.length >= 4;
+      const hasEnoughSiblingsForLevel = !isTopLevel && currentLevelNodes.length >= 3;
+      const shouldGenerateMoreSiblings =
+        (isTopLevel && !hasEnoughTopLevelQuestions && uncoveredAspects.length > 0) ||
+        (!isTopLevel && uncoveredAspects.length > 0 && !hasEnoughSiblingsForLevel);
+      if (shouldGenerateMoreSiblings) {
+        const { nodes: newSiblings } = await fetchQuestionsForNode(
+          prompt,
+          parent,
+          levelHistory,
+          currentDepth,
+          true,
+          uncoveredAspects
+        );
+        if (newSiblings.length > 0) {
+          newSiblings[0].questionNumber = questionCount + 1;
+          parent.children = [...currentLevelNodes, ...newSiblings];
+          return newSiblings[0];
+        }
+      }
+      if (currentDepth >= 3) {
+        const l2Nodes = getAllNodesAtDepth(qaTree!, 2);
+        const incompleteL2 = l2Nodes.find(l2Node => {
+          if (!l2Node.answer) return false;
+          const expectedChildren = Math.min(3, extractAspectsFromAnswer(l2Node.answer).length);
+          return l2Node.children.length < expectedChildren;
+        });
+        if (incompleteL2) {
+          const nodeHistory = getAllAnsweredQuestions(incompleteL2);
+          const { nodes: newChild } = await fetchQuestionsForNode(
+            prompt,
+            incompleteL2,
+            nodeHistory,
+            2,
+            true
+          );
+          if (newChild.length > 0) {
+            newChild[0].questionNumber = questionCount + 1;
+            incompleteL2.children = [...incompleteL2.children, ...newChild];
+            return newChild[0];
+          }
+        }
+      }
+      const allCurrentLevelNodes = getAllNodesAtDepth(qaTree!, currentDepth);
+      const allCurrentLevelAnswered = allCurrentLevelNodes.every(n => n.answer);
+      if (allCurrentLevelAnswered) {
+        const allNodesHaveEnoughChildren = allCurrentLevelNodes.every(n => {
+          if (!n.answer) return true;
+          const aspects = extractAspectsFromAnswer(n.answer);
+          return n.children.length >= Math.min(3, aspects.length);
+        });
+        if (allNodesHaveEnoughChildren) {
+          const nextNodeNeedingChildren = allCurrentLevelNodes.find(n =>
+            n.answer &&
+            n.children.length < Math.min(3, extractAspectsFromAnswer(n.answer).length)
+          );
+          if (nextNodeNeedingChildren) {
+            const nodeHistory = getAllAnsweredQuestions(nextNodeNeedingChildren);
+            const { nodes: children } = await fetchQuestionsForNode(
+              prompt,
+              nextNodeNeedingChildren,
+              nodeHistory,
+              currentDepth + 1,
+              true
+            );
+            if (children.length > 0) {
+              children[0].questionNumber = questionCount + 1;
+              nextNodeNeedingChildren.children = [...nextNodeNeedingChildren.children, ...children];
+              return children[0];
+            }
+          }
+          const allChildrenAtNextDepth = allCurrentLevelNodes.flatMap(n => n.children);
+          const unansweredChildAtNextDepth = allChildrenAtNextDepth.find(n => !n.answer);
+          if (unansweredChildAtNextDepth) {
+            return unansweredChildAtNextDepth;
+          }
+          const nextDepthNodeNeedingChildren = allChildrenAtNextDepth.find(n =>
+            n.answer &&
+            n.children.length < Math.min(3, extractAspectsFromAnswer(n.answer).length)
+          );
+          if (nextDepthNodeNeedingChildren) {
+            const nodeHistory = getAllAnsweredQuestions(nextDepthNodeNeedingChildren);
+            const { nodes: children } = await fetchQuestionsForNode(
+              prompt,
+              nextDepthNodeNeedingChildren,
+              nodeHistory,
+              currentDepth + 2,
+              true
+            );
+            if (children.length > 0) {
+              children[0].questionNumber = questionCount + 1;
+              nextDepthNodeNeedingChildren.children = [...nextDepthNodeNeedingChildren.children, ...children];
+              return children[0];
+            }
+          }
+        } else {
+          const nextUnansweredNode = allCurrentLevelNodes.find(n => !n.answer);
+          if (nextUnansweredNode) {
+            return nextUnansweredNode;
+          }
+          const nextNodeNeedingChildren = allCurrentLevelNodes.find(n =>
+            n.answer &&
+            n.children.length < Math.min(3, extractAspectsFromAnswer(n.answer).length)
+          );
+          if (nextNodeNeedingChildren) {
+            const nodeHistory = getAllAnsweredQuestions(nextNodeNeedingChildren);
+            const { nodes: children } = await fetchQuestionsForNode(
+              prompt,
+              nextNodeNeedingChildren,
+              nodeHistory,
+              currentDepth + 1,
+              true
+            );
+            if (children.length > 0) {
+              children[0].questionNumber = questionCount + 1;
+              nextNodeNeedingChildren.children = [...nextNodeNeedingChildren.children, ...children];
+              return children[0];
+            }
+          }
+        }
+        const rootHistory = getAllAnsweredQuestions(qaTree!);
+        const { nodes: newTopLevel } = await fetchQuestionsForNode(
+          prompt,
+          qaTree!,
+          rootHistory,
+          1,
+          true
+        );
+        if (newTopLevel.length > 0) {
+          newTopLevel[0].questionNumber = questionCount + 1;
+          qaTree!.children = [...qaTree!.children, ...newTopLevel];
+          return newTopLevel[0];
+        }
+      }
+    }
+    
+    // Fallback: Generate new Level 1 questions.
+    const rootHistory = getAllAnsweredQuestions(qaTree!);
+    const { nodes: newTopLevel } = await fetchQuestionsForNode(
+      prompt,
+      qaTree!,
+      rootHistory,
+      1,
+      true
+    );
+    if (newTopLevel.length > 0) {
+      newTopLevel[0].questionNumber = questionCount + 1;
+      qaTree!.children = [...qaTree!.children, ...newTopLevel];
+      return newTopLevel[0];
+    }
+    return null;
+  };
+
+  // -------------------- Additional Helpers --------------------
+
+  // Find all nodes at the same level as the target.
   const findNodesAtSameLevel = (root: QANode | null, target: QANode): QANode[] => {
     if (!root) return [];
     const parent = findParentNode(root, target);
-    if (!parent) return root.children; // If no parent, must be root level
+    if (!parent) return root.children;
     return parent.children;
   };
 
-  // Helper: Find the first unanswered child in the tree (BFS)
+  // Find the first unanswered child (BFS).
   const findFirstUnansweredChild = (root: QANode | null): QANode | null => {
     if (!root) return null;
     const queue: QANode[] = [root];
     while (queue.length > 0) {
       const node = queue.shift()!;
-      // Skip the root node when looking for unanswered questions
       if (node.children.length > 0) {
         for (const child of node.children) {
           if (!child.answer) return child;
@@ -1762,13 +1965,12 @@ export default function QnAPage() {
     return null;
   };
 
-  // Helper: Find the first node that can have children (has answer but no children)
+  // Find the first node that can have children (has an answer but no children).
   const findFirstNodeForChildren = (root: QANode | null): QANode | null => {
     if (!root) return null;
     const queue: QANode[] = [root];
     while (queue.length > 0) {
       const node = queue.shift()!;
-      // Skip the root node when looking for nodes that can have children
       if (node.answer && node.children.length === 0 && node.question !== `Prompt: ${prompt}`) {
         return node;
       }
@@ -1777,26 +1979,26 @@ export default function QnAPage() {
     return null;
   };
 
-  // Helper: fetch questions for a node
+  // Fetch questions for a given node.
   const fetchQuestionsForNode = async (
-    designPrompt: string, 
-    parentNode: QANode, 
-    questionHistory: QuestionHistoryItem[], 
-    depth: number, 
+    designPrompt: string,
+    parentNode: QANode,
+    questionHistory: QuestionHistoryItem[],
+    depth: number,
     setSuggestion: boolean = false,
     uncoveredAspects?: string[]
-  ): Promise<{ nodes: QANode[], shouldStopBranch: boolean, stopReason: string, suggestedAnswer?: string }> => {
+  ): Promise<{ nodes: QANode[]; shouldStopBranch: boolean; stopReason: string; suggestedAnswer?: string }> => {
     try {
       console.log('Fetching questions with knowledge base:', settings?.knowledgeBase);
-      
-      // Get parent context for child questions
-      const parentContext = parentNode.question !== `Prompt: ${designPrompt}` ? {
-        parentQuestion: parentNode.question,
-        parentAnswer: parentNode.answer,
-        parentTopics: extractTopics(parentNode.question),
-        uncoveredAspects // Add uncovered aspects to parent context
-      } : null;
-      
+      const parentContext =
+        parentNode.question !== `Prompt: ${designPrompt}`
+          ? {
+              parentQuestion: parentNode.question,
+              parentAnswer: parentNode.answer,
+              parentTopics: extractTopics(parentNode.question),
+              uncoveredAspects,
+            }
+          : null;
       const response = await fetch('/api/generate-questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1808,76 +2010,66 @@ export default function QnAPage() {
           depth: depth,
           parentContext: parentContext,
           includeSuggestions: setSuggestion,
-          uncoveredAspects // Pass uncovered aspects to API
+          uncoveredAspects,
         }),
       });
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
         throw new Error(`API request failed: ${errorData.error || response.statusText}`);
       }
-
       const data = await response.json();
       console.log('Received API response with suggested answer:', data.suggestedAnswer);
-      
       if (!data || !Array.isArray(data.questions) || data.questions.length === 0) {
         throw new Error('Invalid response format or no questions received');
       }
-
-      // Only set suggested answer if explicitly requested
       if (setSuggestion) {
         if (data.suggestedAnswer) {
           console.log('Setting suggested answer:', {
             text: data.suggestedAnswer,
             confidence: data.confidence || 'low',
-            sourceReferences: data.sourceReferences || []
+            sourceReferences: data.sourceReferences || [],
           });
-          
-          setSuggestedAnswer({
-            text: data.suggestedAnswer,
-            confidence: data.confidence || 'low',
-            sourceReferences: data.sourceReferences || []
-          });
+          setSuggestedAnswer(
+            data.suggestedAnswer
+              ? { text: data.suggestedAnswer, confidence: data.confidence || 'low', sourceReferences: data.sourceReferences || [] }
+              : null
+          );
         } else {
           console.log('Clearing suggested answer');
           setSuggestedAnswer(null);
         }
       }
-      
-      // Create a single child node with the next question number
       const nextQuestionNumber = questionCount + 1;
-      const nodes: QANode[] = data.questions.slice(0, 1).map((q: string) => ({
+      const nodes: QANode[] = data.questions.map((q: string) => ({
         id: uuidv4(),
         question: q,
         children: [],
         questionNumber: nextQuestionNumber,
       }));
-      
       return {
         nodes,
         shouldStopBranch: data.shouldStopBranch || false,
         stopReason: data.stopReason || 'No more questions needed',
-        suggestedAnswer: data.suggestedAnswer
+        suggestedAnswer: data.suggestedAnswer,
       };
     } catch (error) {
       console.error("Error in fetchQuestionsForNode:", error);
-      // Return a default error question node
       const errorNode: QANode = {
         id: uuidv4(),
         question: "Failed to generate question. Please try again or refresh the page.",
         children: [],
         questionNumber: questionCount + 1,
       };
-      return { 
-        nodes: [errorNode], 
-        shouldStopBranch: true, 
+      return {
+        nodes: [errorNode],
+        shouldStopBranch: true,
         stopReason: error instanceof Error ? error.message : "Error generating questions",
-        suggestedAnswer: undefined
+        suggestedAnswer: undefined,
       };
     }
   };
 
-  // Helper: Find node by ID in the tree
+  // Find node by ID.
   const findNodeById = (root: QANode | null, id: string): QANode | null => {
     if (!root) return null;
     if (root.id === id) return root;
@@ -1888,14 +2080,13 @@ export default function QnAPage() {
     return null;
   };
 
-  // Helper: Update requirements document
+  // Update requirements document.
   const updateRequirements = async (nodeId: string | null) => {
     try {
       if (!qaTree || !requirementsDoc) {
         console.warn('Missing qaTree or requirementsDoc, skipping requirements update');
         return;
       }
-
       const response = await fetch('/api/update-requirements', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1903,61 +2094,158 @@ export default function QnAPage() {
           qaTree,
           currentNodeId: nodeId,
           knowledgeBase: settings?.knowledgeBase,
-          existingDocument: requirementsDoc
+          existingDocument: requirementsDoc,
         }),
       });
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
         throw new Error(`API request failed: ${errorData.error || response.statusText}`);
       }
-
       const updatedDoc = await response.json();
       if (!updatedDoc || !updatedDoc.categories) {
         throw new Error('Invalid requirements document received');
       }
-
       setRequirementsDoc(updatedDoc);
-      
-      // Save progress including requirements
       saveProgress();
     } catch (error) {
       console.error('Error updating requirements:', error);
-      // Don't throw the error, just log it and continue
     }
   };
 
-  // Auto-save timer
-  useEffect(() => {
-    const autoSaveInterval = setInterval(() => {
-      if (qaTree) {
-        saveProgress(true);
+  // -------------------- Automation Functions --------------------
+
+  const startAutomation = () => {
+    console.log('startAutomation called - Setting isAutomating to true');
+    // Clear any existing timeouts first
+    if (automationTimeoutRef.current) {
+      clearTimeout(automationTimeoutRef.current);
+      automationTimeoutRef.current = null;
+    }
+    setIsAutomating(true);
+    // If we have a current node and aren't loading, kick off automation immediately
+    if (currentNode && !isLoadingNextQuestion) {
+      automationTimeoutRef.current = setTimeout(runNextAutomatedStep, 500);
+    }
+  };
+
+  const stopAutomation = () => {
+    console.log('stopAutomation called - Setting isAutomating to false');
+    setIsAutomating(false);
+    // Always clean up timeout on stop
+    if (automationTimeoutRef.current) {
+      console.log('Clearing automation timeout');
+      clearTimeout(automationTimeoutRef.current);
+      automationTimeoutRef.current = null;
+    }
+  };
+
+  const runNextAutomatedStep = async () => {
+    console.log('runNextAutomatedStep called', {
+      isAutomating,
+      hasCurrentNode: !!currentNode,
+      isLoadingNextQuestion,
+    });
+
+    // Clear any existing timeout first
+    if (automationTimeoutRef.current) {
+      clearTimeout(automationTimeoutRef.current);
+      automationTimeoutRef.current = null;
+    }
+
+    // Exit early if automation is off or we're in a loading state
+    if (!isAutomating || isLoadingNextQuestion) {
+      console.log('Automation is off or loading, not proceeding');
+      return;
+    }
+
+    if (!currentNode) {
+      console.log('No current node, stopping automation');
+      stopAutomation();
+      return;
+    }
+
+    try {
+      console.log('Getting suggested answer');
+      const autoAnswer = await handleAutoPopulate();
+
+      // Check if automation was stopped during the async operation
+      if (!isAutomating) {
+        console.log('Automation was turned off during answer generation');
+        return;
       }
-    }, 60000); // Auto-save every minute
 
-    return () => clearInterval(autoSaveInterval);
-  }, [qaTree, currentNode, questionCount, prompt, settings]);
+      if (autoAnswer) {
+        console.log('Got suggested answer, submitting after delay');
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        
+        // Check automation state again after delay
+        if (!isAutomating) {
+          console.log('Automation was turned off during delay');
+          return;
+        }
 
-  // Handle page leave
+        await handleAnswer(autoAnswer);
+      } else {
+        console.log('No suggested answer available, stopping automation');
+        stopAutomation();
+      }
+    } catch (error) {
+      console.error('Error in automation step:', error);
+      stopAutomation();
+    }
+  };
+
   useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!isLeavingPage) {
-        e.preventDefault();
-        e.returnValue = '';
-        saveProgress(true);
+    console.log('Automation effect triggered', {
+      isAutomating,
+      isLoadingNextQuestion,
+      hasCurrentNode: !!currentNode,
+    });
+
+    let isEffectActive = true;
+
+    // Clean up function to handle unmounting or dependency changes
+    const cleanup = () => {
+      isEffectActive = false;
+      if (automationTimeoutRef.current) {
+        clearTimeout(automationTimeoutRef.current);
+        automationTimeoutRef.current = null;
       }
     };
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isLeavingPage]);
+    // If automation is off or we're in a loading state, clean up and return
+    if (!isAutomating || isLoadingNextQuestion) {
+      cleanup();
+      return cleanup;
+    }
 
-  // Helper: Save current progress
+    // If there's no current node, stop automation and clean up
+    if (!currentNode) {
+      stopAutomation();
+      cleanup();
+      return cleanup;
+    }
+
+    // Start automation with a slight delay
+    automationTimeoutRef.current = setTimeout(async () => {
+      if (isEffectActive && isAutomating && !isLoadingNextQuestion) {
+        try {
+          await runNextAutomatedStep();
+        } catch (error) {
+          console.error('Error in automation effect:', error);
+          stopAutomation();
+        }
+      }
+    }, 500);
+
+    return cleanup;
+  }, [isAutomating, isLoadingNextQuestion, currentNode]);
+
+  // -------------------- Save, Restart, and Version Functions --------------------
+
   const saveProgress = (isAutoSave = false) => {
     if (!qaTree || !settings || !requirementsDoc) return;
-
     try {
-      // Update session metadata
       const currentTime = new Date().toISOString();
       const metadata: SessionMetadata = {
         id: sessionMetadata?.id || uuidv4(),
@@ -1968,46 +2256,37 @@ export default function QnAPage() {
         settings: {
           traversalMode: settings.traversalMode,
           unknownHandling: settings.unknownHandling,
-          conflictResolution: settings.conflictResolution
+          conflictResolution: settings.conflictResolution,
         },
-        name: sessionMetadata?.name
+        name: sessionMetadata?.name,
       };
-
-      // Save progress and metadata
-      localStorage.setItem('qaProgress', JSON.stringify({
-        qaTree,
-        currentNodeId: currentNode?.id || null,
-        questionCount,
-        prompt,
-        settings,
-        requirementsDoc
-      }));
-
+      localStorage.setItem(
+        'qaProgress',
+        JSON.stringify({
+          qaTree,
+          currentNodeId: currentNode?.id || null,
+          questionCount,
+          prompt,
+          settings,
+          requirementsDoc,
+        })
+      );
       localStorage.setItem('sessionMetadata', JSON.stringify(metadata));
       setSessionMetadata(metadata);
-
       if (!isAutoSave) {
-        // Show success message for manual saves
-        // TODO: Add a toast notification system
         console.log('Progress saved successfully');
       }
     } catch (error) {
       console.error('Error saving progress:', error);
-      // TODO: Add error notification
     }
   };
 
   const handleVersionRestore = (version: MockupVersion) => {
-    // Confirm before restoring
     if (window.confirm('Restoring this version will replace your current progress. Continue?')) {
       setQaTree(version.qaTree);
       setRequirementsDoc(version.requirementsDoc);
-      
-      // Find the first unanswered question in the restored tree
       const firstUnanswered = findFirstUnansweredChild(version.qaTree);
       setCurrentNode(firstUnanswered);
-      
-      // Update question count
       let count = 0;
       const countAnswers = (node: QANode) => {
         if (node.answer) count++;
@@ -2015,8 +2294,6 @@ export default function QnAPage() {
       };
       countAnswers(version.qaTree);
       setQuestionCount(count);
-      
-      // Save the restored state
       saveProgress();
     }
   };
@@ -2026,7 +2303,7 @@ export default function QnAPage() {
       const updatedMetadata = {
         ...sessionMetadata,
         name,
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
       };
       setSessionMetadata(updatedMetadata);
       localStorage.setItem('sessionMetadata', JSON.stringify(updatedMetadata));
@@ -2034,18 +2311,15 @@ export default function QnAPage() {
     }
   };
 
-  // On mount: try to load saved progress or start new session
+  // -------------------- On Mount: Load or Start a New Session --------------------
+
   useEffect(() => {
-    // Prevent duplicate API call on initial load
     if (hasFetchedInitialQuestion.current) return;
     hasFetchedInitialQuestion.current = true;
-
     const savedProgress = localStorage.getItem('qaProgress');
     const storedPrompt = localStorage.getItem('designPrompt');
     const storedSettings = localStorage.getItem('qaSettings');
-    
     if (savedProgress) {
-      // Load saved progress
       try {
         const progress: SavedProgress = JSON.parse(savedProgress);
         console.log('Loaded settings with knowledge base:', progress.settings.knowledgeBase);
@@ -2065,15 +2339,11 @@ export default function QnAPage() {
         console.error("Error loading saved progress:", error);
       }
     }
-    
-    // Start new session
     if (storedPrompt && storedSettings) {
       const parsedSettings = JSON.parse(storedSettings);
       console.log('Starting new session with knowledge base:', parsedSettings.knowledgeBase);
       setPrompt(storedPrompt);
       setSettings(parsedSettings);
-      
-      // Create and set up root node (Q0)
       const rootNode: QANode = {
         id: uuidv4(),
         question: `Prompt: ${storedPrompt}`,
@@ -2081,8 +2351,6 @@ export default function QnAPage() {
         questionNumber: 0,
       };
       setQaTree(rootNode);
-      
-      // Initialize requirements document
       const initialRequirementsDoc: RequirementsDocument = {
         id: uuidv4(),
         prompt: storedPrompt,
@@ -2093,12 +2361,10 @@ export default function QnAPage() {
           userExperience: { title: 'User Experience', requirements: [] },
           implementation: { title: 'Implementation', requirements: [] },
           refinements: { title: 'Refinements', requirements: [] },
-          constraints: { title: 'Constraints', requirements: [] }
-        }
+          constraints: { title: 'Constraints', requirements: [] },
+        },
       };
       setRequirementsDoc(initialRequirementsDoc);
-      
-      // Generate first question (Q1)
       fetchQuestionsForNode(storedPrompt, rootNode, [], 0, false).then(({ nodes: children, suggestedAnswer }) => {
         if (children.length > 0) {
           children[0].questionNumber = 1;
@@ -2106,11 +2372,9 @@ export default function QnAPage() {
           setQaTree({ ...rootNode });
           setCurrentNode(children[0]);
           if (suggestedAnswer) {
-            setSuggestedAnswer({ 
-              text: suggestedAnswer, 
-              confidence: 'medium',
-              sourceReferences: []
-            });
+            setSuggestedAnswer(
+              suggestedAnswer ? { text: suggestedAnswer, confidence: 'medium', sourceReferences: [] } : null
+            );
           }
           setQuestionCount(1);
         }
@@ -2123,76 +2387,102 @@ export default function QnAPage() {
     }
   }, [router]);
 
-  // When the user submits an answer
+  // -------------------- Handle Answer Submission --------------------
+
   const handleAnswer = async (answer: string) => {
+    console.log('handleAnswer called', { hasCurrentNode: !!currentNode, hasSettings: !!settings });
     if (!currentNode || !settings) return;
-    
     setIsLoadingNextQuestion(true);
     setSuggestedAnswer(null);
-    
-    // Check if we've hit the question limit
     if (settings.maxQuestions && questionCount >= settings.maxQuestions) {
+      console.log('Max questions reached, stopping automation');
       setCurrentNode(null);
       setIsLoadingNextQuestion(false);
+      stopAutomation();
       return;
     }
-    
     try {
-      // Record the answer
+      console.log('Setting answer and updating requirements');
       currentNode.answer = answer;
-      
-      // Update requirements document with new answer
       await updateRequirements(currentNode.id);
       
-      // Get the next question based on traversal mode
-      const nextNode = await getNextQuestion(currentNode);
+      // Store automation state before async operations
+      const wasAutomating = isAutomating;
       
-      if (nextNode) {
-        // Verify this question hasn't been asked before
-        if (!askedQuestions.has(nextNode.question)) {
-          setAskedQuestions(prev => new Set(prev).add(nextNode.question));
-          setIsInitialLoad(true); // Prevent auto-fetch when setting current node
-          setCurrentNode(nextNode);
-          setQuestionCount(prev => prev + 1);
-          setQaTree(prev => prev ? { ...prev } : prev);
-          setIsInitialLoad(false); // Reset flag after state updates
+      if (wasAutomating) {
+        console.log('Getting next question (automation active)');
+        const nextNode = await getNextQuestion(currentNode);
+        
+        // Check if automation was stopped during the async operation
+        if (!isAutomating) {
+          console.log('Automation was stopped during question generation');
+          setIsLoadingNextQuestion(false);
+          return;
+        }
+        
+        if (nextNode) {
+          if (!askedQuestions.has(nextNode.question)) {
+            console.log('Setting new question');
+            setAskedQuestions(prev => new Set(prev).add(nextNode.question));
+            setIsInitialLoad(true);
+            setCurrentNode(nextNode);
+            setQuestionCount(prev => prev + 1);
+            setQaTree(prev => prev ? { ...prev } : prev);
+            setIsInitialLoad(false);
+            
+            // Only schedule next step if automation is still active
+            if (isAutomating) {
+              if (automationTimeoutRef.current) {
+                clearTimeout(automationTimeoutRef.current);
+              }
+              automationTimeoutRef.current = setTimeout(runNextAutomatedStep, 1000);
+            }
+          } else {
+            console.warn('Duplicate question detected:', nextNode.question);
+            setCurrentNode(null);
+            stopAutomation();
+          }
         } else {
-          console.warn('Duplicate question detected:', nextNode.question);
+          console.log('No next question available');
           setCurrentNode(null);
+          await updateRequirements(null);
+          stopAutomation();
         }
       } else {
-        setCurrentNode(null); // No more questions
-        // Final requirements update with no current node
-        await updateRequirements(null);
+        console.log('Answer saved, automation not active - keeping current node');
+        setQaTree(prev => prev ? { ...prev } : prev);
       }
     } catch (error) {
       console.error('Error in handleAnswer:', error);
+      stopAutomation();
     } finally {
       setIsLoadingNextQuestion(false);
     }
   };
 
+  // -------------------- Auto-Populate Suggested Answer --------------------
+
   const handleAutoPopulate = async (): Promise<string | null> => {
+    console.log('handleAutoPopulate called');
     try {
-      // If we already have a suggested answer, use it
       if (suggestedAnswer) {
+        console.log('Using existing suggested answer');
         return suggestedAnswer.text;
       }
-      
-      // Otherwise, build the previous Q&A chain up to the current question
+      console.log('Building question history');
       const questionHistory: QuestionHistoryItem[] = [];
       const collectHistory = (n: QANode) => {
         if (n.question !== `Prompt: ${prompt}`) {
           questionHistory.push({
             question: n.question,
             answer: n.answer,
-            topics: extractTopics(n.question)
+            topics: extractTopics(n.question),
           });
         }
         n.children.forEach(collectHistory);
       };
       collectHistory(qaTree!);
-
+      console.log('Fetching suggested answer from API');
       const response = await fetch('/api/generate-questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2202,22 +2492,19 @@ export default function QnAPage() {
           traversalMode: settings?.traversalMode,
           knowledgeBase: settings?.knowledgeBase,
           currentQuestion: currentNode?.question,
-          isAutoPopulate: true
+          isAutoPopulate: true,
         }),
       });
-
       if (!response.ok) {
         throw new Error('Failed to generate answer');
       }
-
       const data = await response.json();
-      console.log('Auto-populate response:', data);
-      
-      // Return the suggestedAnswer text if it exists
+      console.log('Auto-populate API response:', data);
       if (data.suggestedAnswer) {
+        console.log('Returning suggested answer from API');
         return data.suggestedAnswer;
       }
-      
+      console.log('No suggested answer in API response');
       return null;
     } catch (error) {
       console.error('Error auto-populating answer:', error);
@@ -2225,72 +2512,47 @@ export default function QnAPage() {
     }
   };
 
+  // -------------------- Restart and Generate Handlers --------------------
+
   const handleRestart = () => {
-    // Set loading state
     setIsLoading(true);
     setIsLoadingNextQuestion(true);
-    
-    // Create new root node (Q0)
     const rootNode: QANode = {
       id: uuidv4(),
       question: `Prompt: ${prompt}`,
       children: [],
-      questionNumber: 0, // Explicitly set prompt as Q0
+      questionNumber: 0,
     };
-    
-    // Reset all states
     setQaTree(rootNode);
     setQuestionCount(0);
     setCurrentNode(null);
     setAskedQuestions(new Set());
     setAskedTopics(new Set());
-    
-    // Reset requirements document
     const initialRequirementsDoc: RequirementsDocument = {
       id: uuidv4(),
       prompt: prompt,
       lastUpdated: new Date().toISOString(),
       categories: {
-        basicNeeds: { 
-          title: 'Basic Needs', 
-          requirements: [] 
-        },
-        functionalRequirements: { 
-          title: 'Functional Requirements', 
-          requirements: [] 
-        },
-        userExperience: { 
-          title: 'User Experience', 
-          requirements: [] 
-        },
-        implementation: { 
-          title: 'Implementation', 
-          requirements: [] 
-        },
-        refinements: { 
-          title: 'Refinements', 
-          requirements: [] 
-        },
-        constraints: { 
-          title: 'Constraints', 
-          requirements: [] 
-        }
-      }
+        basicNeeds: { title: 'Basic Needs', requirements: [] },
+        functionalRequirements: { title: 'Functional Requirements', requirements: [] },
+        userExperience: { title: 'User Experience', requirements: [] },
+        implementation: { title: 'Implementation', requirements: [] },
+        refinements: { title: 'Refinements', requirements: [] },
+        constraints: { title: 'Constraints', requirements: [] },
+      },
     };
     setRequirementsDoc(initialRequirementsDoc);
-    
-    // Generate first question (Q1)
-    fetchQuestionsForNode(prompt, rootNode, [], 0, true).then(({ nodes: children }) => {
-      if (children.length > 0) {
-        // Set first actual question as Q1
-        children[0].questionNumber = 1;
-        rootNode.children = children;
-        setQaTree({ ...rootNode });
-        setCurrentNode(children[0]);
-        setQuestionCount(1);
-      }
-    })
-      .catch(error => {
+    fetchQuestionsForNode(prompt, rootNode, [], 0, true)
+      .then(({ nodes: children }) => {
+        if (children.length > 0) {
+          children[0].questionNumber = 1;
+          rootNode.children = children;
+          setQaTree({ ...rootNode });
+          setCurrentNode(children[0]);
+          setQuestionCount(1);
+        }
+      })
+      .catch((error) => {
         console.error('Error generating first question:', error);
       })
       .finally(() => {
@@ -2302,14 +2564,9 @@ export default function QnAPage() {
   const handleGenerate = async () => {
     setIsPreviewOpen(true);
     setIsGenerating(true);
-    
     try {
-      // Update requirements one final time before showing preview
       await updateRequirements(currentNode?.id || null);
-      
-      // Wait a bit to ensure requirements are updated
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
+      await new Promise((resolve) => setTimeout(resolve, 500));
     } catch (error) {
       console.error('Error generating preview:', error);
     } finally {
@@ -2317,28 +2574,22 @@ export default function QnAPage() {
     }
   };
 
-  // Helper: Extract aspects from an answer that need to be covered by child questions
+  // -------------------- Extract Aspects from Answer --------------------
+
   const extractAspectsFromAnswer = (answer: string): string[] => {
     const aspects: string[] = [];
-    
-    // Split answer into sentences and clean them
-    const sentences = answer.split(/[.!?]+/)
-      .map(s => s.trim())
-      .filter(Boolean);
-    
-    sentences.forEach(sentence => {
-      // Look for lists or enumerations with commas or 'and'
+    const sentences = answer.split(/[.!?]+/).map((s) => s.trim()).filter(Boolean);
+    sentences.forEach((sentence) => {
       if (sentence.includes(',') || /\band\b/.test(sentence)) {
         const items = sentence
           .split(/,|\band\b/)
-          .map(item => item.trim().toLowerCase())
+          .map((item) => item.trim().toLowerCase())
           .filter(Boolean)
-          // Filter out common connecting words and articles
-          .filter(item => !['the', 'a', 'an', 'should', 'would', 'could', 'with'].includes(item));
+          .filter((item) => !['the', 'a', 'an', 'should', 'would', 'could', 'with'].includes(item));
         aspects.push(...items);
       } else {
-        // For single aspects, try to extract the key feature/concept
-        const cleanedSentence = sentence.toLowerCase()
+        const cleanedSentence = sentence
+          .toLowerCase()
           .replace(/should|would|could|must|with|the|a|an/g, '')
           .trim();
         if (cleanedSentence) {
@@ -2346,28 +2597,42 @@ export default function QnAPage() {
         }
       }
     });
-    
-    // Remove duplicates and very similar aspects
-    const uniqueAspects = Array.from(new Set(aspects))
-      .filter((aspect, index, self) => 
-        !self.some((other, otherIndex) => 
-          index !== otherIndex && 
-          (other.includes(aspect) || aspect.includes(other))
-        )
-      );
-    
+    const uniqueAspects = Array.from(new Set(aspects)).filter((aspect, index, self) =>
+      !self.some((other, otherIndex) => index !== otherIndex && (other.includes(aspect) || aspect.includes(other)))
+    );
     return uniqueAspects.length > 0 ? uniqueAspects : ['basic_requirements'];
   };
 
+  // -------------------- Get All Nodes at a Specific Depth --------------------
+
+  const getAllNodesAtDepth = (root: QANode, targetDepth: number): QANode[] => {
+    const result: QANode[] = [];
+    const traverse = (node: QANode, currentDepth: number) => {
+      if (currentDepth === targetDepth) {
+        result.push(node);
+        return;
+      }
+      for (const child of node.children) {
+        traverse(child, currentDepth + 1);
+      }
+    };
+    traverse(root, 0);
+    return result;
+  };
+
+  // -------------------- Render --------------------
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
-      <HeaderToolbar 
-        onRestart={handleRestart} 
+      <HeaderToolbar
+        onRestart={handleRestart}
         onGenerate={handleGenerate}
         onSave={() => handleSaveSession()}
         showRestartButton={!isLoading}
         showGenerateButton={!isLoading && qaTree !== null}
         showSaveButton={!isLoading && qaTree !== null}
+        isAutomating={isAutomating}
+        onStartAutomation={startAutomation}
+        onStopAutomation={stopAutomation}
       />
       <div className="py-2 px-6 bg-white border-b border-gray-200">
         <div className="flex justify-between items-center">
@@ -2396,11 +2661,7 @@ export default function QnAPage() {
         {/* Right: Q&A Panel */}
         <div className="w-1/3 p-6 overflow-auto border-l border-gray-200">
           <QAPanel
-            currentQuestion={
-              currentNode
-                ? currentNode.question
-                : "No more questions. Q&A complete."
-            }
+            currentQuestion={currentNode ? currentNode.question : "No more questions. Q&A complete."}
             onSubmitAnswer={handleAnswer}
             isLoading={isLoading || isLoadingNextQuestion}
             hasKnowledgeBase={Boolean(settings?.knowledgeBase?.length)}
@@ -2408,7 +2669,6 @@ export default function QnAPage() {
           />
         </div>
       </main>
-      
       <PreviewPanel
         isOpen={isPreviewOpen}
         onClose={() => setIsPreviewOpen(false)}
@@ -2665,6 +2925,9 @@ interface HeaderToolbarProps {
   showRestartButton?: boolean;
   showGenerateButton?: boolean;
   showSaveButton?: boolean;
+  isAutomating?: boolean;
+  onStartAutomation?: () => void;
+  onStopAutomation?: () => void;
 }
 
 const HeaderToolbar: React.FC<HeaderToolbarProps> = ({ 
@@ -2673,7 +2936,10 @@ const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
   onSave,
   showRestartButton = false,
   showGenerateButton = false,
-  showSaveButton = false
+  showSaveButton = false,
+  isAutomating = false,
+  onStartAutomation,
+  onStopAutomation
 }) => {
   return (
     <header className="bg-white border-b border-gray-200">
@@ -2713,6 +2979,33 @@ const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Restart Q&A
+              </button>
+            )}
+            {onStartAutomation && onStopAutomation && (
+              <button
+                onClick={isAutomating ? onStopAutomation : onStartAutomation}
+                className={`px-4 py-2 rounded-lg transition-colors flex items-center space-x-2 ${
+                  isAutomating 
+                    ? 'bg-red-600 hover:bg-red-700 text-white' 
+                    : 'bg-purple-600 hover:bg-purple-700 text-white'
+                }`}
+              >
+                {isAutomating ? (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 18M6 6L18 6" />
+                    </svg>
+                    <span>Stop Auto-Answer</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Start Auto-Answer</span>
+                  </>
+                )}
               </button>
             )}
           </div>
