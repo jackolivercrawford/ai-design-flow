@@ -3,6 +3,28 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { KnowledgeBaseSource } from '@/types/settings';
 
+// A helper to extract subtopics from a parent's answer (basic version).
+function extractSubtopicsFromAnswer(answer: string): string[] {
+  // Very simple approach: split on punctuation, remove short fragments
+  const lines = answer
+    .split(/[.!?]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const subtopics: string[] = [];
+  for (const line of lines) {
+    // Optionally also split on commas or 'and' for more granular sub-points
+    const miniPoints = line.split(/,\s*|\sand\s+/).map((p) => p.trim());
+    miniPoints.forEach((p) => {
+      // Filter out very short or duplicate segments
+      if (p.length > 3 && !subtopics.includes(p.toLowerCase())) {
+        subtopics.push(p.toLowerCase());
+      }
+    });
+  }
+  return subtopics;
+}
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -38,18 +60,10 @@ ${knowledgeBase
     (source: KnowledgeBaseSource, index: number) => `
 Source ${index + 1} (${source.type === 'file' ? 'File' : 'Text'}: ${source.name}):
 Requirements: ${JSON.stringify(source.processedContent?.requirements || [])}
-Technical Specs: ${JSON.stringify(
-      source.processedContent?.technicalSpecifications || []
-    )}
-Design Guidelines: ${JSON.stringify(
-      source.processedContent?.designGuidelines || []
-    )}
-User Preferences: ${JSON.stringify(
-      source.processedContent?.userPreferences || []
-    )}
-Industry Standards: ${JSON.stringify(
-      source.processedContent?.industryStandards || []
-    )}
+Technical Specs: ${JSON.stringify(source.processedContent?.technicalSpecifications || [])}
+Design Guidelines: ${JSON.stringify(source.processedContent?.designGuidelines || [])}
+User Preferences: ${JSON.stringify(source.processedContent?.userPreferences || [])}
+Industry Standards: ${JSON.stringify(source.processedContent?.industryStandards || [])}
 `
   )
   .join('\n')}
@@ -64,13 +78,25 @@ Use this information to:
 
     console.log('Formatted knowledge base context:', knowledgeBaseContext);
 
+    // If we have a parent answer, extract subtopics
+    let parentAnswerSubtopics: string[] = [];
+    if (
+      parentContext &&
+      parentContext.parentAnswer &&
+      typeof parentContext.parentAnswer === 'string'
+    ) {
+      parentAnswerSubtopics = extractSubtopicsFromAnswer(parentContext.parentAnswer);
+    }
+
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
         {
           role: 'system',
           content: isAutoPopulate
-            ? `You are an expert UX design assistant that helps suggest answers based on the knowledge base and context. Your task is to provide a well-reasoned answer to the current question and return it as a JSON object.
+            ? 
+// ------------------- AUTO-POPULATE (Suggested Answer) -------------------
+`You are an expert UX design assistant that helps suggest answers based on the knowledge base and context. Your task is to provide a well-reasoned answer to the current question and return it as a JSON object.
 
 Knowledge Base Context:
 ${knowledgeBaseContext}
@@ -104,27 +130,53 @@ Return your response in this JSON format:
   "sourceReferences": [array of source indices that contributed],
   "confidence": "high" | "medium" | "low"
 }`
-            : `You are an expert UX design assistant that helps generate follow-up questions for a design prompt. Your task is to generate ONE follow-up question based on the traversal mode and return it as a JSON object.
+            : 
+// ------------------- FOLLOW-UP QUESTION GENERATION -------------------
+`You are an expert UX design assistant that helps generate follow-up questions for a design prompt. Your task is to generate ONE follow-up question based on the traversal mode and return it as a JSON object.
 
-${parentContext ? `
+${
+  parentContext
+    ? `
 Current Parent Question Context:
 - Parent Question: "${parentContext.parentQuestion}"
 - Parent Answer: "${parentContext.parentAnswer}"
 - Parent Topics: ${JSON.stringify(parentContext.parentTopics)}
-- Sibling Questions Already Asked: ${parentContext.siblingQuestions ? JSON.stringify(parentContext.siblingQuestions) : "None"}
+- Sibling Questions Already Asked: ${
+        parentContext.siblingQuestions
+          ? JSON.stringify(parentContext.siblingQuestions)
+          : 'None'
+      }
+
+Extracted Parent Answer Subtopics:
+${parentAnswerSubtopics.map((t) => `- ${t}`).join('\n')}
 
 CRITICAL: The generated question MUST:
 1. Be more specific than the parent question.
-2. Focus on a specific aspect mentioned in the parent's answer.
+2. Focus on a specific aspect mentioned in the parent's answer (see subtopics above).
 3. Not repeat information already covered in the parent's answer.
-4. Not duplicate any topics that have already been addressed by the parent's siblings or related branch questions.
-5. Ask for implementation details or specific requirements about topics mentioned in the parent's answer.
-` : ''}
+4. Not duplicate any topics that have already been addressed by siblings or previous questions.
+5. Ask for implementation details or specific requirements about that aspect.
+`
+    : ''
+}
+
+// ------------------------------------------------------------
+// STRONGER CRITICAL RELEVANCE RULE - forces quoting a subtopic
+// ------------------------------------------------------------
+CRITICAL RELEVANCE RULE:
+1. The new question MUST explicitly quote at least one exact phrase from the parent's answer in quotes 
+   (e.g., "voice-activated controls" or "categorized floor directory").
+2. The new question MUST demand deeper detail or specific implementation guidelines for that phrase.
+3. If the parent’s answer already covers that phrase fully, the new question must explore edge cases, 
+   advanced features, or constraints related to it.
+4. The new question must NOT be fully answerable by the parent's answer alone; it must prompt for additional 
+   clarifications or deeper specifics.
+5. Failure to quote the parent's exact phrase is not permitted for the new child question.
 
 Follow these guidelines:
 1. Question Progression Levels:
    Current Depth: ${depth}/5
-   
+
    BFS Mode Levels:
    - Level 1 (Basic Needs): Broad, fundamental questions about purpose, audience, and core requirements
      Example: "What is the fundamental purpose of the portfolio website?"
@@ -148,8 +200,9 @@ Follow these guidelines:
      Invalid child Q: "What content should be included in the portfolio?"
 
 3. Traversal Rules (${traversalMode}):
-   ${traversalMode === 'bfs'
-     ? `BFS Guidelines:
+   ${
+     traversalMode === 'bfs'
+       ? `BFS Guidelines:
         - CRITICAL: At Level 1 (top level), generate exactly 4-5 comprehensive questions that cover the main aspects.
         - For Level 2+, generate exactly 2-3 questions per parent aspect from the parent's answer.
         - Each sibling at the same level MUST focus on a different aspect from the parent's answer.
@@ -164,14 +217,14 @@ Follow these guidelines:
         Level Structure and Progression:
         - Level 1 (exactly 4-5 questions): Core requirements and fundamental aspects.
           Example: "What are the core user flows?", "What accessibility features are needed?"
-        
+
         - Level 2 (exactly 2-3 questions per parent aspect): Direct exploration of parent aspects.
           Example: If Level 1 answer mentions "search, filtering, and zoom":
           * Q5-Q7 explores search aspects.
           * Q8-Q10 explores filtering aspects.
           * Q11-Q13 explores zoom aspects.
           CRITICAL: Generate Level 2 questions for ALL Level 1 answers before moving to Level 3.
-        
+
         - Level 3+ (exactly 2-3 questions per parent aspect): Implementation details.
           Example: If Level 2 answer about search mentions "real-time search and filters":
           * "How should real-time search results be displayed?"
@@ -183,57 +236,57 @@ Follow these guidelines:
            * Directly reference a specific aspect from parent's answer using exact terminology.
            * Maintain clear topic lineage from Level 1 through current level.
            * Ask for more specific details about that aspect.
-        
+
         2. Sibling questions MUST:
            * Each focus on a different aspect from parent's answer.
            * Not overlap in their focus areas.
            * Together cover all major aspects mentioned in parent's answer.
            * Stay at the same depth level as each other.
-        
+
         3. Moving Deeper Rules:
            * NEVER generate Level 3 questions until ALL Level 2 questions for ALL Level 1 parents are complete.
            * Each deeper question must make the parent aspect more specific.
            * Maintain clear topic lineage by referencing both direct parent and Level 1 ancestor.
-        
+
         Cycling Behavior:
         1. When a branch is fully explored:
            * First complete all siblings at current level.
            * Only move deeper when ALL nodes at current level across ALL branches are complete.
            * If all branches are explored, return to Level 1 with new aspects.
-        
+
         2. When generating new Level 1 questions after a cycle:
            * Must cover completely different aspects than ALL previous Level 1 questions.
            * Should maintain the same level of importance as original Level 1 questions.
            * Example: If first cycle covered "user profiles" and "content management",
              second cycle might cover "analytics" and "performance optimization".
-        
+
         Progression Rules:
         1. After getting exactly 4-5 Level 1 questions answered:
            * Generate Level 2 questions for EACH answered Level 1 question.
            * Only add new Level 1 questions if starting a new cycle.
-        
+
         2. When to move deeper:
            * ALL questions at current level are answered.
            * EACH parent has exactly 2-3 child questions.
            * ALL aspects from ALL parent answers are covered.
-        
+
         3. When to stay at current level:
            * ANY aspects from ANY parent answer are still unexplored.
            * ANY parent has fewer than 2 child questions.
            * ANY questions at current level are unanswered.`
-     : `DFS Guidelines:
+       : `DFS Guidelines:
         - CRITICAL: In DFS mode, fully explore ONE topic branch before moving to siblings.
         - Maximum depth is 5 levels, but can be less if topics are fully explored.
         - When all branches are exhausted, return to Level 1 with new aspects.
-        
+
         Sibling Count Guidelines:
         - Level 1: Exactly 4-5 main topic questions.
         - Level 2-5: Exactly 2-3 questions per parent aspect.
-        
+
         Example proper DFS progression:
         Q1: "What are the core navigation features needed?"
         Parent A1: "Need a main menu, search bar, and user profile section."
-        
+
         First Branch (Main Menu) - Complete this ENTIRE branch before siblings:
         Q2: "What specific items should be in the main menu?"
         A2: "Home, Products, Categories, Cart, and User Profile links."
@@ -242,7 +295,7 @@ Follow these guidelines:
         Q4: "What interactions should menu items have?"
         A4: "Hover previews and dropdown menus."
         [MUST complete ALL menu questions before moving to search]
-        
+
         Second Branch (Search) - Only start after menu is complete:
         Q5: "What search functionality is required?"
         A5: "Real-time search with filters and suggestions."
@@ -251,18 +304,18 @@ Follow these guidelines:
         Q7: "What advanced search options are needed?"
         A7: "Category filters and price range selectors."
         [MUST complete ALL search questions before user profile]
-        
+
         Third Branch (User Profile) - Only start after search is complete:
         Q8: "What user profile information should be shown?"
         Q9: "What profile customization options are needed?"
-        
+
         Topic Exploration Rules:
         1. Each branch MUST:
            * Start with broad feature questions.
            * Progress to specific implementation details.
            * End with edge cases and optimizations.
            * Maintain clear topic lineage throughout.
-        
+
         2. Question Depth Requirements:
            * Level 1: Broad feature questions (exactly 4-5)
              Example: "What core navigation features are needed?"
@@ -274,7 +327,7 @@ Follow these guidelines:
              Example: "How to handle menu overflow on mobile?"
            * Level 5: Optimizations (exactly 2-3 per Level 4 answer)
              Example: "What menu item preloading strategy to use?"
-        
+
         Branch Completion Rules:
         1. A branch is ONLY complete when:
            - ALL aspects of the current topic are fully explored.
@@ -282,60 +335,60 @@ Follow these guidelines:
            - Edge cases and optimizations are addressed.
            - Reached maximum depth (5 levels) OR
            - ALL possible questions about the topic are answered.
-           
+
         2. When to stop current branch (shouldStopBranch=true):
            - Reached maximum depth (5 levels) OR
            - ALL aspects from parent's answer are fully explored AND
            - Questions would become too specific to be useful OR
            - Current topic is fully defined with implementation details.
-           
+
         3. When to move to siblings:
            - ONLY after current branch is FULLY explored.
            - When shouldStopBranch=true is returned AND
            - No more meaningful child questions can be generated.
            - NEVER move to siblings until current topic is complete.
-           
+
         4. Question Depth Progression:
            Level 1: High-level feature questions (exactly 4-5)
            Level 2: Specific requirements (exactly 2-3 per parent)
-           Level 3: Implementation details (exactly 2-3 per parent)
+           Level 3: Technical implementation details (exactly 2-3 per parent)
            Level 4: Edge cases (exactly 2-3 per parent)
            Level 5: Optimizations (exactly 2-3 per parent)
-        
+
         Topic Lineage Rules:
         1. Each question MUST:
            * Directly reference its parent topic.
            * Use exact terminology from parent's answer.
            * Maintain clear connection to Level 1 ancestor.
            * Progress logically deeper into the topic.
-        
+
         2. Moving Between Siblings:
            * NEVER move to a sibling until current branch is complete.
            * Each sibling must explore a different main topic.
            * Siblings must be at the same depth level.
            * Complete ALL aspects of current topic before moving.
-        
+
         3. Starting New Level 1 Questions:
            * Only after ALL current Level 1 branches are complete.
            * Must cover completely different aspects than ALL previous Level 1s.
            * Maintain same level of importance as original Level 1s.
            * Example: If first set covered "navigation" and "search",
              second set might cover "performance" and "security".
-        
+
         Question Generation Rules:
         1. Each new question MUST:
            * Be more specific than its parent.
            * Focus on unexplored aspects of parent's answer.
            * Maintain clear topic focus.
            * Progress logically deeper into implementation.
-        
+
         2. Depth Requirements:
            * Level 1: Core feature identification.
            * Level 2: Feature requirement specification.
            * Level 3: Technical implementation details.
            * Level 4: Edge case handling.
            * Level 5: Performance optimization.
-        
+
         3. When generating questions:
            * Use exact terminology from parent's answer.
            * Focus on one specific aspect at a time.
@@ -422,7 +475,9 @@ Return your response in this format:
 Previous Q&A History:
 ${JSON.stringify(previousQuestions, null, 2)}
 
-Current Question: ${previousQuestions[previousQuestions.length - 1]?.question || 'Initial question'}
+Current Question: ${
+  previousQuestions[previousQuestions.length - 1]?.question || 'Initial question'
+}
 
 CRITICAL REQUIREMENTS:
 1. Review ALL previous questions and their topics carefully.
@@ -464,6 +519,8 @@ Remember:
         confidence: "low",
         topicsCovered: ["core_features"],
         parentTopic: "requirements",
+        // ADDED: include parentReference here, even if empty
+        parentReference: "",
         subtopics: []
       });
     }
@@ -480,6 +537,8 @@ Remember:
       topicsCovered: string[];
       parentTopic: string;
       subtopics: string[];
+      // parse parentReference if present
+      parentReference?: string;
     };
 
     try {
@@ -498,7 +557,8 @@ Remember:
         confidence: response.confidence || "low",
         topicsCovered: response.topicsCovered || [],
         parentTopic: response.parentTopic || "requirements",
-        subtopics: response.subtopics || []
+        subtopics: response.subtopics || [],
+        parentReference: response.parentReference || ""
       };
 
       // Clean up questions to ensure they're plain text
@@ -541,6 +601,7 @@ Remember:
         confidence: "low",
         topicsCovered: ["core_features"],
         parentTopic: "requirements",
+        parentReference: "",
         subtopics: []
       });
     }

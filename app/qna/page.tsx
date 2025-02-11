@@ -114,6 +114,13 @@ export default function QnAPage() {
     return null;
   };
 
+  function extractSubtopicsFromAnswerText(answer: string): string[] {
+    return answer
+      .split(/[.!?]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
   // -------------------- DFS Ordering with Automation --------------------
 
   // getNextQuestion follows DFS:
@@ -127,11 +134,11 @@ export default function QnAPage() {
       console.log('Automation stopped, not generating next question');
       return null;
     }
-
+  
     const isDFS = settings?.traversalMode === 'dfs';
     if (isDFS) {
       if (node.answer) {
-        // Build branch history and calculate depth.
+        // -------------------- DFS: Build branch history and determine depth
         const branchHistory: QuestionHistoryItem[] = [];
         let current: QANode | null = node;
         let depth = 0;
@@ -140,7 +147,7 @@ export default function QnAPage() {
             branchHistory.unshift({
               question: current.question,
               answer: current.answer,
-              topics: extractTopics(current.question)
+              topics: extractTopics(current.question),
             });
             depth++;
           }
@@ -148,22 +155,23 @@ export default function QnAPage() {
           if (!parent || parent === current) break;
           current = parent;
         }
-    
+  
         // ----- DFS DEPTH CAP: Limit depth to 5 -----
         if (depth >= 5) {
-          // At depth 5, backtrack incrementally.
+          // At depth 5, backtrack incrementally to find siblings or new branches
           let temp: QANode | null = node;
           while (temp) {
             const parent = findParentNode(qaTree, temp);
             if (!parent) break;
             const siblings = parent.children;
             const index = siblings.findIndex(n => n.id === temp!.id);
-            // First: if a next sibling already exists, return it.
+  
+            // If a next sibling already exists, return it
             if (index >= 0 && index < siblings.length - 1) {
               return siblings[index + 1];
             }
-            // Only if there's no next sibling, attempt to fetch new candidate siblings.
-            // (This check prevents repeated sibling generation when one is already available.)
+  
+            // Otherwise, attempt to fetch new siblings if there's only one
             if (siblings.length === 1) {
               const parentHistory = getAllAnsweredQuestions(parent);
               const { nodes: generatedSiblings } = await fetchQuestionsForNode(
@@ -174,22 +182,21 @@ export default function QnAPage() {
                 true
               );
               if (generatedSiblings.length > 0) {
-                // Append only new candidates that aren't already present.
                 parent.children = [
                   ...parent.children,
-                  ...generatedSiblings.filter(s => !parent.children.some(ex => ex.id === s.id))
+                  ...generatedSiblings.filter(s => !parent.children.some(ex => ex.id === s.id)),
                 ];
-                // Check again if a next sibling now exists.
                 const newIndex = parent.children.findIndex(n => n.id === temp!.id);
                 if (newIndex >= 0 && newIndex < parent.children.length - 1) {
                   return parent.children[newIndex + 1];
                 }
               }
             }
-            // If no next sibling is found, move up one level.
+            // If no next sibling is found, move up one level
             temp = parent;
           }
-          // If backtracking through all levels fails, generate new Level 1 questions.
+  
+          // If backtracking fails, generate new Level 1 questions
           const rootHistory = getAllAnsweredQuestions(qaTree!);
           const { nodes: newTopLevel, suggestedAnswer } = await fetchQuestionsForNode(
             prompt,
@@ -211,18 +218,28 @@ export default function QnAPage() {
           return null;
         }
         // ----- End DFS DEPTH CAP -----
-    
-        // If depth is less than 5, force a deeper dive.
-        const { nodes: children, shouldStopBranch, suggestedAnswer } = await fetchQuestionsForNode(
+  
+        // Extract subtopics from this node’s answer, so we can pass them along
+        const parentAnswerSubtopics = node.answer
+          ? extractSubtopicsFromAnswerText(node.answer)
+          : [];
+  
+        // If depth < 5, try generating a child
+        const {
+          nodes: children,
+          shouldStopBranch,
+          suggestedAnswer,
+        } = await fetchQuestionsForNode(
           prompt,
           node,
           branchHistory,
           depth,
-          true
+          true,
+          parentAnswerSubtopics // Pass subtopics as uncoveredAspects
         );
+  
         if (children.length > 0 && (!shouldStopBranch || depth < 5)) {
           const child = children[0];
-          // Append the candidate if not already present.
           if (!node.children.find(c => c.id === child.id)) {
             node.children.push(child);
           }
@@ -234,9 +251,8 @@ export default function QnAPage() {
           );
           return child;
         }
-    
-        // If no child candidate was generated (or we're at depth 5),
-        // backtrack by forcing generation of sibling candidates at the parent's level.
+  
+        // If no child was generated or we're at depth 5, force siblings
         const parentNode = findParentNode(qaTree, node);
         if (parentNode) {
           const parentHistory = getAllAnsweredQuestions(parentNode);
@@ -248,10 +264,9 @@ export default function QnAPage() {
             true
           );
           if (newSiblings.length > 0) {
-            // Append new candidates that are not already present.
             parentNode.children = [
               ...parentNode.children,
-              ...newSiblings.filter(s => !parentNode.children.find(ex => ex.id === s.id))
+              ...newSiblings.filter(s => !parentNode.children.find(ex => ex.id === s.id)),
             ];
             const index = parentNode.children.findIndex(n => n.id === node.id);
             if (index >= 0 && index < parentNode.children.length - 1) {
@@ -260,19 +275,16 @@ export default function QnAPage() {
               return parentNode.children[0];
             }
           }
-          // As a fallback, recursively try generating a candidate from the parent.
+          // Fallback: try going up another level
           return await getNextQuestion(parentNode);
         }
-    
-        // Fallback: Generate new Level 1 questions.
+  
+        // Final fallback: generate new Level 1 questions
         const rootHistory2 = getAllAnsweredQuestions(qaTree!);
-        const { nodes: newTopLevel, suggestedAnswer: fallbackAnswer } = await fetchQuestionsForNode(
-          prompt,
-          qaTree!,
-          rootHistory2,
-          1,
-          true
-        );
+        const {
+          nodes: newTopLevel,
+          suggestedAnswer: fallbackAnswer,
+        } = await fetchQuestionsForNode(prompt, qaTree!, rootHistory2, 1, true);
         if (newTopLevel.length > 0) {
           newTopLevel[0].questionNumber = questionCount + 1;
           qaTree!.children = newTopLevel;
@@ -285,15 +297,13 @@ export default function QnAPage() {
         }
         return null;
       }
-      // Fallback for DFS if node.answer is falsy.
+  
+      // Fallback for DFS if node.answer is falsy:
       const rootHistory = getAllAnsweredQuestions(qaTree!);
-      const { nodes: newTopLevel, suggestedAnswer: fallbackAnswer } = await fetchQuestionsForNode(
-        prompt,
-        qaTree!,
-        rootHistory,
-        1,
-        true
-      );
+      const {
+        nodes: newTopLevel,
+        suggestedAnswer: fallbackAnswer,
+      } = await fetchQuestionsForNode(prompt, qaTree!, rootHistory, 1, true);
       if (newTopLevel.length > 0) {
         newTopLevel[0].questionNumber = questionCount + 1;
         qaTree!.children = newTopLevel;
@@ -306,9 +316,10 @@ export default function QnAPage() {
       }
       return null;
     } else {
-      // BFS mode remains unchanged.
+      // -------------------- BFS MODE --------------------
       const parent = findParentNode(qaTree, node);
       if (!parent) {
+        // If there's no parent, we're at the root level
         const rootHistory = getAllAnsweredQuestions(qaTree!);
         const { nodes: newTopLevel } = await fetchQuestionsForNode(
           prompt,
@@ -324,10 +335,20 @@ export default function QnAPage() {
         }
         return null;
       }
+  
+      // Gather parent's subtopics so BFS also sees the parent's actual answer
+      const parentAnswerSubtopics = parent.answer
+        ? extractSubtopicsFromAnswerText(parent.answer)
+        : [];
+  
       const currentLevelNodes = parent.children;
       const currentIndex = currentLevelNodes.indexOf(node);
       const currentDepth = getNodeDepth(node);
-      const parentAspects = parent.answer ? extractAspectsFromAnswer(parent.answer) : ['basic_requirements'];
+  
+      // Original BFS approach to figure out uncovered aspects, sibling generation, etc.
+      const parentAspects = parent.answer
+        ? extractAspectsFromAnswer(parent.answer)
+        : ['basic_requirements'];
       const coveredAspects = new Set(
         currentLevelNodes
           .filter(n => n.answer)
@@ -341,16 +362,24 @@ export default function QnAPage() {
           })
           .flat()
       );
+  
+      // If we happen to be at depth 2 and the parent has enough children, try next L1 node, etc.
       if (currentDepth === 2) {
         const currentLevel1Node = findParentNode(qaTree, node);
-        const hasEnoughChildren = currentLevel1Node &&
-          currentLevel1Node.children.length >= Math.min(3, extractAspectsFromAnswer(currentLevel1Node.answer || '').length);
+        const hasEnoughChildren =
+          currentLevel1Node &&
+          currentLevel1Node.children.length >= Math.min(
+            3,
+            extractAspectsFromAnswer(currentLevel1Node.answer || '').length
+          );
         if (hasEnoughChildren) {
           const level1Nodes = qaTree!.children;
-          const nextLevel1WithoutChildren = level1Nodes.find(l1Node =>
-            l1Node !== currentLevel1Node &&
-            l1Node.answer &&
-            l1Node.children.length < Math.min(3, extractAspectsFromAnswer(l1Node.answer).length)
+          const nextLevel1WithoutChildren = level1Nodes.find(
+            l1Node =>
+              l1Node !== currentLevel1Node &&
+              l1Node.answer &&
+              l1Node.children.length <
+                Math.min(3, extractAspectsFromAnswer(l1Node.answer).length)
           );
           if (nextLevel1WithoutChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextLevel1WithoutChildren);
@@ -363,37 +392,48 @@ export default function QnAPage() {
             );
             if (newChildren.length > 0) {
               newChildren[0].questionNumber = questionCount + 1;
-              nextLevel1WithoutChildren.children = [...nextLevel1WithoutChildren.children, ...newChildren];
+              nextLevel1WithoutChildren.children = [
+                ...nextLevel1WithoutChildren.children,
+                ...newChildren,
+              ];
               return newChildren[0];
             }
           }
         }
       }
+  
       const levelHistory: QuestionHistoryItem[] = currentLevelNodes
         .filter(n => n.answer)
         .map(n => ({
           question: n.question,
           answer: n.answer,
-          topics: extractTopics(n.question)
+          topics: extractTopics(n.question),
         }));
+  
+      // If there's a next sibling already, return it
       if (currentIndex < currentLevelNodes.length - 1) {
         return currentLevelNodes[currentIndex + 1];
       }
+  
       const isTopLevel = currentDepth === 1;
-      const uncoveredAspects = parentAspects.filter(aspect => !coveredAspects.has(aspect));
+      const uncoveredAspects = parentAspects.filter(
+        aspect => !coveredAspects.has(aspect)
+      );
       const hasEnoughTopLevelQuestions = isTopLevel && currentLevelNodes.length >= 4;
       const hasEnoughSiblingsForLevel = !isTopLevel && currentLevelNodes.length >= 3;
       const shouldGenerateMoreSiblings =
         (isTopLevel && !hasEnoughTopLevelQuestions && uncoveredAspects.length > 0) ||
         (!isTopLevel && uncoveredAspects.length > 0 && !hasEnoughSiblingsForLevel);
+  
       if (shouldGenerateMoreSiblings) {
+        // Use parent's subtopics so BFS sibling generation can be more targeted
         const { nodes: newSiblings } = await fetchQuestionsForNode(
           prompt,
           parent,
           levelHistory,
           currentDepth,
           true,
-          uncoveredAspects
+          parentAnswerSubtopics
         );
         if (newSiblings.length > 0) {
           newSiblings[0].questionNumber = questionCount + 1;
@@ -401,11 +441,16 @@ export default function QnAPage() {
           return newSiblings[0];
         }
       }
+  
+      // BFS fallback if currentDepth >= 3, see if we can handle incomplete L2 nodes, etc.
       if (currentDepth >= 3) {
         const l2Nodes = getAllNodesAtDepth(qaTree!, 2);
         const incompleteL2 = l2Nodes.find(l2Node => {
           if (!l2Node.answer) return false;
-          const expectedChildren = Math.min(3, extractAspectsFromAnswer(l2Node.answer).length);
+          const expectedChildren = Math.min(
+            3,
+            extractAspectsFromAnswer(l2Node.answer).length
+          );
           return l2Node.children.length < expectedChildren;
         });
         if (incompleteL2) {
@@ -424,6 +469,7 @@ export default function QnAPage() {
           }
         }
       }
+  
       const allCurrentLevelNodes = getAllNodesAtDepth(qaTree!, currentDepth);
       const allCurrentLevelAnswered = allCurrentLevelNodes.every(n => n.answer);
       if (allCurrentLevelAnswered) {
@@ -433,9 +479,11 @@ export default function QnAPage() {
           return n.children.length >= Math.min(3, aspects.length);
         });
         if (allNodesHaveEnoughChildren) {
-          const nextNodeNeedingChildren = allCurrentLevelNodes.find(n =>
-            n.answer &&
-            n.children.length < Math.min(3, extractAspectsFromAnswer(n.answer).length)
+          const nextNodeNeedingChildren = allCurrentLevelNodes.find(
+            n =>
+              n.answer &&
+              n.children.length <
+                Math.min(3, extractAspectsFromAnswer(n.answer).length)
           );
           if (nextNodeNeedingChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextNodeNeedingChildren);
@@ -448,18 +496,27 @@ export default function QnAPage() {
             );
             if (children.length > 0) {
               children[0].questionNumber = questionCount + 1;
-              nextNodeNeedingChildren.children = [...nextNodeNeedingChildren.children, ...children];
+              nextNodeNeedingChildren.children = [
+                ...nextNodeNeedingChildren.children,
+                ...children,
+              ];
               return children[0];
             }
           }
-          const allChildrenAtNextDepth = allCurrentLevelNodes.flatMap(n => n.children);
-          const unansweredChildAtNextDepth = allChildrenAtNextDepth.find(n => !n.answer);
+          const allChildrenAtNextDepth = allCurrentLevelNodes.flatMap(
+            n => n.children
+          );
+          const unansweredChildAtNextDepth = allChildrenAtNextDepth.find(
+            n => !n.answer
+          );
           if (unansweredChildAtNextDepth) {
             return unansweredChildAtNextDepth;
           }
-          const nextDepthNodeNeedingChildren = allChildrenAtNextDepth.find(n =>
-            n.answer &&
-            n.children.length < Math.min(3, extractAspectsFromAnswer(n.answer).length)
+          const nextDepthNodeNeedingChildren = allChildrenAtNextDepth.find(
+            n =>
+              n.answer &&
+              n.children.length <
+                Math.min(3, extractAspectsFromAnswer(n.answer).length)
           );
           if (nextDepthNodeNeedingChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextDepthNodeNeedingChildren);
@@ -472,7 +529,10 @@ export default function QnAPage() {
             );
             if (children.length > 0) {
               children[0].questionNumber = questionCount + 1;
-              nextDepthNodeNeedingChildren.children = [...nextDepthNodeNeedingChildren.children, ...children];
+              nextDepthNodeNeedingChildren.children = [
+                ...nextDepthNodeNeedingChildren.children,
+                ...children,
+              ];
               return children[0];
             }
           }
@@ -481,9 +541,11 @@ export default function QnAPage() {
           if (nextUnansweredNode) {
             return nextUnansweredNode;
           }
-          const nextNodeNeedingChildren = allCurrentLevelNodes.find(n =>
-            n.answer &&
-            n.children.length < Math.min(3, extractAspectsFromAnswer(n.answer).length)
+          const nextNodeNeedingChildren = allCurrentLevelNodes.find(
+            n =>
+              n.answer &&
+              n.children.length <
+                Math.min(3, extractAspectsFromAnswer(n.answer).length)
           );
           if (nextNodeNeedingChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextNodeNeedingChildren);
@@ -496,7 +558,10 @@ export default function QnAPage() {
             );
             if (children.length > 0) {
               children[0].questionNumber = questionCount + 1;
-              nextNodeNeedingChildren.children = [...nextNodeNeedingChildren.children, ...children];
+              nextNodeNeedingChildren.children = [
+                ...nextNodeNeedingChildren.children,
+                ...children,
+              ];
               return children[0];
             }
           }
@@ -516,8 +581,8 @@ export default function QnAPage() {
         }
       }
     }
-    
-    // Fallback: Generate new Level 1 questions.
+  
+    // Final fallback: generate new Level 1 questions if everything else fails
     const rootHistory = getAllAnsweredQuestions(qaTree!);
     const { nodes: newTopLevel } = await fetchQuestionsForNode(
       prompt,
