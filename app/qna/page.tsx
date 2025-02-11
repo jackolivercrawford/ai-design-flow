@@ -587,14 +587,24 @@ export default function QnAPage() {
   ): Promise<{ nodes: QANode[]; shouldStopBranch: boolean; stopReason: string; suggestedAnswer?: string }> => {
     try {
       console.log('Fetching questions with knowledge base:', settings?.knowledgeBase);
+      // Compute the parent's siblings (if available) by using the tree structure.
+      // (Note: We assume that qaTree is available in this scope.)
+      const grandParent = qaTree ? findParentNode(qaTree, parentNode) : null;
+      const siblingQuestions = grandParent
+        ? grandParent.children
+          .filter(child => child.id !== parentNode.id)
+          .map(child => child.question)
+        : [];
+
       const parentContext =
         parentNode.question !== `Prompt: ${designPrompt}`
           ? {
-              parentQuestion: parentNode.question,
-              parentAnswer: parentNode.answer,
-              parentTopics: extractTopics(parentNode.question),
-              uncoveredAspects,
-            }
+            parentQuestion: parentNode.question,
+            parentAnswer: parentNode.answer,
+            parentTopics: extractTopics(parentNode.question),
+            siblingQuestions, // <-- new field to pass sibling questions
+            uncoveredAspects,
+          }
           : null;
       const response = await fetch('/api/generate-questions', {
         method: 'POST',
