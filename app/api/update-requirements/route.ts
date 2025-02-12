@@ -63,13 +63,50 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "system",
-          content: `You are a requirements document updater. Your task is to update a requirements document based on Q&A session information and knowledge base data and return it as a JSON object.
+          content: `You are a UI/UX-focused requirements document updater. Your task is to update a requirements document based on Q&A session information and knowledge base data, translating all requirements into their UI/UX implications.
 
 CRITICAL INSTRUCTIONS:
-1. You MUST return ONLY a valid JSON object.
-2. DO NOT include any explanatory text, markdown, or other content.
-3. DO NOT wrap the JSON in code blocks or quotes.
-4. The JSON must exactly match this structure:
+1. Transform ALL requirements to focus on UI/UX implications, following these guidelines for each category:
+
+   Basic Needs:
+   - Focus on core user interface elements and primary interactions
+   - Translate technical requirements into visual and interactive elements
+   - Example: "System needs real-time data processing" becomes "Display real-time updates with visual indicators for data freshness"
+
+   Functional Requirements:
+   - Express in terms of user interactions and interface behaviors
+   - Describe how features manifest in the UI
+   - Example: "System must process multiple file formats" becomes "Interface should provide clear drag-drop zones with visual feedback for accepted file types"
+
+   User Experience:
+   - Focus on user flows, interaction patterns, and feedback mechanisms
+   - Emphasize accessibility and usability aspects
+   - Example: "System needs error handling" becomes "Provide clear error messages with suggested actions for recovery"
+
+   Implementation:
+   - Transform technical specs into UI patterns and components
+   - Focus on visual hierarchy and layout implications
+   - Example: "Use REST API" becomes "Implement loading states and progress indicators for all data fetching operations"
+
+   Refinements:
+   - Emphasize visual polish and interaction refinements
+   - Focus on micro-interactions and visual feedback
+   - Example: "Optimize performance" becomes "Add smooth transitions between states and loading placeholders"
+
+   Constraints:
+   - Express technical limitations in terms of UI/UX impact
+   - Focus on user-facing implications
+   - Example: "Limited server resources" becomes "Implement efficient pagination and lazy loading in the interface"
+
+2. For any requirement that seems non-UI/UX related:
+   - Consider its impact on the user interface
+   - Transform it into its UI/UX implications
+   - If truly no UI/UX impact, omit it
+
+3. You MUST return ONLY a valid JSON object.
+4. DO NOT include any explanatory text, markdown, or other content.
+5. DO NOT wrap the JSON in code blocks or quotes.
+6. The JSON must exactly match this structure:
 {
   "id": string,
   "prompt": string,
@@ -108,7 +145,7 @@ CRITICAL INSTRUCTIONS:
 Latest Q&A: ${qaContext}
 Knowledge Base: ${knowledgeBaseContext}
 
-Update the requirements document with any new information from the Q&A and knowledge base. Return ONLY the updated document as a JSON object.`
+Update the requirements document with any new information from the Q&A and knowledge base, ensuring all requirements are expressed in terms of their UI/UX implications. Return ONLY the updated document as a JSON object.`
         }
       ],
       max_completion_tokens: 16000,
@@ -144,12 +181,42 @@ Update the requirements document with any new information from the Q&A and knowl
         const textLower = text.toLowerCase();
         let category: 'functional' | 'technical' | 'ux' | 'accessibility' | 'security' | 'performance' = 'functional';
         const tags: string[] = [];
-        let priority: 'high' | 'medium' | 'low' = 'medium';
+        let priority: 'high' | 'medium' | 'low';
 
-        // Category determination
+        // Priority determination first (more comprehensive)
+        if (
+          textLower.includes('critical') || 
+          textLower.includes('essential') || 
+          textLower.includes('must') ||
+          textLower.includes('required') ||
+          textLower.includes('necessary') ||
+          textLower.includes('important') ||
+          textLower.includes('crucial') ||
+          textLower.includes('key') ||
+          textLower.includes('primary') ||
+          textLower.includes('core')
+        ) {
+          priority = 'high';
+        } else if (
+          textLower.includes('optional') || 
+          textLower.includes('nice to have') ||
+          textLower.includes('if possible') ||
+          textLower.includes('could') ||
+          textLower.includes('might') ||
+          textLower.includes('maybe') ||
+          textLower.includes('consider') ||
+          textLower.includes('secondary') ||
+          textLower.includes('additional')
+        ) {
+          priority = 'low';
+        } else {
+          priority = 'medium';
+        }
+
+        // Category determination (existing logic)
         if (textLower.includes('security') || textLower.includes('emergency') || textLower.includes('safety')) {
           category = 'security';
-          priority = 'high';
+          priority = 'high'; // Security always high priority
           tags.push('safety');
         } else if (textLower.includes('user') || textLower.includes('interface') || textLower.includes('display') || textLower.includes('visual')) {
           category = 'ux';
@@ -159,7 +226,7 @@ Update the requirements document with any new information from the Q&A and knowl
           tags.push('optimization');
         } else if (textLower.includes('accessible') || textLower.includes('disability')) {
           category = 'accessibility';
-          priority = 'high';
+          priority = 'high'; // Accessibility always high priority
           tags.push('ada-compliance');
         } else if (textLower.includes('technical') || textLower.includes('system') || textLower.includes('integration')) {
           category = 'technical';
@@ -181,15 +248,6 @@ Update the requirements document with any new information from the Q&A and knowl
         }
         if (textLower.includes('real-time') || textLower.includes('realtime')) {
           tags.push('real-time');
-        }
-
-        // Priority determination (if not already set by category)
-        if (priority === 'medium') {
-          if (textLower.includes('critical') || textLower.includes('essential') || textLower.includes('must')) {
-            priority = 'high';
-          } else if (textLower.includes('optional') || textLower.includes('nice to have')) {
-            priority = 'low';
-          }
         }
 
         return { category, tags, priority };

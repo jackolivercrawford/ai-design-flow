@@ -129,12 +129,7 @@ export default function QnAPage() {
   // – It then returns the next candidate; if none exists at that level, it recursively backtracks.
   // The suggested answer from the candidate is saved so that the UI displays the answer corresponding to the shown question.
   const getNextQuestion = async (node: QANode): Promise<QANode | null> => {
-    // If automation has been stopped, exit early.
-    if (!isAutomating) {
-      console.log('Automation stopped, not generating next question');
-      return null;
-    }
-  
+    // Remove the early exit for non-auto mode
     const isDFS = settings?.traversalMode === 'dfs';
     if (isDFS) {
       if (node.answer) {
@@ -219,7 +214,7 @@ export default function QnAPage() {
         }
         // ----- End DFS DEPTH CAP -----
   
-        // Extract subtopics from this node’s answer, so we can pass them along
+        // Extract subtopics from this node's answer, so we can pass them along
         const parentAnswerSubtopics = node.answer
           ? extractSubtopicsFromAnswerText(node.answer)
           : [];
@@ -1078,55 +1073,72 @@ export default function QnAPage() {
       currentNode.answer = answer;
       await updateRequirements(currentNode.id);
       
-      // Store automation state before async operations
-      const wasAutomating = isAutomating;
+      // Get next question regardless of automation state
+      console.log('Getting next question');
+      const nextNode = await getNextQuestion(currentNode);
       
-      if (wasAutomating) {
-        console.log('Getting next question (automation active)');
-        const nextNode = await getNextQuestion(currentNode);
-        
-        // Check if automation was stopped during the async operation
-        if (!isAutomating) {
-          console.log('Automation was stopped during question generation');
-          setIsLoadingNextQuestion(false);
-          return;
-        }
-        
-        if (nextNode) {
-          if (!askedQuestions.has(nextNode.question)) {
-            console.log('Setting new question');
-            setAskedQuestions(prev => new Set(prev).add(nextNode.question));
-            setIsInitialLoad(true);
-            setCurrentNode(nextNode);
-            setQuestionCount(prev => prev + 1);
-            setQaTree(prev => prev ? { ...prev } : prev);
-            setIsInitialLoad(false);
-            
-            // Only schedule next step if automation is still active
-            if (isAutomating) {
-              if (automationTimeoutRef.current) {
-                clearTimeout(automationTimeoutRef.current);
-              }
-              automationTimeoutRef.current = setTimeout(runNextAutomatedStep, 1000);
+      if (nextNode) {
+        if (!askedQuestions.has(nextNode.question)) {
+          console.log('Setting new question');
+          setAskedQuestions(prev => new Set(prev).add(nextNode.question));
+          setIsInitialLoad(true);
+          setCurrentNode(nextNode);
+          setQuestionCount(prev => prev + 1);
+          setQaTree(prev => prev ? { ...prev } : prev);
+          setIsInitialLoad(false);
+          
+          // Only schedule next automation step if automation is active
+          if (isAutomating) {
+            if (automationTimeoutRef.current) {
+              clearTimeout(automationTimeoutRef.current);
             }
-          } else {
-            console.warn('Duplicate question detected:', nextNode.question);
-            setCurrentNode(null);
-            stopAutomation();
+            automationTimeoutRef.current = setTimeout(runNextAutomatedStep, 1000);
           }
         } else {
-          console.log('No next question available');
-          setCurrentNode(null);
-          await updateRequirements(null);
-          stopAutomation();
+          console.warn('Duplicate question detected:', nextNode.question);
+          // Don't set currentNode to null in non-auto mode, try to get another question
+          if (isAutomating) {
+            setCurrentNode(null);
+            stopAutomation();
+          } else {
+            const anotherNode = await getNextQuestion(currentNode);
+            if (anotherNode && !askedQuestions.has(anotherNode.question)) {
+              setAskedQuestions(prev => new Set(prev).add(anotherNode.question));
+              setIsInitialLoad(true);
+              setCurrentNode(anotherNode);
+              setQuestionCount(prev => prev + 1);
+              setQaTree(prev => prev ? { ...prev } : prev);
+            } else {
+              setCurrentNode(null);
+            }
+          }
         }
       } else {
-        console.log('Answer saved, automation not active - keeping current node');
-        setQaTree(prev => prev ? { ...prev } : prev);
+        console.log('No next question available');
+        // In non-auto mode, try one more time to get a question from a different branch
+        if (!isAutomating) {
+          const rootHistory = getAllAnsweredQuestions(qaTree!);
+          const { nodes: newTopLevel } = await fetchQuestionsForNode(prompt, qaTree!, rootHistory, 1, true);
+          if (newTopLevel.length > 0) {
+            newTopLevel[0].questionNumber = questionCount + 1;
+            qaTree!.children = [...qaTree!.children, ...newTopLevel];
+            setCurrentNode(newTopLevel[0]);
+            setQuestionCount(prev => prev + 1);
+            setQaTree(prev => prev ? { ...prev } : prev);
+          } else {
+            setCurrentNode(null);
+          }
+        } else {
+          setCurrentNode(null);
+          stopAutomation();
+        }
+        await updateRequirements(null);
       }
     } catch (error) {
       console.error('Error in handleAnswer:', error);
-      stopAutomation();
+      if (isAutomating) {
+        stopAutomation();
+      }
     } finally {
       setIsLoadingNextQuestion(false);
     }
@@ -1235,15 +1247,6 @@ export default function QnAPage() {
 
   const handleGenerate = async () => {
     setIsPreviewOpen(true);
-    setIsGenerating(true);
-    try {
-      await updateRequirements(currentNode?.id || null);
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    } catch (error) {
-      console.error('Error generating preview:', error);
-    } finally {
-      setIsGenerating(false);
-    }
   };
 
   // -------------------- Extract Aspects from Answer --------------------
