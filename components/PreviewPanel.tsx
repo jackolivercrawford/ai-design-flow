@@ -85,7 +85,6 @@ export default function PreviewPanel({
   const [activeVersion, setActiveVersion] = useState<MockupVersion | null>(null);
   const [error, setError] = useState<string | null>(null);
   const prevRequirementsRef = useRef<RequirementsDocument | null>(null);
-  const [versionPreviewMode, setVersionPreviewMode] = useState<'mockup' | 'requirements'>('mockup');
 
   useEffect(() => {
     // Load versions from localStorage
@@ -347,7 +346,7 @@ export default function PreviewPanel({
 
     if (activeTab === 'versions') {
       return (
-        <>
+        <div className="flex h-full">
           {/* Version History (Left Side) */}
           <div className="w-1/3 h-full border-r border-gray-200 overflow-auto">
             <div className="p-6">
@@ -392,110 +391,33 @@ export default function PreviewPanel({
           {/* Version Preview (Right Side) */}
           <div className="w-2/3 h-full overflow-auto">
             {(selectedVersion || activeVersion) ? (
-              <div className="h-full flex flex-col">
-                <div className="p-4 border-b border-gray-200">
-                  <div className="flex space-x-4">
-                    <button
-                      onClick={() => setVersionPreviewMode('mockup')}
-                      className={`px-4 py-2 rounded-lg ${
-                        versionPreviewMode === 'mockup'
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'text-gray-600 hover:bg-gray-100'
-                      }`}
-                    >
-                      Mockup
-                    </button>
-                    <button
-                      onClick={() => setVersionPreviewMode('requirements')}
-                      className={`px-4 py-2 rounded-lg ${
-                        versionPreviewMode === 'requirements'
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'text-gray-600 hover:bg-gray-100'
-                      }`}
-                    >
-                      Requirements
-                    </button>
-                  </div>
-                </div>
-                <div className="flex-1 overflow-auto">
-                  {versionPreviewMode === 'mockup' ? (
-                    <LivePreview 
-                      code={(selectedVersion || activeVersion)!.mockupData.code} 
-                      colorScheme={(selectedVersion || activeVersion)!.mockupData.colorScheme} 
-                    />
-                  ) : (
-                    <div className="p-6">
-                      <div className="space-y-8">
-                        <div className="prose max-w-none">
-                          <h1 className="text-2xl font-bold text-gray-900 mb-4">
-                            {(selectedVersion || activeVersion)!.requirementsDoc.prompt}
-                          </h1>
-                          <p className="text-sm text-gray-500 mb-8">
-                            Version from: {new Date((selectedVersion || activeVersion)!.timestamp).toLocaleString()}
-                          </p>
-                        </div>
-
-                        {Object.entries((selectedVersion || activeVersion)!.requirementsDoc.categories).map(([key, category]) => (
-                          <div key={key} className="space-y-4">
-                            <h2 className="text-xl font-semibold text-gray-900">
-                              {category.title}
-                            </h2>
-                            {category.requirements && category.requirements.length > 0 ? (
-                              <ul className="space-y-3">
-                                {[...category.requirements]
-                                  .sort((a, b) => {
-                                    const priorityOrder: Record<string, number> = { 'high': 0, 'medium': 1, 'low': 2 };
-                                    const aPriority = (a.priority && priorityOrder[a.priority.toLowerCase()]) ?? 1;
-                                    const bPriority = (b.priority && priorityOrder[b.priority.toLowerCase()]) ?? 1;
-                                    return aPriority - bPriority;
-                                  })
-                                  .map((req, index) => (
-                                  <li
-                                    key={req.id || `${key}-${index}-${req.text}`}
-                                    className="bg-white rounded-lg border border-gray-200 p-4"
-                                  >
-                                    <div className="flex items-start justify-between">
-                                      <div className="flex-1">
-                                        <p className="text-gray-900">{req.text}</p>
-                                        <div className="mt-2 flex flex-wrap gap-2">
-                                          {req.priority && (
-                                            <span className={`px-2 py-1 rounded-full text-xs ${
-                                              req.priority === 'high'
-                                                ? 'bg-red-100 text-red-800'
-                                                : req.priority === 'medium'
-                                                ? 'bg-yellow-100 text-yellow-800'
-                                                : 'bg-green-100 text-green-800'
-                                            }`}>
-                                              {req.priority} priority
-                                            </span>
-                                          )}
-                                          {req.category && (
-                                            <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                                              {req.category}
-                                            </span>
-                                          )}
-                                          {req.tags?.map((tag, tagIndex) => (
-                                            <span
-                                              key={`${req.id || index}-tag-${tagIndex}`}
-                                              className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800"
-                                            >
-                                              {tag}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <p className="text-gray-500 italic">No requirements in {category.title}</p>
-                            )}
-                          </div>
+              <div className="h-full">
+                <LivePreview 
+                  code={(selectedVersion || activeVersion)!.mockupData.code} 
+                  colorScheme={(selectedVersion || activeVersion)!.mockupData.colorScheme} 
+                />
+                <div className="p-6">
+                  <div className="space-y-8">
+                    {/* Components */}
+                    <div>
+                      <h2 className="text-xl font-semibold text-gray-900 mb-4">Components</h2>
+                      <ul className="list-disc list-inside space-y-2">
+                        {(selectedVersion || activeVersion)!.mockupData.components.map((component, index) => (
+                          <li key={index} className="text-gray-700">{component}</li>
                         ))}
-                      </div>
+                      </ul>
                     </div>
-                  )}
+
+                    {/* Features */}
+                    <div>
+                      <h2 className="text-xl font-semibold text-gray-900 mb-4">Implemented Features</h2>
+                      <ul className="list-disc list-inside space-y-2">
+                        {(selectedVersion || activeVersion)!.mockupData.features.map((feature, index) => (
+                          <li key={index} className="text-gray-700">{feature}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -504,7 +426,7 @@ export default function PreviewPanel({
               </div>
             )}
           </div>
-        </>
+        </div>
       );
     }
 
@@ -515,7 +437,7 @@ export default function PreviewPanel({
           <div className="space-y-8">
             <div className="prose max-w-none">
               <h1 className="text-2xl font-bold text-gray-900 mb-4">
-                {requirementsDoc.prompt}
+                {requirementsDoc.prompt.split('\n')[0]}
               </h1>
               <p className="text-sm text-gray-500 mb-8">
                 Last updated: {new Date(requirementsDoc.lastUpdated).toLocaleString()}

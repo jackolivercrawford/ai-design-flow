@@ -94,7 +94,7 @@ export default function QnAPage() {
         history.push({
           question: node.question,
           answer: node.answer,
-          topics: extractTopics(node.question)
+          topics: extractTopics(node.question),
         });
       }
       node.children.forEach(traverse);
@@ -772,6 +772,10 @@ export default function QnAPage() {
       if (!updatedDoc || !updatedDoc.categories) {
         throw new Error('Invalid requirements document received');
       }
+      
+      // Preserve the original prompt by using the first line of the existing prompt
+      updatedDoc.prompt = requirementsDoc.prompt.split('\n')[0];
+      
       setRequirementsDoc(updatedDoc);
       saveProgress();
     } catch (error) {
@@ -950,6 +954,11 @@ export default function QnAPage() {
 
   const handleVersionRestore = (version: MockupVersion) => {
     if (window.confirm('Restoring this version will replace your current progress. Continue?')) {
+      // Stop automation if it's running
+      if (isAutomating) {
+        stopAutomation();
+      }
+      
       setQaTree(version.qaTree);
       setRequirementsDoc(version.requirementsDoc);
       const firstUnanswered = findFirstUnansweredChild(version.qaTree);
@@ -1128,9 +1137,6 @@ export default function QnAPage() {
           } else {
             setCurrentNode(null);
           }
-        } else {
-          setCurrentNode(null);
-          stopAutomation();
         }
         await updateRequirements(null);
       }
@@ -1247,6 +1253,14 @@ export default function QnAPage() {
 
   const handleGenerate = async () => {
     setIsPreviewOpen(true);
+    setIsGenerating(true);
+    try {
+      await updateRequirements(currentNode?.id || null);
+    } catch (error) {
+      console.error('Error updating requirements:', error);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   // -------------------- Extract Aspects from Answer --------------------
