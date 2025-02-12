@@ -90,7 +90,7 @@ export default function QnAPage() {
   const getAllAnsweredQuestions = (root: QANode): QuestionHistoryItem[] => {
     const history: QuestionHistoryItem[] = [];
     const traverse = (node: QANode) => {
-      if (node.question !== `Prompt: ${prompt}` && node.answer) {
+      if (node.question !== `Prompt: ${prompt}`) {
         history.push({
           question: node.question,
           answer: node.answer,
@@ -926,8 +926,6 @@ export default function QnAPage() {
         versions: [],
         settings: {
           traversalMode: settings.traversalMode,
-          unknownHandling: settings.unknownHandling,
-          conflictResolution: settings.conflictResolution,
         },
         name: sessionMetadata?.name,
       };
@@ -1070,13 +1068,6 @@ export default function QnAPage() {
     if (!currentNode || !settings) return;
     setIsLoadingNextQuestion(true);
     setSuggestedAnswer(null);
-    if (settings.maxQuestions && questionCount >= settings.maxQuestions) {
-      console.log('Max questions reached, stopping automation');
-      setCurrentNode(null);
-      setIsLoadingNextQuestion(false);
-      stopAutomation();
-      return;
-    }
     try {
       console.log('Setting answer and updating requirements');
       currentNode.answer = answer;
@@ -1326,7 +1317,7 @@ export default function QnAPage() {
       <div className="py-2 px-6 bg-white border-b border-gray-200">
         <div className="flex justify-between items-center">
           <div className="text-sm text-gray-600">
-            Questions: {questionCount}{settings?.maxQuestions ? ` / ${settings.maxQuestions}` : ''}
+            Questions: {questionCount}
           </div>
           <div className="text-sm text-gray-600">
             Mode: {settings?.traversalMode === 'dfs' ? 'Depth-First' : 'Breadth-First'}

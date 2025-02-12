@@ -79,8 +79,6 @@ export interface SessionMetadata {
   versions: MockupVersion[];
   settings: {
     traversalMode: 'bfs' | 'dfs';
-    unknownHandling: 'auto' | 'prompt';
-    conflictResolution: 'auto' | 'manual';
   };
   name?: string;
 } 
