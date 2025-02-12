@@ -12,8 +12,6 @@ const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<QASettings>({
     traversalMode: 'bfs',
-    unknownHandling: 'auto',
-    conflictResolution: 'auto',
     knowledgeBase: []
   });
   const [isProcessingFile, setIsProcessingFile] = useState(false);
@@ -145,48 +143,6 @@ const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
             </div>
           </div>
           
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Unknown Handling
-            </label>
-            <select 
-              className="w-full border border-gray-300 rounded-lg p-2 text-gray-900 bg-white"
-              value={settings.unknownHandling}
-              onChange={(e) => handleSettingChange('unknownHandling', e.target.value)}
-            >
-              <option value="auto">Auto (trivial)</option>
-              <option value="prompt">Always Prompt</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Conflict Resolution
-            </label>
-            <select 
-              className="w-full border border-gray-300 rounded-lg p-2 text-gray-900 bg-white"
-              value={settings.conflictResolution}
-              onChange={(e) => handleSettingChange('conflictResolution', e.target.value)}
-            >
-              <option value="auto">Auto-resolve Minor</option>
-              <option value="manual">Manual Resolution</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Maximum Questions
-            </label>
-            <input
-              type="number"
-              min="1"
-              placeholder="Optional"
-              className="w-full border border-gray-300 rounded-lg p-2 text-gray-900 bg-white"
-              value={settings.maxQuestions || ''}
-              onChange={(e) => handleSettingChange('maxQuestions', e.target.value ? parseInt(e.target.value) : undefined)}
-            />
-          </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Knowledge Base Sources
