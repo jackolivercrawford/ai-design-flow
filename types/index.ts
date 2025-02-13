@@ -44,6 +44,14 @@ export interface MockupVersion {
   name?: string;
   qaTree: QANode;
   requirementsDoc: RequirementsDocument;
+  currentState: {
+    currentNodeId: string | null;
+    suggestedAnswer: {
+      text: string;
+      confidence: 'high' | 'medium' | 'low';
+      sourceReferences: number[];
+    } | null;
+  };
   mockupData: {
     code: string;
     colorScheme: {

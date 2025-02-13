@@ -37,191 +37,191 @@ const openai = new OpenAI({
 // BFS instructions
 const BFS_RULES = `
 BFS Guidelines:
-- CRITICAL: At Level 1 (top level), generate exactly 4-5 comprehensive questions that cover the main aspects.
-- For Level 2+, generate exactly 2-3 questions per parent aspect from the parent's answer.
-- Each sibling at the same level MUST focus on a different aspect from the parent's answer.
-- CRITICAL: ALL Level 2 children of ALL Level 1 questions must be generated before ANY Level 3 questions.
-- Example progression:
-  Parent Q1: "What are the core user flows and functional requirements?"
-  Parent A1: "The interface should offer search, filtering, and zoom levels..."
-  Valid Child Q5: "What specific search capabilities should be implemented?"
-  Valid Child Q6: "What filtering options should be available to users?"
-  Valid Child Q7: "How should the zoom level functionality work?"
-
-Level Structure and Progression:
-- Level 1 (exactly 4-5 questions): Core requirements and fundamental aspects.
-  Example: "What are the core user flows?", "What accessibility features are needed?"
-
-- Level 2 (exactly 2-3 questions per parent aspect): Direct exploration of parent aspects.
-  Example: If Level 1 answer mentions "search, filtering, and zoom":
-  * Q5-Q7 explores search aspects.
-  * Q8-Q10 explores filtering aspects.
-  * Q11-Q13 explores zoom aspects.
-  CRITICAL: Generate Level 2 questions for ALL Level 1 answers before moving to Level 3.
-
-- Level 3+ (exactly 2-3 questions per parent aspect): Implementation details.
-  Example: If Level 2 answer about search mentions "real-time search and filters":
-  * "How should real-time search results be displayed?"
-  * "What search result filtering options are needed?"
-  * "What performance requirements for search response time?"
-
-Aspect Coverage Rules:
-1. Each child question MUST:
-   * Directly reference a specific aspect from parent's answer using exact terminology.
-   * Maintain clear topic lineage from Level 1 through current level.
-   * Ask for more specific details about that aspect.
-
-2. Sibling questions MUST:
-   * Each focus on a different aspect from parent's answer.
-   * Not overlap in their focus areas.
-   * Together cover all major aspects mentioned in parent's answer.
-   * Stay at the same depth level as each other.
-
-3. Moving Deeper Rules:
-   * NEVER generate Level 3 questions until ALL Level 2 questions for ALL Level 1 parents are complete.
-   * Each deeper question must make the parent aspect more specific.
-   * Maintain clear topic lineage by referencing both direct parent and Level 1 ancestor.
-
-Cycling Behavior:
-1. When a branch is fully explored:
-   * First complete all siblings at current level.
-   * Only move deeper when ALL nodes at current level across ALL branches are complete.
-   * If all branches are explored, return to Level 1 with new aspects.
-
-2. When generating new Level 1 questions after a cycle:
-   * Must cover completely different aspects than ALL previous Level 1 questions.
-   * Should maintain the same level of importance as original Level 1 questions.
-
-Progression Rules:
-1. After getting exactly 4-5 Level 1 questions answered:
-   * Generate Level 2 questions for EACH answered Level 1 question.
-   * Only add new Level 1 questions if starting a new cycle.
-
-2. When to move deeper:
-   * ALL questions at current level are answered.
-   * EACH parent has exactly 2-3 child questions.
-   * ALL aspects from ALL parent answers are covered.
-
-3. When to stay at current level:
-   * ANY aspects from ANY parent answer are still unexplored.
-   * ANY parent has fewer than 2 child questions.
+          - CRITICAL: At Level 1 (top level), generate exactly 4-5 comprehensive questions that cover the main aspects.
+          - For Level 2+, generate exactly 2-3 questions per parent aspect from the parent's answer.
+          - Each sibling at the same level MUST focus on a different aspect from the parent's answer.
+          - CRITICAL: ALL Level 2 children of ALL Level 1 questions must be generated before ANY Level 3 questions.
+          - Example progression:
+            Parent Q1: "What are the core user flows and functional requirements?"
+            Parent A1: "The interface should offer search, filtering, and zoom levels..."
+            Valid Child Q5: "What specific search capabilities should be implemented?"
+            Valid Child Q6: "What filtering options should be available to users?"
+            Valid Child Q7: "How should the zoom level functionality work?"
+      
+          Level Structure and Progression:
+          - Level 1 (exactly 4-5 questions): Core requirements and fundamental aspects.
+            Example: "What are the core user flows?", "What accessibility features are needed?"
+      
+          - Level 2 (exactly 2-3 questions per parent aspect): Direct exploration of parent aspects.
+            Example: If Level 1 answer mentions "search, filtering, and zoom":
+            * Q5-Q7 explores search aspects.
+            * Q8-Q10 explores filtering aspects.
+            * Q11-Q13 explores zoom aspects.
+            CRITICAL: Generate Level 2 questions for ALL Level 1 answers before moving to Level 3.
+      
+          - Level 3+ (exactly 2-3 questions per parent aspect): Implementation details.
+            Example: If Level 2 answer about search mentions "real-time search and filters":
+            * "How should real-time search results be displayed?"
+            * "What search result filtering options are needed?"
+            * "What performance requirements for search response time?"
+      
+          Aspect Coverage Rules:
+          1. Each child question MUST:
+             * Directly reference a specific aspect from parent's answer using exact terminology.
+             * Maintain clear topic lineage from Level 1 through current level.
+             * Ask for more specific details about that aspect.
+      
+          2. Sibling questions MUST:
+             * Each focus on a different aspect from parent's answer.
+             * Not overlap in their focus areas.
+             * Together cover all major aspects mentioned in parent's answer.
+             * Stay at the same depth level as each other.
+      
+          3. Moving Deeper Rules:
+             * NEVER generate Level 3 questions until ALL Level 2 questions for ALL Level 1 parents are complete.
+             * Each deeper question must make the parent aspect more specific.
+             * Maintain clear topic lineage by referencing both direct parent and Level 1 ancestor.
+      
+          Cycling Behavior:
+          1. When a branch is fully explored:
+             * First complete all siblings at current level.
+             * Only move deeper when ALL nodes at current level across ALL branches are complete.
+             * If all branches are explored, return to Level 1 with new aspects.
+      
+          2. When generating new Level 1 questions after a cycle:
+             * Must cover completely different aspects than ALL previous Level 1 questions.
+             * Should maintain the same level of importance as original Level 1 questions.
+      
+          Progression Rules:
+          1. After getting exactly 4-5 Level 1 questions answered:
+             * Generate Level 2 questions for EACH answered Level 1 question.
+             * Only add new Level 1 questions if starting a new cycle.
+      
+          2. When to move deeper:
+             * ALL questions at current level are answered.
+             * EACH parent has exactly 2-3 child questions.
+             * ALL aspects from ALL parent answers are covered.
+      
+          3. When to stay at current level:
+             * ANY aspects from ANY parent answer are still unexplored.
+             * ANY parent has fewer than 2 child questions.
    * ANY questions at current level are unanswered.
 `;
 
 // DFS instructions
 const DFS_RULES = `
 DFS Guidelines:
-- CRITICAL: In DFS mode, fully explore ONE topic branch before moving to siblings.
-- Maximum depth is 5 levels, but can be less if topics are fully explored.
-- When all branches are exhausted, return to Level 1 with new aspects.
-
-Sibling Count Guidelines:
-- Level 1: Exactly 4-5 main topic questions.
-- Level 2-5: Exactly 2-3 questions per parent aspect.
-
-Example proper DFS progression:
-Q1: "What are the core navigation features needed?"
-Parent A1: "Need a main menu, search bar, and user profile section."
-
-First Branch (Main Menu) - Complete this ENTIRE branch before siblings:
-Q2: "What specific items should be in the main menu?"
-A2: "Home, Products, Categories, Cart, and User Profile links."
-Q3: "How should the menu items be organized?"
-A3: "Primary items visible, secondary in dropdown."
-Q4: "What interactions should menu items have?"
-A4: "Hover previews and dropdown menus."
-[MUST complete ALL menu questions before moving to search]
-
-Second Branch (Search) - Only start after menu is complete:
-Q5: "What search functionality is required?"
-A5: "Real-time search with filters and suggestions."
-Q6: "How should search results be displayed?"
-A6: "Grid layout with quick preview cards."
-Q7: "What advanced search options are needed?"
-A7: "Category filters and price range selectors."
-[MUST complete ALL search questions before user profile]
-
-Third Branch (User Profile) - Only start after search is complete:
-Q8: "What user profile information should be shown?"
-Q9: "What profile customization options are needed?"
-
-Topic Exploration Rules:
-1. Each branch MUST:
-   * Start with broad feature questions.
-   * Progress to specific implementation details.
-   * End with edge cases and optimizations.
-   * Maintain clear topic lineage throughout.
-
-2. Question Depth Requirements:
-   * Level 1: Broad feature questions (exactly 4-5)
-   * Level 2: Feature breakdown (exactly 2-3 per feature)
-   * Level 3: Technical implementation details (exactly 2-3 per Level 2 answer)
-   * Level 4: Edge cases (exactly 2-3 per Level 3 answer)
-   * Level 5: Optimizations (exactly 2-3 per Level 4 answer)
-
-Branch Completion Rules:
-1. A branch is ONLY complete when:
-   - ALL aspects of the current topic are fully explored.
-   - Questions have reached implementation-level detail.
-   - Edge cases and optimizations are addressed.
-   - Reached maximum depth (5 levels) OR
-   - ALL possible questions about the topic are answered.
-
-2. When to stop current branch (shouldStopBranch=true):
-   - Reached maximum depth (5 levels) OR
-   - ALL aspects from parent's answer are fully explored AND
-   - Questions would become too specific to be useful OR
-   - Current topic is fully defined with implementation details.
-
-3. When to move to siblings:
-   - ONLY after current branch is FULLY explored.
-   - When shouldStopBranch=true is returned AND
-   - No more meaningful child questions can be generated.
-   - NEVER move to siblings until current topic is complete.
-
-4. Question Depth Progression:
-   Level 1: High-level feature questions (exactly 4-5).
-   Level 2: Specific requirements (exactly 2-3 per parent).
-   Level 3: Technical implementation details (exactly 2-3 per parent).
-   Level 4: Edge case handling (exactly 2-3 per parent).
-   Level 5: Performance optimization (exactly 2-3 per parent).
-
-Topic Lineage Rules:
-1. Each question MUST:
-   * Directly reference its parent topic.
-   * Use exact terminology from parent's answer.
-   * Maintain clear connection to Level 1 ancestor.
-   * Progress logically deeper into the topic.
-
-2. Moving Between Siblings:
-   * NEVER move to a sibling until current branch is complete.
-   * Each sibling must explore a different main topic.
-   * Siblings must be at the same depth level.
-   * Complete ALL aspects of current topic before moving.
-
-3. Starting New Level 1 Questions:
-   * Only after ALL current Level 1 branches are complete.
-   * Must cover completely different aspects than ALL previous Level 1 questions.
-   * Maintain same level of importance as original Level 1s.
-
-Question Generation Rules:
-1. Each new question MUST:
-   * Be more specific than its parent.
-   * Focus on unexplored aspects of parent's answer.
-   * Maintain clear topic focus.
-   * Progress logically deeper into implementation.
-
-2. Depth Requirements:
-   * Level 1: Core feature identification.
-   * Level 2: Feature requirement specification.
-   * Level 3: Technical implementation details.
-   * Level 4: Edge case handling.
-   * Level 5: Performance optimization.
-
-3. When generating questions:
-   * Use exact terminology from parent's answer.
-   * Focus on one specific aspect at a time.
-   * Ensure logical progression of detail.
+          - CRITICAL: In DFS mode, fully explore ONE topic branch before moving to siblings.
+          - Maximum depth is 5 levels, but can be less if topics are fully explored.
+          - When all branches are exhausted, return to Level 1 with new aspects.
+      
+          Sibling Count Guidelines:
+          - Level 1: Exactly 4-5 main topic questions.
+          - Level 2-5: Exactly 2-3 questions per parent aspect.
+      
+          Example proper DFS progression:
+          Q1: "What are the core navigation features needed?"
+          Parent A1: "Need a main menu, search bar, and user profile section."
+      
+          First Branch (Main Menu) - Complete this ENTIRE branch before siblings:
+          Q2: "What specific items should be in the main menu?"
+          A2: "Home, Products, Categories, Cart, and User Profile links."
+          Q3: "How should the menu items be organized?"
+          A3: "Primary items visible, secondary in dropdown."
+          Q4: "What interactions should menu items have?"
+          A4: "Hover previews and dropdown menus."
+          [MUST complete ALL menu questions before moving to search]
+      
+          Second Branch (Search) - Only start after menu is complete:
+          Q5: "What search functionality is required?"
+          A5: "Real-time search with filters and suggestions."
+          Q6: "How should search results be displayed?"
+          A6: "Grid layout with quick preview cards."
+          Q7: "What advanced search options are needed?"
+          A7: "Category filters and price range selectors."
+          [MUST complete ALL search questions before user profile]
+      
+          Third Branch (User Profile) - Only start after search is complete:
+          Q8: "What user profile information should be shown?"
+          Q9: "What profile customization options are needed?"
+      
+          Topic Exploration Rules:
+          1. Each branch MUST:
+             * Start with broad feature questions.
+             * Progress to specific implementation details.
+             * End with edge cases and optimizations.
+             * Maintain clear topic lineage throughout.
+      
+          2. Question Depth Requirements:
+             * Level 1: Broad feature questions (exactly 4-5)
+             * Level 2: Feature breakdown (exactly 2-3 per feature)
+             * Level 3: Technical implementation details (exactly 2-3 per Level 2 answer)
+             * Level 4: Edge cases (exactly 2-3 per Level 3 answer)
+             * Level 5: Optimizations (exactly 2-3 per Level 4 answer)
+      
+          Branch Completion Rules:
+          1. A branch is ONLY complete when:
+             - ALL aspects of the current topic are fully explored.
+             - Questions have reached implementation-level detail.
+             - Edge cases and optimizations are addressed.
+             - Reached maximum depth (5 levels) OR
+             - ALL possible questions about the topic are answered.
+      
+          2. When to stop current branch (shouldStopBranch=true):
+             - Reached maximum depth (5 levels) OR
+             - ALL aspects from parent's answer are fully explored AND
+             - Questions would become too specific to be useful OR
+             - Current topic is fully defined with implementation details.
+      
+          3. When to move to siblings:
+             - ONLY after current branch is FULLY explored.
+             - When shouldStopBranch=true is returned AND
+             - No more meaningful child questions can be generated.
+             - NEVER move to siblings until current topic is complete.
+      
+          4. Question Depth Progression:
+             Level 1: High-level feature questions (exactly 4-5).
+             Level 2: Specific requirements (exactly 2-3 per parent).
+             Level 3: Technical implementation details (exactly 2-3 per parent).
+             Level 4: Edge case handling (exactly 2-3 per parent).
+             Level 5: Performance optimization (exactly 2-3 per parent).
+      
+          Topic Lineage Rules:
+          1. Each question MUST:
+             * Directly reference its parent topic.
+             * Use exact terminology from parent's answer.
+             * Maintain clear connection to Level 1 ancestor.
+             * Progress logically deeper into the topic.
+      
+          2. Moving Between Siblings:
+             * NEVER move to a sibling until current branch is complete.
+             * Each sibling must explore a different main topic.
+             * Siblings must be at the same depth level.
+             * Complete ALL aspects of current topic before moving.
+      
+          3. Starting New Level 1 Questions:
+             * Only after ALL current Level 1 branches are complete.
+             * Must cover completely different aspects than ALL previous Level 1 questions.
+             * Maintain same level of importance as original Level 1s.
+      
+          Question Generation Rules:
+          1. Each new question MUST:
+             * Be more specific than its parent.
+             * Focus on unexplored aspects of parent's answer.
+             * Maintain clear topic focus.
+             * Progress logically deeper into implementation.
+      
+          2. Depth Requirements:
+             * Level 1: Core feature identification.
+             * Level 2: Feature requirement specification.
+             * Level 3: Technical implementation details.
+             * Level 4: Edge case handling.
+             * Level 5: Performance optimization.
+      
+          3. When generating questions:
+             * Use exact terminology from parent's answer.
+             * Focus on one specific aspect at a time.
+             * Ensure logical progression of detail.
    * Maintain clear topic boundaries.
 `;
 
@@ -395,78 +395,78 @@ Follow these guidelines:
 3. Traversal Rules (${traversalMode}):
 ${traversalMode === 'bfs' ? BFS_RULES : DFS_RULES}
 
-4. Topic Management:
+      4. Topic Management:
    - BFS: Generate siblings for each aspect first
    - DFS: Explore one aspect deeply before siblings
-
-5. Question Generation:
-   - Generate exactly ONE question.
+      
+      5. Question Generation:
+         - Generate exactly ONE question.
    - For BFS: Return shouldStopBranch=true if no unexplored aspects remain
    - For DFS: Return shouldStopBranch=true when the aspect is fully explored
-
-6. Stopping Criteria:
+      
+      6. Stopping Criteria:
    - Topic fully explored, or the knowledge base is sufficient.
-
-7. Knowledge Base Context:
-${knowledgeBaseContext}
-
-8. Previous Questions Already Asked:
-${previousQuestions
-  .map(
-    (q: { question: string; answer: string }, index: number) =>
-      `${index + 1}. Q: ${q.question}\n   A: ${q.answer}`
-  )
-  .join('\n')}
-
-9. Response Format:
-Return your response in this exact JSON format:
-{
-  "questions": ["Next question to ask"],
-  "shouldStopBranch": boolean,
-  "stopReason": "Detailed explanation of why we should stop this branch",
-  "suggestedAnswer": "string with best guess answer based on knowledge base",
-  "sourceReferences": [array of source indices that contributed],
-  "confidence": "high" | "medium" | "low",
-  "topicsCovered": ["list of topics this question relates to"],
-  "parentTopic": "The main topic this question belongs to",
-  "subtopics": ["Potential child topics for this question"]
+      
+      7. Knowledge Base Context:
+      ${knowledgeBaseContext}
+      
+      8. Previous Questions Already Asked:
+      ${previousQuestions
+        .map(
+          (q: { question: string; answer: string }, index: number) =>
+            `${index + 1}. Q: ${q.question}\n   A: ${q.answer}`
+        )
+        .join('\n')}
+      
+      9. Response Format:
+      Return your response in this exact JSON format:
+      {
+        "questions": ["Next question to ask"],
+        "shouldStopBranch": boolean,
+        "stopReason": "Detailed explanation of why we should stop this branch",
+        "suggestedAnswer": "string with best guess answer based on knowledge base",
+        "sourceReferences": [array of source indices that contributed],
+        "confidence": "high" | "medium" | "low",
+        "topicsCovered": ["list of topics this question relates to"],
+        "parentTopic": "The main topic this question belongs to",
+        "subtopics": ["Potential child topics for this question"]
 }`;
 
     // Next, build the userPrompt to finalize the conversation:
     const userPrompt = isAutoPopulate
       ? // AUTO-POPULATE user instructions
-        `The design prompt is: "${prompt}"
-
-Current Question: "${currentQuestion}"
-
-Based on the knowledge base and previous Q&A context:
-1. Analyze the knowledge base for relevant information about this specific question.
-2. Consider the context from previous questions and answers.
-3. Provide a clear, direct answer following the guidelines.
-4. Indicate which knowledge base sources (if any) contributed to the answer.
-5. Rate your confidence in the answer as high/medium/low.
-
-Return your response in this format:
-{
-  "questions": [],
-  "shouldStopBranch": false,
-  "stopReason": "",
-  "suggestedAnswer": "Your suggested answer here",
-  "sourceReferences": [array of source indices that contributed],
-  "confidence": "high" | "medium" | "low"
-}`
+            `The design prompt is: "${prompt}"
+      
+      Current Question: "${currentQuestion}"
+      
+      Based on the knowledge base and previous Q&A context:
+      1. Analyze the knowledge base for relevant information about this specific question.
+      2. Consider the context from previous questions and answers.
+      3. Provide a clear, direct answer following the guidelines.
+      4. Indicate which knowledge base sources (if any) contributed to the answer.
+      5. Rate your confidence in the answer as high/medium/low.
+      
+      Return your response in this format:
+      {
+        "questions": [],
+        "shouldStopBranch": false,
+        "stopReason": "",
+        "suggestedAnswer": "Your suggested answer here",
+        "sourceReferences": [array of source indices that contributed],
+        "confidence": "high" | "medium" | "low"
+      }`
       : // FOLLOW-UP question user instructions
-        `The design prompt is: "${prompt}".
-Previous Q&A History:
-${JSON.stringify(previousQuestions, null, 2)}
-
-Current Question: ${
-  previousQuestions[previousQuestions.length - 1]?.question || 'Initial question'
-}
-
-CRITICAL REQUIREMENTS:
-1. Review ALL previous questions and their topics carefully.
-2. Generate ONE question that explores a COMPLETELY DIFFERENT aspect not covered in ANY previous question.
+            `The design prompt is: "${prompt}".
+      Previous Q&A History:
+      ${JSON.stringify(previousQuestions, null, 2)}
+      
+      Current Question: ${
+        previousQuestions[previousQuestions.length - 1]?.question || 'Initial question'
+      }
+      
+      CRITICAL REQUIREMENTS:
+      1. Review ALL previous questions and their topics carefully.
+      2. Generate ONE question that explores a COMPLETELY DIFFERENT aspect not covered in ANY previous question.
 3. If BFS, ensure the new question:
    - Stays at the current level
    - Covers a new topic not yet discussed
@@ -475,11 +475,11 @@ CRITICAL REQUIREMENTS:
 5. Provide a suggestedAnswer following the guidelines
 
 Topics already covered (DO NOT repeat these or related topics):
-${previousQuestions
-  .map((q: { question: string }, index: number) => `${index + 1}. ${q.question}`)
-  .join('\n')}
-
-Remember:
+      ${previousQuestions
+        .map((q: { question: string }, index: number) => `${index + 1}. ${q.question}`)
+        .join('\n')}
+      
+      Remember:
 - No second-person pronouns
 - No repeating or rephrasing parent's question
 - BFS covers all aspects at a level; DFS goes deeper on one aspect.`;

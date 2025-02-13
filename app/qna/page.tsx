@@ -1028,8 +1028,31 @@ export default function QnAPage() {
       
       setQaTree(version.qaTree);
       setRequirementsDoc(version.requirementsDoc);
-      const firstUnanswered = findFirstUnansweredChild(version.qaTree);
-      setCurrentNode(firstUnanswered);
+
+      // Restore the exact state from when the version was saved
+      if (version.currentState) {
+        const node = version.currentState.currentNodeId 
+          ? findNodeById(version.qaTree, version.currentState.currentNodeId)
+          : findFirstUnansweredChild(version.qaTree);
+        setCurrentNode(node);
+        setSuggestedAnswer(version.currentState.suggestedAnswer);
+      } else {
+        // Fallback for older versions without currentState
+        const firstUnanswered = findFirstUnansweredChild(version.qaTree);
+        setCurrentNode(firstUnanswered);
+        if (firstUnanswered) {
+          handleAutoPopulate().then(suggestedText => {
+            if (suggestedText) {
+              setSuggestedAnswer({
+                text: suggestedText,
+                confidence: 'medium',
+                sourceReferences: []
+              });
+            }
+          });
+        }
+      }
+
       let count = 0;
       const countAnswers = (node: QANode) => {
         if (node.answer) count++;
@@ -1037,7 +1060,17 @@ export default function QnAPage() {
       };
       countAnswers(version.qaTree);
       setQuestionCount(count);
-      saveProgress();
+
+      // Save progress with the restored state
+      const progressData = {
+        qaTree: version.qaTree,
+        currentNodeId: version.currentState?.currentNodeId || null,
+        questionCount: count,
+        prompt,
+        settings,
+        requirementsDoc: version.requirementsDoc
+      };
+      localStorage.setItem('qaProgress', JSON.stringify(progressData));
     }
   };
 
@@ -1424,6 +1457,9 @@ export default function QnAPage() {
         onClose={() => setIsPreviewOpen(false)}
         requirementsDoc={requirementsDoc!}
         qaTree={qaTree}
+        currentNode={currentNode}
+        suggestedAnswer={suggestedAnswer}
+        settings={settings!}
         onVersionRestore={handleVersionRestore}
       />
     </div>
