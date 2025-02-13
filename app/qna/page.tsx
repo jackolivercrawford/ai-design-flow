@@ -169,12 +169,18 @@ export default function QnAPage() {
             // Otherwise, attempt to fetch new siblings if there's only one
             if (siblings.length === 1) {
               const parentHistory = getAllAnsweredQuestions(parent);
+
+              const parentSubs = parent.answer
+                ? extractSubtopicsFromAnswerText(parent.answer)
+                : [];
+
               const { nodes: generatedSiblings } = await fetchQuestionsForNode(
                 prompt,
                 parent,
                 parentHistory,
                 getNodeDepth(parent),
-                true
+                true,
+                parentSubs
               );
               if (generatedSiblings.length > 0) {
                 parent.children = [
@@ -193,12 +199,15 @@ export default function QnAPage() {
   
           // If backtracking fails, generate new Level 1 questions
           const rootHistory = getAllAnsweredQuestions(qaTree!);
+
+          const emptySubs: string[] = []; // or extract from the root if you like
           const { nodes: newTopLevel, suggestedAnswer } = await fetchQuestionsForNode(
             prompt,
             qaTree!,
             rootHistory,
             1,
-            true
+            true,
+            emptySubs
           );
           if (newTopLevel.length > 0) {
             newTopLevel[0].questionNumber = questionCount + 1;
@@ -251,12 +260,16 @@ export default function QnAPage() {
         const parentNode = findParentNode(qaTree, node);
         if (parentNode) {
           const parentHistory = getAllAnsweredQuestions(parentNode);
+          const parentAnswerSubtopics2 = parentNode.answer
+            ? extractSubtopicsFromAnswerText(parentNode.answer)
+            : []
           const { nodes: newSiblings } = await fetchQuestionsForNode(
             prompt,
             parentNode,
             parentHistory,
             getNodeDepth(parentNode),
-            true
+            true,
+            parentAnswerSubtopics2
           );
           if (newSiblings.length > 0) {
             parentNode.children = [
@@ -295,10 +308,12 @@ export default function QnAPage() {
   
       // Fallback for DFS if node.answer is falsy:
       const rootHistory = getAllAnsweredQuestions(qaTree!);
+
+      const emptySubs2: string[] = [];
       const {
         nodes: newTopLevel,
         suggestedAnswer: fallbackAnswer,
-      } = await fetchQuestionsForNode(prompt, qaTree!, rootHistory, 1, true);
+      } = await fetchQuestionsForNode(prompt, qaTree!, rootHistory, 1, true, emptySubs2);
       if (newTopLevel.length > 0) {
         newTopLevel[0].questionNumber = questionCount + 1;
         qaTree!.children = newTopLevel;
