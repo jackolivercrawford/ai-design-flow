@@ -10,6 +10,7 @@ interface HeaderToolbarProps {
   isAutomating?: boolean;
   onStartAutomation?: () => void;
   onStopAutomation?: () => void;
+  hasKnowledgeBase?: boolean;
 }
 
 const HeaderToolbar: React.FC<HeaderToolbarProps> = ({ 
@@ -21,7 +22,8 @@ const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
   showSaveButton = false,
   isAutomating = false,
   onStartAutomation,
-  onStopAutomation
+  onStopAutomation,
+  hasKnowledgeBase = false
 }) => {
   return (
     <header className="bg-white border-b border-gray-200">
@@ -52,7 +54,7 @@ const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
                 Restart Q&A
               </button>
             )}
-            {onStartAutomation && onStopAutomation && (
+            {hasKnowledgeBase && onStartAutomation && onStopAutomation && (
               <button
                 onClick={isAutomating ? onStopAutomation : onStartAutomation}
                 className={`px-4 py-2 rounded-lg transition-colors flex items-center space-x-2 ${

@@ -120,7 +120,6 @@ export default function QnAPage() {
       .map((s) => s.trim())
       .filter(Boolean);
   }
-
   // -------------------- DFS Ordering with Automation --------------------
 
   // getNextQuestion follows DFS:
@@ -131,6 +130,7 @@ export default function QnAPage() {
   const getNextQuestion = async (node: QANode): Promise<QANode | null> => {
     // Remove the early exit for non-auto mode
     const isDFS = settings?.traversalMode === 'dfs';
+  
     if (isDFS) {
       if (node.answer) {
         // -------------------- DFS: Build branch history and determine depth
@@ -169,11 +169,12 @@ export default function QnAPage() {
             // Otherwise, attempt to fetch new siblings if there's only one
             if (siblings.length === 1) {
               const parentHistory = getAllAnsweredQuestions(parent);
-
+  
+              // ADDED for DFS fallback subtopics
               const parentSubs = parent.answer
                 ? extractSubtopicsFromAnswerText(parent.answer)
                 : [];
-
+  
               const { nodes: generatedSiblings } = await fetchQuestionsForNode(
                 prompt,
                 parent,
@@ -199,8 +200,9 @@ export default function QnAPage() {
   
           // If backtracking fails, generate new Level 1 questions
           const rootHistory = getAllAnsweredQuestions(qaTree!);
-
-          const emptySubs: string[] = []; // or extract from the root if you like
+  
+          // ADDED for DFS fallback subtopics (empty array)
+          const emptySubs: string[] = [];
           const { nodes: newTopLevel, suggestedAnswer } = await fetchQuestionsForNode(
             prompt,
             qaTree!,
@@ -260,9 +262,12 @@ export default function QnAPage() {
         const parentNode = findParentNode(qaTree, node);
         if (parentNode) {
           const parentHistory = getAllAnsweredQuestions(parentNode);
+  
+          // ADDED for DFS sibling subtopics
           const parentAnswerSubtopics2 = parentNode.answer
             ? extractSubtopicsFromAnswerText(parentNode.answer)
-            : []
+            : [];
+  
           const { nodes: newSiblings } = await fetchQuestionsForNode(
             prompt,
             parentNode,
@@ -289,10 +294,14 @@ export default function QnAPage() {
   
         // Final fallback: generate new Level 1 questions
         const rootHistory2 = getAllAnsweredQuestions(qaTree!);
+  
+        // ADDED for DFS final fallback subtopics (empty array)
+        const emptySubs2: string[] = [];
+  
         const {
           nodes: newTopLevel,
           suggestedAnswer: fallbackAnswer,
-        } = await fetchQuestionsForNode(prompt, qaTree!, rootHistory2, 1, true);
+        } = await fetchQuestionsForNode(prompt, qaTree!, rootHistory2, 1, true, emptySubs2);
         if (newTopLevel.length > 0) {
           newTopLevel[0].questionNumber = questionCount + 1;
           qaTree!.children = newTopLevel;
@@ -308,12 +317,14 @@ export default function QnAPage() {
   
       // Fallback for DFS if node.answer is falsy:
       const rootHistory = getAllAnsweredQuestions(qaTree!);
-
-      const emptySubs2: string[] = [];
+  
+      // ADDED for DFS fallback subtopics (empty array)
+      const emptySubs3: string[] = [];
+  
       const {
         nodes: newTopLevel,
         suggestedAnswer: fallbackAnswer,
-      } = await fetchQuestionsForNode(prompt, qaTree!, rootHistory, 1, true, emptySubs2);
+      } = await fetchQuestionsForNode(prompt, qaTree!, rootHistory, 1, true, emptySubs3);
       if (newTopLevel.length > 0) {
         newTopLevel[0].questionNumber = questionCount + 1;
         qaTree!.children = newTopLevel;
@@ -331,12 +342,17 @@ export default function QnAPage() {
       if (!parent) {
         // If there's no parent, we're at the root level
         const rootHistory = getAllAnsweredQuestions(qaTree!);
+  
+        // <-- ADDED FOR BFS root fallback
+        const emptySubsBFS1: string[] = [];
+  
         const { nodes: newTopLevel } = await fetchQuestionsForNode(
           prompt,
           qaTree!,
           rootHistory,
           1,
-          true
+          true,
+          emptySubsBFS1 // pass empty array to BFS so it's consistent
         );
         if (newTopLevel.length > 0) {
           newTopLevel[0].questionNumber = questionCount + 1;
@@ -393,12 +409,19 @@ export default function QnAPage() {
           );
           if (nextLevel1WithoutChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextLevel1WithoutChildren);
+  
+            // <-- ADDED FOR BFS fallback subtopics
+            const subsForNextL1 = nextLevel1WithoutChildren.answer
+              ? extractSubtopicsFromAnswerText(nextLevel1WithoutChildren.answer)
+              : [];
+  
             const { nodes: newChildren } = await fetchQuestionsForNode(
               prompt,
               nextLevel1WithoutChildren,
               nodeHistory,
               2,
-              true
+              true,
+              subsForNextL1
             );
             if (newChildren.length > 0) {
               newChildren[0].questionNumber = questionCount + 1;
@@ -465,12 +488,19 @@ export default function QnAPage() {
         });
         if (incompleteL2) {
           const nodeHistory = getAllAnsweredQuestions(incompleteL2);
+  
+          // <-- ADDED FOR BFS fallback subtopics
+          const subsForIncompleteL2 = incompleteL2.answer
+            ? extractSubtopicsFromAnswerText(incompleteL2.answer)
+            : [];
+  
           const { nodes: newChild } = await fetchQuestionsForNode(
             prompt,
             incompleteL2,
             nodeHistory,
             2,
-            true
+            true,
+            subsForIncompleteL2
           );
           if (newChild.length > 0) {
             newChild[0].questionNumber = questionCount + 1;
@@ -497,12 +527,19 @@ export default function QnAPage() {
           );
           if (nextNodeNeedingChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextNodeNeedingChildren);
+  
+            // <-- ADDED FOR BFS fallback subtopics
+            const subsForNextNode = nextNodeNeedingChildren.answer
+              ? extractSubtopicsFromAnswerText(nextNodeNeedingChildren.answer)
+              : [];
+  
             const { nodes: children } = await fetchQuestionsForNode(
               prompt,
               nextNodeNeedingChildren,
               nodeHistory,
               currentDepth + 1,
-              true
+              true,
+              subsForNextNode
             );
             if (children.length > 0) {
               children[0].questionNumber = questionCount + 1;
@@ -513,9 +550,7 @@ export default function QnAPage() {
               return children[0];
             }
           }
-          const allChildrenAtNextDepth = allCurrentLevelNodes.flatMap(
-            n => n.children
-          );
+          const allChildrenAtNextDepth = allCurrentLevelNodes.flatMap(n => n.children);
           const unansweredChildAtNextDepth = allChildrenAtNextDepth.find(
             n => !n.answer
           );
@@ -530,12 +565,19 @@ export default function QnAPage() {
           );
           if (nextDepthNodeNeedingChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextDepthNodeNeedingChildren);
+  
+            // <-- ADDED FOR BFS fallback subtopics
+            const subsForNextDepth = nextDepthNodeNeedingChildren.answer
+              ? extractSubtopicsFromAnswerText(nextDepthNodeNeedingChildren.answer)
+              : [];
+  
             const { nodes: children } = await fetchQuestionsForNode(
               prompt,
               nextDepthNodeNeedingChildren,
               nodeHistory,
               currentDepth + 2,
-              true
+              true,
+              subsForNextDepth
             );
             if (children.length > 0) {
               children[0].questionNumber = questionCount + 1;
@@ -559,12 +601,19 @@ export default function QnAPage() {
           );
           if (nextNodeNeedingChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextNodeNeedingChildren);
+  
+            // <-- ADDED FOR BFS fallback subtopics
+            const subsForNextNode2 = nextNodeNeedingChildren.answer
+              ? extractSubtopicsFromAnswerText(nextNodeNeedingChildren.answer)
+              : [];
+  
             const { nodes: children } = await fetchQuestionsForNode(
               prompt,
               nextNodeNeedingChildren,
               nodeHistory,
               currentDepth + 1,
-              true
+              true,
+              subsForNextNode2
             );
             if (children.length > 0) {
               children[0].questionNumber = questionCount + 1;
@@ -576,13 +625,20 @@ export default function QnAPage() {
             }
           }
         }
+  
+        // BFS fallback: generate new Level 1 questions if needed
         const rootHistory = getAllAnsweredQuestions(qaTree!);
+  
+        // <-- ADDED FOR BFS fallback subtopics
+        const emptySubsBFS2: string[] = [];
+  
         const { nodes: newTopLevel } = await fetchQuestionsForNode(
           prompt,
           qaTree!,
           rootHistory,
           1,
-          true
+          true,
+          emptySubsBFS2
         );
         if (newTopLevel.length > 0) {
           newTopLevel[0].questionNumber = questionCount + 1;
@@ -594,45 +650,22 @@ export default function QnAPage() {
   
     // Final fallback: generate new Level 1 questions if everything else fails
     const rootHistory = getAllAnsweredQuestions(qaTree!);
+  
+    // <-- ADDED FOR BFS final fallback subtopics
+    const emptySubsBFS3: string[] = [];
+  
     const { nodes: newTopLevel } = await fetchQuestionsForNode(
       prompt,
       qaTree!,
       rootHistory,
       1,
-      true
+      true,
+      emptySubsBFS3
     );
     if (newTopLevel.length > 0) {
       newTopLevel[0].questionNumber = questionCount + 1;
       qaTree!.children = [...qaTree!.children, ...newTopLevel];
       return newTopLevel[0];
-    }
-    return null;
-  };
-
-  // -------------------- Additional Helpers --------------------
-
-  // Find all nodes at the same level as the target.
-  const findNodesAtSameLevel = (root: QANode | null, target: QANode): QANode[] => {
-    if (!root) return [];
-    const parent = findParentNode(root, target);
-    if (!parent) return root.children;
-    return parent.children;
-  };
-
-  // Find the first unanswered child (BFS).
-  const findFirstUnansweredChild = (root: QANode | null): QANode | null => {
-    if (!root) return null;
-    const queue: QANode[] = [root];
-    while (queue.length > 0) {
-      const node = queue.shift()!;
-      if (node.children.length > 0) {
-        for (const child of node.children) {
-          if (!child.answer) return child;
-          queue.push(child);
-        }
-      } else if (!node.answer && node.question !== `Prompt: ${prompt}`) {
-        return node;
-      }
     }
     return null;
   };
@@ -761,6 +794,31 @@ export default function QnAPage() {
     }
     return null;
   };
+
+  const findNodesAtSameLevel = (root: QANode | null, target: QANode): QANode[] => {
+    if (!root) return [];
+    const parent = findParentNode(root, target);
+    if (!parent) return root.children;
+    return parent.children;
+  };
+
+    // Find the first unanswered child (BFS).
+    const findFirstUnansweredChild = (root: QANode | null): QANode | null => {
+      if (!root) return null;
+      const queue: QANode[] = [root];
+      while (queue.length > 0) {
+        const node = queue.shift()!;
+        if (node.children.length > 0) {
+          for (const child of node.children) {
+            if (!child.answer) return child;
+            queue.push(child);
+          }
+        } else if (!node.answer && node.question !== `Prompt: ${prompt}`) {
+          return node;
+        }
+      }
+      return null;
+    };
 
   // Update requirements document.
   const updateRequirements = async (nodeId: string | null) => {
@@ -1328,6 +1386,7 @@ export default function QnAPage() {
         isAutomating={isAutomating}
         onStartAutomation={startAutomation}
         onStopAutomation={stopAutomation}
+        hasKnowledgeBase={!!settings?.knowledgeBase?.length}
       />
       <div className="py-2 px-6 bg-white border-b border-gray-200">
         <div className="flex justify-between items-center">
