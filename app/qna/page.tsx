@@ -128,15 +128,17 @@ export default function QnAPage() {
   // – It then returns the next candidate; if none exists at that level, it recursively backtracks.
   // The suggested answer from the candidate is saved so that the UI displays the answer corresponding to the shown question.
   const getNextQuestion = async (node: QANode): Promise<QANode | null> => {
-    // Remove the early exit for non-auto mode
     const isDFS = settings?.traversalMode === 'dfs';
   
+    // ------------------------ DFS MODE ------------------------
     if (isDFS) {
+      // If current node has an answer, we proceed to build a DFS branch history
       if (node.answer) {
-        // -------------------- DFS: Build branch history and determine depth
+        // 1. Build branch history & determine depth
         const branchHistory: QuestionHistoryItem[] = [];
         let current: QANode | null = node;
         let depth = 0;
+  
         while (current) {
           if (current.question !== `Prompt: ${prompt}`) {
             branchHistory.unshift({
@@ -151,9 +153,8 @@ export default function QnAPage() {
           current = parent;
         }
   
-        // ----- DFS DEPTH CAP: Limit depth to 5 -----
+        // 2. If we are at depth >= 5, backtrack and look for siblings or new branches
         if (depth >= 5) {
-          // At depth 5, backtrack incrementally to find siblings or new branches
           let temp: QANode | null = node;
           while (temp) {
             const parent = findParentNode(qaTree, temp);
@@ -161,16 +162,16 @@ export default function QnAPage() {
             const siblings = parent.children;
             const index = siblings.findIndex(n => n.id === temp!.id);
   
-            // If a next sibling already exists, return it
+            // If a next sibling exists, return it
             if (index >= 0 && index < siblings.length - 1) {
               return siblings[index + 1];
             }
   
-            // Otherwise, attempt to fetch new siblings if there's only one
+            // Otherwise, if there's only one sibling, fetch new siblings
             if (siblings.length === 1) {
               const parentHistory = getAllAnsweredQuestions(parent);
   
-              // ADDED for DFS fallback subtopics
+              // Pass parent's subtopics for DFS sibling generation
               const parentSubs = parent.answer
                 ? extractSubtopicsFromAnswerText(parent.answer)
                 : [];
@@ -183,6 +184,7 @@ export default function QnAPage() {
                 true,
                 parentSubs
               );
+  
               if (generatedSiblings.length > 0) {
                 parent.children = [
                   ...parent.children,
@@ -194,15 +196,13 @@ export default function QnAPage() {
                 }
               }
             }
-            // If no next sibling is found, move up one level
+            // If no next sibling is found, move up
             temp = parent;
           }
   
           // If backtracking fails, generate new Level 1 questions
           const rootHistory = getAllAnsweredQuestions(qaTree!);
-  
-          // ADDED for DFS fallback subtopics (empty array)
-          const emptySubs: string[] = [];
+          const emptySubs: string[] = []; // pass empty array for subtopics
           const { nodes: newTopLevel, suggestedAnswer } = await fetchQuestionsForNode(
             prompt,
             qaTree!,
@@ -211,6 +211,7 @@ export default function QnAPage() {
             true,
             emptySubs
           );
+  
           if (newTopLevel.length > 0) {
             newTopLevel[0].questionNumber = questionCount + 1;
             qaTree!.children = newTopLevel;
@@ -221,16 +222,15 @@ export default function QnAPage() {
             );
             return newTopLevel[0];
           }
-          return null;
-        }
-        // ----- End DFS DEPTH CAP -----
   
-        // Extract subtopics from this node's answer, so we can pass them along
+          return null;
+        } // end depth >= 5
+  
+        // 3. If depth < 5, try generating a child for this node
         const parentAnswerSubtopics = node.answer
           ? extractSubtopicsFromAnswerText(node.answer)
           : [];
   
-        // If depth < 5, try generating a child
         const {
           nodes: children,
           shouldStopBranch,
@@ -241,7 +241,7 @@ export default function QnAPage() {
           branchHistory,
           depth,
           true,
-          parentAnswerSubtopics // Pass subtopics as uncoveredAspects
+          parentAnswerSubtopics
         );
   
         if (children.length > 0 && (!shouldStopBranch || depth < 5)) {
@@ -258,12 +258,12 @@ export default function QnAPage() {
           return child;
         }
   
-        // If no child was generated or we're at depth 5, force siblings
+        // 4. If no child was generated, or we're at depth 5, try generating siblings
         const parentNode = findParentNode(qaTree, node);
         if (parentNode) {
           const parentHistory = getAllAnsweredQuestions(parentNode);
   
-          // ADDED for DFS sibling subtopics
+          // pass parent's subtopics for sibling generation
           const parentAnswerSubtopics2 = parentNode.answer
             ? extractSubtopicsFromAnswerText(parentNode.answer)
             : [];
@@ -276,32 +276,32 @@ export default function QnAPage() {
             true,
             parentAnswerSubtopics2
           );
+  
           if (newSiblings.length > 0) {
             parentNode.children = [
               ...parentNode.children,
               ...newSiblings.filter(s => !parentNode.children.find(ex => ex.id === s.id)),
             ];
             const index = parentNode.children.findIndex(n => n.id === node.id);
+  
             if (index >= 0 && index < parentNode.children.length - 1) {
               return parentNode.children[index + 1];
             } else if (parentNode.children.length > 0) {
               return parentNode.children[0];
             }
           }
-          // Fallback: try going up another level
+          // fallback: go up another level
           return await getNextQuestion(parentNode);
         }
   
-        // Final fallback: generate new Level 1 questions
+        // 5. Final fallback: generate new Level 1 questions
         const rootHistory2 = getAllAnsweredQuestions(qaTree!);
-  
-        // ADDED for DFS final fallback subtopics (empty array)
         const emptySubs2: string[] = [];
-  
         const {
           nodes: newTopLevel,
           suggestedAnswer: fallbackAnswer,
         } = await fetchQuestionsForNode(prompt, qaTree!, rootHistory2, 1, true, emptySubs2);
+  
         if (newTopLevel.length > 0) {
           newTopLevel[0].questionNumber = questionCount + 1;
           qaTree!.children = newTopLevel;
@@ -313,18 +313,16 @@ export default function QnAPage() {
           return newTopLevel[0];
         }
         return null;
-      }
+      } // end if (node.answer)
   
-      // Fallback for DFS if node.answer is falsy:
+      // If DFS and node.answer is falsy, generate new Level 1 questions
       const rootHistory = getAllAnsweredQuestions(qaTree!);
-  
-      // ADDED for DFS fallback subtopics (empty array)
       const emptySubs3: string[] = [];
-  
       const {
         nodes: newTopLevel,
         suggestedAnswer: fallbackAnswer,
       } = await fetchQuestionsForNode(prompt, qaTree!, rootHistory, 1, true, emptySubs3);
+  
       if (newTopLevel.length > 0) {
         newTopLevel[0].questionNumber = questionCount + 1;
         qaTree!.children = newTopLevel;
@@ -336,23 +334,22 @@ export default function QnAPage() {
         return newTopLevel[0];
       }
       return null;
-    } else {
-      // -------------------- BFS MODE --------------------
+    }
+  
+    // ------------------------ BFS MODE ------------------------
+    else {
       const parent = findParentNode(qaTree, node);
       if (!parent) {
-        // If there's no parent, we're at the root level
+        // BFS: if no parent, generate new top-level questions
         const rootHistory = getAllAnsweredQuestions(qaTree!);
-  
-        // <-- ADDED FOR BFS root fallback
         const emptySubsBFS1: string[] = [];
-  
         const { nodes: newTopLevel } = await fetchQuestionsForNode(
           prompt,
           qaTree!,
           rootHistory,
           1,
           true,
-          emptySubsBFS1 // pass empty array to BFS so it's consistent
+          emptySubsBFS1
         );
         if (newTopLevel.length > 0) {
           newTopLevel[0].questionNumber = questionCount + 1;
@@ -362,7 +359,7 @@ export default function QnAPage() {
         return null;
       }
   
-      // Gather parent's subtopics so BFS also sees the parent's actual answer
+      // Gather parent's subtopics so BFS can reference them
       const parentAnswerSubtopics = parent.answer
         ? extractSubtopicsFromAnswerText(parent.answer)
         : [];
@@ -371,10 +368,11 @@ export default function QnAPage() {
       const currentIndex = currentLevelNodes.indexOf(node);
       const currentDepth = getNodeDepth(node);
   
-      // Original BFS approach to figure out uncovered aspects, sibling generation, etc.
+      // BFS approach: figure out uncovered aspects, sibling generation, etc.
       const parentAspects = parent.answer
         ? extractAspectsFromAnswer(parent.answer)
         : ['basic_requirements'];
+  
       const coveredAspects = new Set(
         currentLevelNodes
           .filter(n => n.answer)
@@ -389,7 +387,7 @@ export default function QnAPage() {
           .flat()
       );
   
-      // If we happen to be at depth 2 and the parent has enough children, try next L1 node, etc.
+      // If at depth 2 and parent has enough children, try next L1 node, etc.
       if (currentDepth === 2) {
         const currentLevel1Node = findParentNode(qaTree, node);
         const hasEnoughChildren =
@@ -410,7 +408,7 @@ export default function QnAPage() {
           if (nextLevel1WithoutChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextLevel1WithoutChildren);
   
-            // <-- ADDED FOR BFS fallback subtopics
+            // BFS fallback subtopics
             const subsForNextL1 = nextLevel1WithoutChildren.answer
               ? extractSubtopicsFromAnswerText(nextLevel1WithoutChildren.answer)
               : [];
@@ -435,6 +433,7 @@ export default function QnAPage() {
         }
       }
   
+      // Build a history for siblings who have answers
       const levelHistory: QuestionHistoryItem[] = currentLevelNodes
         .filter(n => n.answer)
         .map(n => ({
@@ -454,12 +453,13 @@ export default function QnAPage() {
       );
       const hasEnoughTopLevelQuestions = isTopLevel && currentLevelNodes.length >= 4;
       const hasEnoughSiblingsForLevel = !isTopLevel && currentLevelNodes.length >= 3;
+  
       const shouldGenerateMoreSiblings =
         (isTopLevel && !hasEnoughTopLevelQuestions && uncoveredAspects.length > 0) ||
         (!isTopLevel && uncoveredAspects.length > 0 && !hasEnoughSiblingsForLevel);
   
       if (shouldGenerateMoreSiblings) {
-        // Use parent's subtopics so BFS sibling generation can be more targeted
+        // BFS sibling generation with parent's subtopics
         const { nodes: newSiblings } = await fetchQuestionsForNode(
           prompt,
           parent,
@@ -475,7 +475,7 @@ export default function QnAPage() {
         }
       }
   
-      // BFS fallback if currentDepth >= 3, see if we can handle incomplete L2 nodes, etc.
+      // BFS fallback if currentDepth >= 3
       if (currentDepth >= 3) {
         const l2Nodes = getAllNodesAtDepth(qaTree!, 2);
         const incompleteL2 = l2Nodes.find(l2Node => {
@@ -486,10 +486,9 @@ export default function QnAPage() {
           );
           return l2Node.children.length < expectedChildren;
         });
+  
         if (incompleteL2) {
           const nodeHistory = getAllAnsweredQuestions(incompleteL2);
-  
-          // <-- ADDED FOR BFS fallback subtopics
           const subsForIncompleteL2 = incompleteL2.answer
             ? extractSubtopicsFromAnswerText(incompleteL2.answer)
             : [];
@@ -510,25 +509,28 @@ export default function QnAPage() {
         }
       }
   
+      // If all current level nodes are answered, see if they have enough children
       const allCurrentLevelNodes = getAllNodesAtDepth(qaTree!, currentDepth);
       const allCurrentLevelAnswered = allCurrentLevelNodes.every(n => n.answer);
+  
       if (allCurrentLevelAnswered) {
         const allNodesHaveEnoughChildren = allCurrentLevelNodes.every(n => {
           if (!n.answer) return true;
           const aspects = extractAspectsFromAnswer(n.answer);
           return n.children.length >= Math.min(3, aspects.length);
         });
+  
         if (allNodesHaveEnoughChildren) {
+          // Try to find a node that needs children at deeper level
           const nextNodeNeedingChildren = allCurrentLevelNodes.find(
             n =>
               n.answer &&
               n.children.length <
                 Math.min(3, extractAspectsFromAnswer(n.answer).length)
           );
+  
           if (nextNodeNeedingChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextNodeNeedingChildren);
-  
-            // <-- ADDED FOR BFS fallback subtopics
             const subsForNextNode = nextNodeNeedingChildren.answer
               ? extractSubtopicsFromAnswerText(nextNodeNeedingChildren.answer)
               : [];
@@ -550,13 +552,15 @@ export default function QnAPage() {
               return children[0];
             }
           }
+  
+          // Or check if there's an unanswered child at the next depth
           const allChildrenAtNextDepth = allCurrentLevelNodes.flatMap(n => n.children);
-          const unansweredChildAtNextDepth = allChildrenAtNextDepth.find(
-            n => !n.answer
-          );
+          const unansweredChildAtNextDepth = allChildrenAtNextDepth.find(n => !n.answer);
           if (unansweredChildAtNextDepth) {
             return unansweredChildAtNextDepth;
           }
+  
+          // Otherwise see if there's another node needing children at the next depth
           const nextDepthNodeNeedingChildren = allChildrenAtNextDepth.find(
             n =>
               n.answer &&
@@ -565,8 +569,6 @@ export default function QnAPage() {
           );
           if (nextDepthNodeNeedingChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextDepthNodeNeedingChildren);
-  
-            // <-- ADDED FOR BFS fallback subtopics
             const subsForNextDepth = nextDepthNodeNeedingChildren.answer
               ? extractSubtopicsFromAnswerText(nextDepthNodeNeedingChildren.answer)
               : [];
@@ -589,10 +591,12 @@ export default function QnAPage() {
             }
           }
         } else {
+          // Some nodes at this level are not answered or lack children
           const nextUnansweredNode = allCurrentLevelNodes.find(n => !n.answer);
           if (nextUnansweredNode) {
             return nextUnansweredNode;
           }
+  
           const nextNodeNeedingChildren = allCurrentLevelNodes.find(
             n =>
               n.answer &&
@@ -601,8 +605,6 @@ export default function QnAPage() {
           );
           if (nextNodeNeedingChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextNodeNeedingChildren);
-  
-            // <-- ADDED FOR BFS fallback subtopics
             const subsForNextNode2 = nextNodeNeedingChildren.answer
               ? extractSubtopicsFromAnswerText(nextNodeNeedingChildren.answer)
               : [];
@@ -628,10 +630,7 @@ export default function QnAPage() {
   
         // BFS fallback: generate new Level 1 questions if needed
         const rootHistory = getAllAnsweredQuestions(qaTree!);
-  
-        // <-- ADDED FOR BFS fallback subtopics
         const emptySubsBFS2: string[] = [];
-  
         const { nodes: newTopLevel } = await fetchQuestionsForNode(
           prompt,
           qaTree!,
@@ -646,21 +645,18 @@ export default function QnAPage() {
           return newTopLevel[0];
         }
       }
-    }
+    } // end BFS branch
   
-    // Final fallback: generate new Level 1 questions if everything else fails
-    const rootHistory = getAllAnsweredQuestions(qaTree!);
-  
-    // <-- ADDED FOR BFS final fallback subtopics
-    const emptySubsBFS3: string[] = [];
-  
+    // If we get here, try final fallback: generate new top-level questions
+    const finalHistory = getAllAnsweredQuestions(qaTree!);
+    const emptySubs: string[] = [];
     const { nodes: newTopLevel } = await fetchQuestionsForNode(
       prompt,
       qaTree!,
-      rootHistory,
+      finalHistory,
       1,
       true,
-      emptySubsBFS3
+      emptySubs
     );
     if (newTopLevel.length > 0) {
       newTopLevel[0].questionNumber = questionCount + 1;

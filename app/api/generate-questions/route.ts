@@ -29,7 +29,12 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// We’ll store BFS & DFS guidelines in constants for readability:
+/**
+ * BFS_RULES and DFS_RULES are appended conditionally inside the system prompt.
+ * The CRITICAL_RELEVANCE_RULE ensures that child questions quote the parent’s answer.
+ */
+
+// BFS instructions
 const BFS_RULES = `
 BFS Guidelines:
 - CRITICAL: At Level 1 (top level), generate exactly 4-5 comprehensive questions that cover the main aspects.
@@ -86,8 +91,6 @@ Cycling Behavior:
 2. When generating new Level 1 questions after a cycle:
    * Must cover completely different aspects than ALL previous Level 1 questions.
    * Should maintain the same level of importance as original Level 1 questions.
-   * Example: If first cycle covered "user profiles" and "content management",
-     second cycle might cover "analytics" and "performance optimization".
 
 Progression Rules:
 1. After getting exactly 4-5 Level 1 questions answered:
@@ -105,6 +108,7 @@ Progression Rules:
    * ANY questions at current level are unanswered.
 `;
 
+// DFS instructions
 const DFS_RULES = `
 DFS Guidelines:
 - CRITICAL: In DFS mode, fully explore ONE topic branch before moving to siblings.
@@ -293,9 +297,7 @@ Use this information to:
       parentAnswerSubtopics = extractSubtopicsFromAnswer(parentContext.parentAnswer);
     }
 
-    // BUILD THE SYSTEM PROMPT:
-    // (If isAutoPopulate, we give the "AUTO-POPULATE" system instructions,
-    // otherwise the "FOLLOW-UP QUESTION" instructions including BFS/DFS + CRITICAL RULE.)
+    // Build the systemPrompt for either auto-populate or BFS/DFS question generation
     const systemPrompt = isAutoPopulate
       ? 
       // ------------------- AUTO-POPULATE (Suggested Answer) -------------------
@@ -380,55 +382,30 @@ Follow these guidelines:
 
    BFS Mode Levels:
    - Level 1 (Basic Needs): Broad, fundamental questions about purpose, audience, and core requirements
-     Example: "What is the fundamental purpose of the portfolio website?"
-   - Level 2 (Features): Main sections and key features, but not specifics yet
-     Example: "What main sections should be included in the navigation?"
-   - Level 3 (Details): Specific details about each feature/section identified in level 2
-     Example: "What project details should be displayed in each portfolio item?"
-   - Level 4 (Refinements): Technical specifications and implementation details
-     Example: "What image formats and sizes should be supported for project thumbnails?"
-   - Level 5 (Polish): Edge cases and final refinements
-     Example: "How should the portfolio handle projects with missing images?"
+   - Level 2 (Features): Main sections and key features
+   - Level 3 (Details): Specific details about each feature or section
+   - Level 4 (Refinements): Technical specs and implementation details
+   - Level 5 (Polish): Edge cases, final refinements
 
 2. Child Question Generation Rules:
    - Child questions MUST be more specific than their parent question.
    - Child questions MUST explore a specific aspect mentioned in the parent's answer.
    - NEVER ask the same question as the parent with slightly different wording.
-   - Example progression:
-     Parent Q: "What sections should the portfolio include?"
-     Parent A: "The portfolio should include a projects section, about me, skills, and contact."
-     Valid child Q: "What specific project details should be displayed in the projects section?"
-     Invalid child Q: "What content should be included in the portfolio?"
 
 3. Traversal Rules (${traversalMode}):
 ${traversalMode === 'bfs' ? BFS_RULES : DFS_RULES}
 
 4. Topic Management:
-   - In BFS mode:
-     * First identify ALL distinct aspects/topics from the parent's answer.
-     * Generate siblings to cover EACH aspect before going deeper.
-     * Only mark shouldStopBranch=true if ALL aspects have been covered by siblings.
-   - In DFS mode:
-     * Focus on exploring one aspect deeply before moving to siblings.
-     * Mark shouldStopBranch=true when the current aspect is fully explored.
+   - BFS: Generate siblings for each aspect first
+   - DFS: Explore one aspect deeply before siblings
 
 5. Question Generation:
    - Generate exactly ONE question.
-   - For BFS mode siblings:
-     * Look at the parent's answer for unexplored aspects.
-     * Each sibling should focus on a DIFFERENT aspect.
-     * Return shouldStopBranch=true ONLY if no unexplored aspects remain.
-   - For DFS mode:
-     * Focus on drilling deeper into the current aspect.
-     * Return shouldStopBranch=true when the aspect is fully explored.
+   - For BFS: Return shouldStopBranch=true if no unexplored aspects remain
+   - For DFS: Return shouldStopBranch=true when the aspect is fully explored
 
 6. Stopping Criteria:
-   - Stop the current branch if:
-     * The topic is fully explored (all aspects covered).
-     * Further questions would be too specific.
-     * A different topic needs attention.
-     * The knowledge base provides sufficient information.
-     * The question would be redundant with the parent's answer.
+   - Topic fully explored, or the knowledge base is sufficient.
 
 7. Knowledge Base Context:
 ${knowledgeBaseContext}
@@ -455,6 +432,7 @@ Return your response in this exact JSON format:
   "subtopics": ["Potential child topics for this question"]
 }`;
 
+    // Next, build the userPrompt to finalize the conversation:
     const userPrompt = isAutoPopulate
       ? // AUTO-POPULATE user instructions
         `The design prompt is: "${prompt}"
@@ -489,27 +467,26 @@ Current Question: ${
 CRITICAL REQUIREMENTS:
 1. Review ALL previous questions and their topics carefully.
 2. Generate ONE question that explores a COMPLETELY DIFFERENT aspect not covered in ANY previous question.
-3. For BFS mode, ensure the new question:
-   - Stays at the same level.
-   - Covers a new topic not related to any previous questions.
-   - Follows the level-specific topic guidelines.
-4. Provide a suggested answer following the guidelines.
+3. If BFS, ensure the new question:
+   - Stays at the current level
+   - Covers a new topic not yet discussed
+   - Follows the BFS rules
+4. If DFS, continue deeper on the current aspect until fully explored
+5. Provide a suggestedAnswer following the guidelines
 
-Topics already covered (DO NOT ask about these or related topics):
+Topics already covered (DO NOT repeat these or related topics):
 ${previousQuestions
   .map((q: { question: string }, index: number) => `${index + 1}. ${q.question}`)
   .join('\n')}
 
 Remember:
-- NEVER repeat a topic that's been covered in previous questions.
-- Each new question must explore a different aspect of the design.
-- In BFS mode, stay at the current level but explore new topics.
-- Make clear, direct statements in suggested answers.
-- Never use second person pronouns.`;
+- No second-person pronouns
+- No repeating or rephrasing parent's question
+- BFS covers all aspects at a level; DFS goes deeper on one aspect.`;
 
-    // Call OpenAI
+    // Call OpenAI with the system + user prompts
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o', // Adjust if necessary
+      model: 'gpt-4o', // or "gpt-4", etc.
       temperature: 0.3,
       messages: [
         {
@@ -527,7 +504,7 @@ Remember:
     const content = completion.choices[0].message.content?.trim();
     if (!content) {
       console.error('Empty response from OpenAI');
-      // Return a default response instead of throwing
+      // Return a default fallback response
       return NextResponse.json({
         questions: ["What are the core features needed for this design?"],
         shouldStopBranch: false,
@@ -544,7 +521,7 @@ Remember:
 
     console.log('Raw OpenAI response:', content);
 
-    let response: {
+    let parsedResponse: {
       questions: string[];
       shouldStopBranch: boolean;
       stopReason: string;
@@ -558,74 +535,67 @@ Remember:
     };
 
     try {
-      // Try to parse the JSON response
-      response = JSON.parse(content);
+      // Attempt to parse JSON
+      parsedResponse = JSON.parse(content);
 
-      // Ensure required fields exist with defaults
-      response = {
-        questions: Array.isArray(response.questions)
-          ? response.questions
-          : [response.questions || "What are the core features needed for this design?"],
-        shouldStopBranch: response.shouldStopBranch || false,
-        stopReason: response.stopReason || "",
-        suggestedAnswer: response.suggestedAnswer || null,
-        sourceReferences: response.sourceReferences || [],
-        confidence: response.confidence || "low",
-        topicsCovered: response.topicsCovered || [],
-        parentTopic: response.parentTopic || "requirements",
-        subtopics: response.subtopics || [],
-        parentReference: response.parentReference || ""
+      // Ensure required fields have defaults
+      parsedResponse = {
+        questions: Array.isArray(parsedResponse.questions)
+          ? parsedResponse.questions
+          : [parsedResponse.questions || "What are the core features needed for this design?"],
+        shouldStopBranch: parsedResponse.shouldStopBranch || false,
+        stopReason: parsedResponse.stopReason || "",
+        suggestedAnswer: parsedResponse.suggestedAnswer || null,
+        sourceReferences: parsedResponse.sourceReferences || [],
+        confidence: parsedResponse.confidence || "low",
+        topicsCovered: parsedResponse.topicsCovered || [],
+        parentTopic: parsedResponse.parentTopic || "requirements",
+        subtopics: parsedResponse.subtopics || [],
+        parentReference: parsedResponse.parentReference || ""
       };
 
-      // Clean up questions to ensure they're plain text
-      response.questions = response.questions
-        .map((q: any) => {
-          if (typeof q === 'string') return q;
-          return q.question || q.text || JSON.stringify(q);
-        })
+      // Normalize question array items to strings
+      parsedResponse.questions = parsedResponse.questions
+        .map((q: any) => (typeof q === 'string' ? q : JSON.stringify(q)))
         .filter(Boolean);
 
-      // If no valid questions after cleanup, provide a default
-      if (response.questions.length === 0) {
-        response.questions = ["What are the core features needed for this design?"];
+      // If no valid questions, provide a default
+      if (!parsedResponse.questions.length) {
+        parsedResponse.questions = ["What are the core features needed for this design?"];
       }
 
-      console.log('Formatted response:', response);
-      return NextResponse.json(response);
+      console.log('Final formatted response:', parsedResponse);
+      return NextResponse.json(parsedResponse);
     } catch (jsonError) {
-      console.error("Error parsing API response:", jsonError);
-      console.error("Raw content causing parse error:", content);
+      console.error("Error parsing JSON response:", jsonError);
+      console.error("Raw content was:", content);
 
-      // Try to extract a valid question from the partial response
-      let extractedQuestion = "What are the core features needed for this design?";
+      // Attempt to salvage partial data
+      let fallbackQuestion = "What are the core features needed for this design?";
       try {
-        const questionMatch = content.match(/"questions":\s*\[\s*"([^"]+)"/);
-        if (questionMatch && questionMatch[1]) {
-          extractedQuestion = questionMatch[1];
+        const match = content.match(/"questions":\s*\[\s*"([^"]+)"/);
+        if (match && match[1]) {
+          fallbackQuestion = match[1];
         }
-      } catch (e) {
-        console.error("Failed to extract question from partial response");
+      } catch (extractionError) {
+        console.error("No fallback question found in partial content");
       }
 
-      // Provide a default response using any extracted data
       return NextResponse.json({
-        questions: [extractedQuestion],
+        questions: [fallbackQuestion],
         shouldStopBranch: false,
         stopReason: "",
         suggestedAnswer: null,
         sourceReferences: [],
         confidence: "low",
-        topicsCovered: ["core_features"],
+        topicsCovered: [],
         parentTopic: "requirements",
         parentReference: "",
         subtopics: []
       });
     }
   } catch (error) {
-    console.error('Error generating questions:', error);
-    return NextResponse.json(
-      { error: 'Failed to generate questions' },
-      { status: 500 }
-    );
+    console.error('Error in route:', error);
+    return NextResponse.json({ error: 'Failed to generate questions' }, { status: 500 });
   }
 }
