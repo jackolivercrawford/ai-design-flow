@@ -34,8 +34,10 @@ export default function PromptPage() {
     console.log("User prompt:", prompt);
     console.log("Settings:", settings);
     
-    // Clear any existing progress
+    // Clear any existing progress and versions
     localStorage.removeItem('qaProgress');
+    localStorage.removeItem('mockupVersions');
+    localStorage.removeItem('currentMockup');
     
     // Save new prompt and settings
     localStorage.setItem('designPrompt', prompt);
