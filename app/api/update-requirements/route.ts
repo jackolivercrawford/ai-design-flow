@@ -221,9 +221,13 @@ Update the requirements document with any new information from the Q&A and knowl
         } else if (textLower.includes('user') || textLower.includes('interface') || textLower.includes('display') || textLower.includes('visual')) {
           category = 'ux';
           tags.push('interface');
+          if (textLower.includes('display')) tags.push('display');
+          if (textLower.includes('visual')) tags.push('visual');
         } else if (textLower.includes('performance') || textLower.includes('speed') || textLower.includes('efficiency')) {
           category = 'performance';
           tags.push('optimization');
+          if (textLower.includes('speed')) tags.push('speed');
+          if (textLower.includes('efficiency')) tags.push('efficiency');
         } else if (textLower.includes('accessible') || textLower.includes('disability')) {
           category = 'accessibility';
           priority = 'high'; // Accessibility always high priority
@@ -231,23 +235,45 @@ Update the requirements document with any new information from the Q&A and knowl
         } else if (textLower.includes('technical') || textLower.includes('system') || textLower.includes('integration')) {
           category = 'technical';
           tags.push('integration');
+          if (textLower.includes('system')) tags.push('system');
         }
 
         // Additional tags based on content
         if (textLower.includes('monitor') || textLower.includes('sensor')) {
           tags.push('monitoring');
+          if (textLower.includes('sensor')) tags.push('sensors');
         }
         if (textLower.includes('data') || textLower.includes('analytics')) {
           tags.push('data');
+          if (textLower.includes('analytics')) tags.push('analytics');
         }
         if (textLower.includes('ai') || textLower.includes('machine learning')) {
           tags.push('ai');
+          if (textLower.includes('machine learning')) tags.push('ml');
         }
         if (textLower.includes('maintenance')) {
           tags.push('maintenance');
         }
         if (textLower.includes('real-time') || textLower.includes('realtime')) {
           tags.push('real-time');
+        }
+        if (textLower.includes('emergency')) {
+          tags.push('emergency');
+        }
+        if (textLower.includes('status') || textLower.includes('state')) {
+          tags.push('status');
+        }
+        if (textLower.includes('alert') || textLower.includes('notification')) {
+          tags.push('alerts');
+        }
+        if (textLower.includes('control') || textLower.includes('controls')) {
+          tags.push('controls');
+        }
+        if (textLower.includes('feedback')) {
+          tags.push('feedback');
+        }
+        if (textLower.includes('intercom') || textLower.includes('communication')) {
+          tags.push('communication');
         }
 
         return { category, tags, priority };
@@ -271,7 +297,22 @@ Update the requirements document with any new information from the Q&A and knowl
                 updatedAt: new Date().toISOString()
               };
             }
-            // If it's already an object but missing ID
+
+            // Try to find matching requirement in existing document to preserve metadata
+            const existingReq = Object.values(existingDocument.categories)
+              .flatMap((cat: any) => cat.requirements)
+              .find((existing: any) => existing.text === req.text);
+
+            if (existingReq) {
+              // If found, preserve all metadata but update the text
+              return {
+                ...existingReq,
+                text: req.text,
+                updatedAt: new Date().toISOString()
+              };
+            }
+
+            // If it's a new requirement but already has some structure
             if (!req.id) {
               const analysis = analyzeRequirement(req.text);
               req.id = uuidv4();
