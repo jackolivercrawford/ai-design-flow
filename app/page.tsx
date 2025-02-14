@@ -52,9 +52,14 @@ export default function PromptPage() {
   return (
     <div className="min-h-screen flex flex-col justify-center items-center bg-gray-50 px-4">
       {/* Header */}
-      <header className="mb-8 text-center">
-        <h1 className="text-4xl font-bold text-emerald-600">Protosynthetic</h1>
-        <p className="mt-4 text-lg text-gray-600">
+      <header className="mb-8 text-center relative">
+        <h1 className="text-5xl font-bold bg-gradient-to-r from-emerald-600 to-emerald-400 bg-clip-text text-transparent drop-shadow-sm relative">
+          Proto
+          <span className="bg-gradient-to-r from-emerald-500 to-emerald-300 bg-clip-text text-transparent">synthetic</span>
+          <div className="absolute -top-4 -right-4 w-8 h-8 border-2 border-emerald-200 rounded-full opacity-50"></div>
+          <div className="absolute -bottom-2 -left-4 w-6 h-6 border-2 border-emerald-300 rounded-full opacity-40"></div>
+        </h1>
+        <p className="mt-6 text-lg text-gray-600 font-light tracking-wide">
           Enter your design prompt to kick off your interactive design journey.
         </p>
       </header>

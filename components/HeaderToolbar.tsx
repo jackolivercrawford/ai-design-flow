@@ -27,14 +27,19 @@ const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
 }) => {
   return (
     <header className="bg-white border-b border-gray-200">
-      <div className="w-full px-2">
-        <div className="flex justify-between items-center h-16 max-w-[1920px] mx-auto">
+      <div className="w-full">
+        <div className="flex justify-between items-center h-16 mx-4">
           <div className="pl-2">
-            <Link href="/" className="text-xl font-bold text-gray-900 hover:text-gray-700 transition-colors">
-              AI Design Flow
+            <Link href="/" className="relative group">
+              <span className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-emerald-400 bg-clip-text text-transparent relative">
+                Proto
+                <span className="bg-gradient-to-r from-emerald-500 to-emerald-300 bg-clip-text text-transparent">synthetic</span>
+                <div className="absolute -top-1 -right-2 w-4 h-4 border-2 border-emerald-200 rounded-full opacity-0 group-hover:opacity-50 transition-opacity"></div>
+                <div className="absolute -bottom-1 -left-2 w-3 h-3 border-2 border-emerald-300 rounded-full opacity-0 group-hover:opacity-40 transition-opacity"></div>
+              </span>
             </Link>
           </div>
-          <div className="pr-2 flex space-x-4">
+          <div className="flex space-x-4">
             {showSaveButton && onSave && (
               <button
                 onClick={onSave}
