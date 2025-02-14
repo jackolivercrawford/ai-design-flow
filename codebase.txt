@@ -4620,7 +4620,7 @@ export interface QASettings {
 } 
 
 ----- /Users/jackcrawford/ai-design-flow/.env.local -----
-OPENAI_API_KEY=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
+OPENAI_API_KEY=<your_key_here>
 
 ----- /Users/jackcrawford/ai-design-flow/.gitignore -----
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
