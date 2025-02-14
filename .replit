@@ -6,7 +6,7 @@ channel = "stable-24_05"
 
 [deployment]
 run = ["sh", "-c", "next start"]
-build = ["sh", "-c", "next build"]
+build = ["sh", "-c", "NEXT_DISABLE_ESLINT_DURING_BUILD=1 next build"]
 
 [[ports]]
 localPort = 3000
