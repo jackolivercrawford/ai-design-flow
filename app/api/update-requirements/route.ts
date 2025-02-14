@@ -183,7 +183,7 @@ Update the requirements document with any new information from the Q&A and knowl
         const tags: string[] = [];
         let priority: 'high' | 'medium' | 'low';
 
-        // Priority determination first (more comprehensive)
+        // Priority determination
         if (
           textLower.includes('critical') || 
           textLower.includes('essential') || 
@@ -194,9 +194,12 @@ Update the requirements document with any new information from the Q&A and knowl
           textLower.includes('crucial') ||
           textLower.includes('key') ||
           textLower.includes('primary') ||
-          textLower.includes('core')
+          textLower.includes('core') ||
+          textLower.includes('safety') ||
+          textLower.includes('emergency')
         ) {
           priority = 'high';
+          tags.push('high priority');
         } else if (
           textLower.includes('optional') || 
           textLower.includes('nice to have') ||
@@ -209,74 +212,71 @@ Update the requirements document with any new information from the Q&A and knowl
           textLower.includes('additional')
         ) {
           priority = 'low';
+          tags.push('low priority');
         } else {
           priority = 'medium';
+          tags.push('medium priority');
         }
 
-        // Category determination (existing logic)
+        // Category and feature tags
         if (textLower.includes('security') || textLower.includes('emergency') || textLower.includes('safety')) {
           category = 'security';
-          priority = 'high'; // Security always high priority
-          tags.push('safety');
-        } else if (textLower.includes('user') || textLower.includes('interface') || textLower.includes('display') || textLower.includes('visual')) {
+          if (textLower.includes('security')) tags.push('security');
+          if (textLower.includes('safety')) tags.push('safety');
+          if (textLower.includes('emergency')) tags.push('emergency');
+        }
+
+        if (textLower.includes('user') || textLower.includes('interface') || textLower.includes('display') || textLower.includes('visual')) {
           category = 'ux';
-          tags.push('interface');
+          tags.push('ux');
+          if (textLower.includes('interface')) tags.push('interface');
           if (textLower.includes('display')) tags.push('display');
           if (textLower.includes('visual')) tags.push('visual');
-        } else if (textLower.includes('performance') || textLower.includes('speed') || textLower.includes('efficiency')) {
-          category = 'performance';
-          tags.push('optimization');
-          if (textLower.includes('speed')) tags.push('speed');
-          if (textLower.includes('efficiency')) tags.push('efficiency');
-        } else if (textLower.includes('accessible') || textLower.includes('disability')) {
-          category = 'accessibility';
-          priority = 'high'; // Accessibility always high priority
-          tags.push('ada-compliance');
-        } else if (textLower.includes('technical') || textLower.includes('system') || textLower.includes('integration')) {
-          category = 'technical';
-          tags.push('integration');
-          if (textLower.includes('system')) tags.push('system');
         }
 
-        // Additional tags based on content
-        if (textLower.includes('monitor') || textLower.includes('sensor')) {
-          tags.push('monitoring');
-          if (textLower.includes('sensor')) tags.push('sensors');
+        // Functional features
+        if (textLower.includes('search') || textLower.includes('find') || textLower.includes('lookup')) {
+          tags.push('functional');
         }
-        if (textLower.includes('data') || textLower.includes('analytics')) {
-          tags.push('data');
-          if (textLower.includes('analytics')) tags.push('analytics');
-        }
-        if (textLower.includes('ai') || textLower.includes('machine learning')) {
-          tags.push('ai');
-          if (textLower.includes('machine learning')) tags.push('ml');
-        }
-        if (textLower.includes('maintenance')) {
-          tags.push('maintenance');
-        }
-        if (textLower.includes('real-time') || textLower.includes('realtime')) {
+
+        // Real-time features
+        if (textLower.includes('real-time') || textLower.includes('realtime') || textLower.includes('live')) {
           tags.push('real-time');
         }
-        if (textLower.includes('emergency')) {
-          tags.push('emergency');
-        }
-        if (textLower.includes('status') || textLower.includes('state')) {
+
+        // Status and monitoring
+        if (textLower.includes('status') || textLower.includes('state') || textLower.includes('condition')) {
           tags.push('status');
         }
-        if (textLower.includes('alert') || textLower.includes('notification')) {
-          tags.push('alerts');
-        }
-        if (textLower.includes('control') || textLower.includes('controls')) {
-          tags.push('controls');
-        }
-        if (textLower.includes('feedback')) {
-          tags.push('feedback');
-        }
-        if (textLower.includes('intercom') || textLower.includes('communication')) {
-          tags.push('communication');
+
+        if (textLower.includes('monitor') || textLower.includes('track') || textLower.includes('observe')) {
+          tags.push('monitoring');
         }
 
-        return { category, tags, priority };
+        // Diagnostics and management
+        if (textLower.includes('diagnostic')) {
+          tags.push('diagnostics');
+        }
+
+        if (textLower.includes('remote') && textLower.includes('management')) {
+          tags.push('remote management');
+        }
+
+        // AI and voice features
+        if (textLower.includes('voice') || textLower.includes('speak') || textLower.includes('audio')) {
+          tags.push('voice');
+        }
+
+        if (textLower.includes('ai') || textLower.includes('intelligent') || textLower.includes('smart')) {
+          tags.push('ai');
+        }
+
+        // Remove any duplicate tags
+        return {
+          category,
+          tags: [...new Set(tags)],
+          priority
+        };
       }
 
       // Ensure all requirements have proper structure and IDs
@@ -304,10 +304,16 @@ Update the requirements document with any new information from the Q&A and knowl
               .find((existing: any) => existing.text === req.text);
 
             if (existingReq) {
-              // If found, preserve all metadata but update the text
+              // If found, analyze the text for new tags but preserve existing metadata
+              const analysis = analyzeRequirement(req.text);
               return {
                 ...existingReq,
                 text: req.text,
+                // Merge existing tags with newly detected ones
+                tags: [...new Set([...(existingReq.tags || []), ...analysis.tags])],
+                // Update priority and category only if they're not already set
+                priority: existingReq.priority || analysis.priority,
+                category: existingReq.category || analysis.category,
                 updatedAt: new Date().toISOString()
               };
             }

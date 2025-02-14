@@ -74,6 +74,33 @@ const ensureCompleteColorScheme = (version: MockupVersion): MockupVersion => {
   };
 };
 
+const style = `
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .version-list {
+    position: relative;
+  }
+
+  .version-item {
+    position: relative;
+    transition: all 0.3s ease-out;
+  }
+
+  .version-item.deleting {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+`;
+
 export default function PreviewPanel({
   isOpen,
   onClose,
@@ -100,9 +127,11 @@ export default function PreviewPanel({
       if (storedVersions) {
         const parsedVersions = JSON.parse(storedVersions);
         setVersions(parsedVersions);
-        // Set the most recent version as active if it exists
+        // Set the most recent version as both active and selected if it exists
         if (parsedVersions.length > 0) {
-          setActiveVersion(parsedVersions[parsedVersions.length - 1]);
+          const mostRecent = parsedVersions[parsedVersions.length - 1];
+          setActiveVersion(mostRecent);
+          setSelectedVersion(mostRecent);
         }
       }
 
@@ -124,19 +153,21 @@ export default function PreviewPanel({
   const generateMockup = async (saveCurrentVersion: boolean = false) => {
     setIsMockupLoading(true);
     setError(null);
+    // Clear current mockup data immediately when regenerating
+    setMockupData(null);
 
     // If requested, save current version before generating new one
     if (saveCurrentVersion && mockupData) {
       const currentVersion: MockupVersion = {
         id: uuidv4(),
         timestamp: new Date().toISOString(),
-        qaTree,
-        requirementsDoc,
+        qaTree: JSON.parse(JSON.stringify(qaTree)),
+        requirementsDoc: JSON.parse(JSON.stringify(requirementsDoc)),
         currentState: {
           currentNodeId: currentNode?.id || null,
-          suggestedAnswer: suggestedAnswer
+          suggestedAnswer: suggestedAnswer ? { ...suggestedAnswer } : null
         },
-        mockupData
+        mockupData: { ...mockupData }
       };
 
       const updatedVersions = [...versions, currentVersion];
@@ -171,11 +202,11 @@ export default function PreviewPanel({
       const newVersion: MockupVersion = {
         id: uuidv4(),
         timestamp: new Date().toISOString(),
-        qaTree,
-        requirementsDoc,
+        qaTree: JSON.parse(JSON.stringify(qaTree)),
+        requirementsDoc: JSON.parse(JSON.stringify(requirementsDoc)),
         currentState: {
           currentNodeId: currentNode?.id || null,
-          suggestedAnswer: suggestedAnswer
+          suggestedAnswer: suggestedAnswer ? { ...suggestedAnswer } : null
         },
         mockupData: data
       };
@@ -185,9 +216,8 @@ export default function PreviewPanel({
       setVersions(updatedVersions);
       localStorage.setItem('mockupVersions', JSON.stringify(updatedVersions));
 
-      // Set as active version and clear selected version
+      // Set as active version only
       setActiveVersion(newVersion);
-      setSelectedVersion(null);
     } catch (error) {
       console.error('Error generating mockup:', error);
       setError(error instanceof Error ? error.message : 'Failed to generate mockup');
@@ -241,6 +271,13 @@ export default function PreviewPanel({
     return count;
   };
 
+  // Add this helper function after the countAnswers function
+  const countTotalRequirements = (doc: RequirementsDocument): number => {
+    return Object.values(doc.categories).reduce((total, category) => 
+      total + category.requirements.length, 0
+    );
+  };
+
   const handleCopyCode = () => {
     if (mockupData?.code) {
       navigator.clipboard.writeText(mockupData.code);
@@ -279,10 +316,40 @@ export default function PreviewPanel({
     }
   };
 
+  const handleVersionDelete = (versionId: string) => {
+    if (window.confirm('Are you sure you want to delete this version? This action cannot be undone.')) {
+      // Find the DOM element for the version being deleted
+      const versionElement = document.querySelector(`[data-version-id="${versionId}"]`);
+      if (versionElement) {
+        // Add the deleting class to trigger the animation
+        versionElement.classList.add('deleting');
+        
+        // Wait for the animation to complete before updating state
+        setTimeout(() => {
+          const updatedVersions = versions.filter(v => v.id !== versionId);
+          setVersions(updatedVersions);
+          localStorage.setItem('mockupVersions', JSON.stringify(updatedVersions));
+          
+          // If the deleted version was selected, clear selection
+          if (selectedVersion?.id === versionId) {
+            setSelectedVersion(null);
+          }
+          
+          // If the deleted version was active, set the most recent as active
+          if (activeVersion?.id === versionId) {
+            const mostRecent = updatedVersions[updatedVersions.length - 1];
+            setActiveVersion(mostRecent || null);
+          }
+        }, 300); // Match this with the CSS transition duration
+      }
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-end">
+      <style>{style}</style>
       <div className="w-full bg-white h-full shadow-lg flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-gray-200 flex justify-between items-center">
@@ -311,36 +378,65 @@ export default function PreviewPanel({
           <div className="w-1/3 h-full border-r border-gray-200 overflow-auto">
             <div className="p-6">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Version History</h2>
-              <div className="space-y-4">
-                {[...versions].reverse().map((version) => (
+              <div className="version-list space-y-4">
+                {[...versions].reverse().map((version, index) => (
                   <div
                     key={version.id}
-                    className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                      version.id === activeVersion?.id
-                        ? 'border-green-500 bg-green-50'
-                        : version.id === selectedVersion?.id
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-blue-300'
-                    }`}
-                    onClick={() => handleVersionSelect(version)}
+                    data-version-id={version.id}
+                    className={`version-item p-4 border rounded-lg ${
+                      version.id === selectedVersion?.id
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-blue-300'
+                    } ${index === 0 && isMockupLoading ? 'cursor-default opacity-70' : 'cursor-pointer'}`}
+                    style={{
+                      animation: 'slideIn 0.2s ease-out'
+                    }}
+                    onClick={() => {
+                      // Only allow selection if not currently generating
+                      if (!(index === 0 && isMockupLoading)) {
+                        handleVersionSelect(version);
+                      }
+                    }}
                   >
                     <div className="flex justify-between items-start">
-                      <div>
+                      <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <p className="font-medium text-gray-900">
-                            Version from {new Date(version.timestamp).toLocaleString()}
+                            {index === 0 && isMockupLoading ? 'Generating new version...' : `Version from ${new Date(version.timestamp).toLocaleString()}`}
                           </p>
-                          {version.id === activeVersion?.id && (
-                            <span className="px-2 py-1 bg-green-100 text-green-800 text-sm rounded-full">
-                              Active
-                            </span>
+                          {index === 0 && isMockupLoading && (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                           )}
                         </div>
-                        <p className="text-sm text-gray-600 mt-1">
-                          {version.requirementsDoc.categories.basicNeeds.requirements.length} requirements,{' '}
-                          {version.mockupData.components.length} components
+                        <p className="text-sm text-gray-600 mt-1 flex gap-2">
+                          {index === 0 && isMockupLoading ? (
+                            <>
+                              <span className="inline-block bg-gray-200 rounded-full h-4 w-16 animate-pulse"></span>
+                              <span className="inline-block bg-gray-200 rounded-full h-4 w-16 animate-pulse"></span>
+                            </>
+                          ) : (
+                            <>
+                              {countTotalRequirements(version.requirementsDoc)} requirements,{' '}
+                              {version.mockupData.components.length} components
+                            </>
+                          )}
                         </p>
                       </div>
+                      {/* Add delete button */}
+                      {!(index === 0 && isMockupLoading) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation(); // Prevent version selection when clicking delete
+                            handleVersionDelete(version.id);
+                          }}
+                          className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                          title="Delete version"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -350,7 +446,14 @@ export default function PreviewPanel({
 
           {/* Version Preview (Right Side) */}
           <div className="w-2/3 h-full overflow-auto">
-            {(selectedVersion || activeVersion) ? (
+            {!selectedVersion && isMockupLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="flex flex-col items-center space-y-4">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                  <p className="text-gray-600">Generating new mockup...</p>
+                </div>
+              </div>
+            ) : (selectedVersion || activeVersion) ? (
               <div className="h-full flex flex-col">
                 {/* Version Preview Tabs */}
                 <div className="border-b border-gray-200">
@@ -455,12 +558,9 @@ export default function PreviewPanel({
                       <div className="space-y-8">
                         <div className="prose max-w-none flex justify-between items-start">
                           <div>
-                            <h1 className="text-2xl font-bold text-gray-900 mb-4">
+                            <h1 className="text-2xl font-bold text-gray-900">
                               {(selectedVersion || activeVersion)!.requirementsDoc.prompt.split('\n')[0]}
                             </h1>
-                            <p className="text-sm text-gray-500">
-                              Last updated: {new Date((selectedVersion || activeVersion)!.requirementsDoc.lastUpdated).toLocaleString()}
-                            </p>
                           </div>
                           <button
                             onClick={handleDownload}
@@ -496,6 +596,7 @@ export default function PreviewPanel({
                                         <div className="flex-1">
                                           <p className="text-gray-900">{req.text}</p>
                                           <div className="mt-2 flex flex-wrap gap-2">
+                                            {/* Priority Tag */}
                                             {req.priority && (
                                               <span className={`px-2 py-1 rounded-full text-xs ${
                                                 req.priority === 'high'
@@ -507,19 +608,24 @@ export default function PreviewPanel({
                                                 {req.priority} priority
                                               </span>
                                             )}
+                                            {/* Category Tag */}
                                             {req.category && (
                                               <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
                                                 {req.category}
                                               </span>
                                             )}
-                                            {req.tags?.map((tag, tagIndex) => (
-                                              <span
-                                                key={`${req.id || index}-tag-${tagIndex}`}
-                                                className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800"
-                                              >
-                                                {tag}
-                                              </span>
-                                            ))}
+                                            {/* Additional Tags */}
+                                            {req.tags?.map((tag, tagIndex) => {
+                                              console.log('Rendering tag:', tag, 'for requirement:', req.text);
+                                              return (
+                                                <span
+                                                  key={`${req.id || index}-tag-${tagIndex}`}
+                                                  className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800"
+                                                >
+                                                  {tag}
+                                                </span>
+                                              );
+                                            })}
                                           </div>
                                         </div>
                                       </div>
