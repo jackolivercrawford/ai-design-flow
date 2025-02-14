@@ -1405,44 +1405,53 @@ export default function QnAPage() {
   // -------------------- Render --------------------
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
-      <HeaderToolbar
-        onRestart={handleRestart}
-        onGenerate={handleGenerate}
-        onSave={() => handleSaveSession()}
-        showRestartButton={!isLoading}
-        showGenerateButton={!isLoading && qaTree !== null}
-        showSaveButton={!isLoading && qaTree !== null}
-        isAutomating={isAutomating}
-        onStartAutomation={startAutomation}
-        onStopAutomation={stopAutomation}
-        hasKnowledgeBase={!!settings?.knowledgeBase?.length}
-      />
-      <div className="py-2 px-6 bg-white border-b border-gray-200">
-        <div className="flex justify-between items-center">
-          <div className="text-sm text-gray-600">
-            Questions: {questionCount}
-          </div>
-          <div className="text-sm text-gray-600">
-            Mode: {settings?.traversalMode === 'dfs' ? 'Depth-First' : 'Breadth-First'}
+      <style jsx global>{`
+        body {
+          background-color: rgb(243, 244, 246);  /* This matches bg-gray-100 */
+        }
+      `}</style>
+      <div className="fixed top-0 left-0 right-0 z-10">
+        <HeaderToolbar
+          onRestart={handleRestart}
+          onGenerate={handleGenerate}
+          onSave={() => handleSaveSession()}
+          showRestartButton={!isLoading}
+          showGenerateButton={!isLoading && qaTree !== null}
+          showSaveButton={!isLoading && qaTree !== null}
+          isAutomating={isAutomating}
+          onStartAutomation={startAutomation}
+          onStopAutomation={stopAutomation}
+          hasKnowledgeBase={!!settings?.knowledgeBase?.length}
+        />
+        <div className="py-2 px-6 bg-white border-b border-gray-200">
+          <div className="flex justify-between items-center">
+            <div className="text-sm text-gray-600">
+              Questions: {questionCount}
+            </div>
+            <div className="text-sm text-gray-600">
+              Mode: {settings?.traversalMode === 'dfs' ? 'Depth-First' : 'Breadth-First'}
+            </div>
           </div>
         </div>
       </div>
-      <main className="flex-1 flex">
+      <main className="flex flex-1 pt-24 relative">
         {/* Left: Canvas Tree view */}
-        <div className="w-2/3 p-6 overflow-auto">
-          <div className="bg-white rounded-lg shadow-lg p-6 min-h-full">
+        <div className="w-2/3 p-6 overflow-hidden flex flex-col">
+          <div className="bg-white rounded-lg shadow-lg p-6 min-h-0 flex-1 flex flex-col">
             <h2 className="text-2xl font-bold mb-6 text-gray-900">Question Tree</h2>
-            {isLoading ? (
-              <div className="flex items-center justify-center h-32">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              </div>
-            ) : (
-              <CanvasTree node={qaTree} />
-            )}
+            <div className="overflow-auto flex-1">
+              {isLoading ? (
+                <div className="flex items-center justify-center h-32">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : (
+                <CanvasTree node={qaTree} />
+              )}
+            </div>
           </div>
         </div>
         {/* Right: Q&A Panel */}
-        <div className="w-1/3 p-6 overflow-auto border-l border-gray-200">
+        <div className="fixed right-0 top-24 bottom-0 w-1/3 p-6 border-l border-gray-200 bg-gray-100">
           <QAPanel
             currentQuestion={currentNode ? currentNode.question : "No more questions. Q&A complete."}
             onSubmitAnswer={handleAnswer}
