@@ -53,7 +53,7 @@ export default function PromptPage() {
     <div className="min-h-screen flex flex-col justify-center items-center bg-gray-50 px-4">
       {/* Header */}
       <header className="mb-8 text-center">
-        <h1 className="text-4xl font-bold text-gray-800">Welcome to AI Design Flow</h1>
+        <h1 className="text-4xl font-bold text-gray-800">Protosynthetic</h1>
         <p className="mt-4 text-lg text-gray-600">
           Enter your design prompt to kick off your interactive design journey.
         </p>
