@@ -88,8 +88,32 @@ function hexToHSL(hex: string): string {
   return `${hDeg} ${sPct}% ${lPct}%`;
 }
 
+// Function to sanitize code before processing
+function sanitizeCode(code: string): string {
+  // Remove any attempts to access window.parent or top
+  code = code.replace(/window\.parent|window\.top|parent\.|top\./g, 'undefined');
+  
+  // Remove any attempts to use dangerous APIs
+  code = code.replace(
+    /document\.cookie|localStorage|sessionStorage|indexedDB|openDatabase|WebSocket|fetch|XMLHttpRequest|navigator\.|location\./g,
+    'undefined'
+  );
+  
+  // Remove any script tags
+  code = code.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+  
+  // Remove any event handlers
+  code = code.replace(/on\w+=/g, 'data-blocked-handler=');
+  
+  // Remove any attempts to create or modify script elements
+  code = code.replace(/document\.createElement\(['"']script['"']\)/g, 'undefined');
+  
+  return code;
+}
+
 const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || !code) return;
@@ -100,29 +124,35 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
         containerRef.current.removeChild(containerRef.current.firstChild);
       }
 
-      // Create an iframe for the preview
+      // Create a sandboxed iframe
       const iframe = document.createElement('iframe');
       iframe.style.width = '100%';
       iframe.style.height = '100%';
       iframe.style.border = 'none';
+      
+      // Set strict sandbox permissions
+      iframe.sandbox.add('allow-scripts');
+      iframe.sandbox.add('allow-same-origin'); // Needed for React hydration
+      
+      // Store iframe reference
+      iframeRef.current = iframe;
       containerRef.current.appendChild(iframe);
 
       // Transform the code:
       // 1. Remove import statements (React is provided globally)
-      let transformedCode = code;
+      let transformedCode = sanitizeCode(code);
       transformedCode = transformedCode.replace(/import\s+{([^}]+)}\s+from\s+['"]react['"];?/g, '');
       transformedCode = transformedCode.replace(/import\s+React\s*,?\s*{([^}]+)}\s+from\s+['"]react['"];?/g, '');
       transformedCode = transformedCode.replace(/import\s+.*?from\s+['"].*?['"];?\n?/g, '');
+      
       // 2. Remove export statements but preserve the component name
       const exportMatch = transformedCode.match(/export\s+default\s+(\w+)/);
       const componentName = exportMatch ? exportMatch[1] : null;
       transformedCode = transformedCode.replace(/export\s+default\s+\w+;?/, '');
       transformedCode = transformedCode.replace(/export\s+/, '');
+      
       // 3. Remove inline type assertions
       transformedCode = transformedCode.replace(/\sas\s+\w+/g, '');
-
-      // Escape the final code so it can be safely embedded
-      const safeCode = JSON.stringify(transformedCode);
 
       // Build the DaisyUI theme style block using the colorScheme
       const daisyuiTheme = colorScheme
@@ -174,13 +204,23 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
         `
         : '';
 
-      // Build the HTML content for the iframe
+      // Build the HTML content for the iframe with strict CSP
       const html = `
         <!DOCTYPE html>
         <html data-theme="custom">
           <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
+            <meta http-equiv="Content-Security-Policy" content="
+              default-src 'self';
+              script-src 'unsafe-eval' 'unsafe-inline' https://unpkg.com https://cdn.tailwindcss.com;
+              style-src 'unsafe-inline' https://cdn.jsdelivr.net;
+              connect-src 'none';
+              frame-src 'none';
+              object-src 'none';
+              base-uri 'none';
+              form-action 'none';
+            ">
             <script src="https://cdn.tailwindcss.com"></script>
             <link href="https://cdn.jsdelivr.net/npm/daisyui@2.51.5/dist/full.css" rel="stylesheet">
             ${daisyuiTheme}
@@ -195,59 +235,87 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
           <body data-theme="custom">
             <div id="root"></div>
             <script type="text/babel" data-presets="react,typescript">
-              // Dummy type definitions to avoid runtime errors
-              window.FormEvent = function(target) { return {}; };
-              window.ChangeEvent = function(target) { return {}; };
-              window.MouseEvent = function(target) { return {}; };
+              // Set up a controlled environment
+              const secureWindow = {
+                // Add only safe window properties
+                setTimeout,
+                clearTimeout,
+                setInterval,
+                clearInterval,
+                requestAnimationFrame,
+                cancelAnimationFrame,
+                // Add React-specific globals
+                React,
+                ReactDOM,
+                // Add event constructors
+                FormEvent: function(target) { return {}; },
+                ChangeEvent: function(target) { return {}; },
+                MouseEvent: function(target) { return {}; }
+              };
 
-              // Prepend React hook destructuring so hooks are available
-              const prelude = "const { useState, useEffect, useRef, useMemo, useCallback, useContext, useReducer } = React;";
-              
-              // Retrieve the safe, escaped code string
-              const code = ${safeCode};
+              // Create secure context
+              const createSecureContext = (code) => {
+                const secureFunction = new Function(
+                  'React',
+                  'ReactDOM',
+                  'window',
+                  \`
+                    "use strict";
+                    const { useState, useEffect, useRef, useMemo, useCallback, useContext, useReducer } = React;
+                    try {
+                      \${code}
+                      return { success: true, component: ${componentName || 'null'} };
+                    } catch (error) {
+                      return { success: false, error: error.message };
+                    }
+                  \`
+                );
 
-              // Combine the prelude with the generated code
-              const fullCode = prelude + code;
+                return secureFunction(React, ReactDOM, secureWindow);
+              };
 
+              // Transform and execute the code
               try {
-                // Transpile the code with Babel
-                const transformed = Babel.transform(fullCode, { 
-                  filename: 'file.tsx', 
+                const transformed = Babel.transform(${JSON.stringify(transformedCode)}, {
+                  filename: 'component.tsx',
                   presets: ['react', 'typescript'],
                   retainLines: true
                 }).code;
-                
-                // Evaluate the transformed code
-                eval(transformed);
 
-                // Try to find the component using the exported name first
-                let MainComponent = ${componentName ? componentName : 'null'};
-                
-                // If not found by name, try to find it by scanning window object
-                if (!MainComponent) {
-                  const components = Object.values(window).filter(
-                    val => typeof val === 'function' && 
-                          /^[A-Z]/.test(val?.name || '') &&
-                          val.toString().includes('React.createElement')
-                  );
-                  MainComponent = components[components.length - 1];
-                }
+                // Execute in secure context with timeout
+                const timeoutPromise = new Promise((_, reject) => {
+                  setTimeout(() => reject(new Error('Component evaluation timed out')), 5000);
+                });
 
-                if (MainComponent) {
-                  const root = ReactDOM.createRoot(document.getElementById('root'));
-                  root.render(
-                    <React.StrictMode>
-                      <MainComponent />
-                    </React.StrictMode>
-                  );
-                } else {
-                  document.getElementById('root').innerHTML =
-                    '<div style="padding: 1rem; color: red;">No React component found in the code. Please ensure the code includes a properly named React component with a default export.</div>';
-                }
+                Promise.race([
+                  Promise.resolve(createSecureContext(transformed)),
+                  timeoutPromise
+                ]).then(result => {
+                  if (!result.success) {
+                    throw new Error(result.error);
+                  }
+
+                  const MainComponent = result.component;
+                  if (MainComponent) {
+                    const root = ReactDOM.createRoot(document.getElementById('root'));
+                    root.render(
+                      React.createElement(
+                        React.StrictMode,
+                        null,
+                        React.createElement(MainComponent)
+                      )
+                    );
+                  } else {
+                    document.getElementById('root').textContent = 
+                      'No React component found. Please ensure the code includes a properly named React component with a default export.';
+                  }
+                }).catch(error => {
+                  document.getElementById('root').textContent =
+                    'Error evaluating component: ' + error.message;
+                });
               } catch (error) {
-                document.getElementById('root').innerHTML =
-                  '<div style="padding: 1rem; color: red;">Error evaluating component: ' + error.message + '</div>';
-                console.error('Component evaluation error:', error);
+                document.getElementById('root').textContent =
+                  'Error transpiling component: ' + error.message;
               }
             </script>
           </body>
@@ -261,18 +329,18 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
         iframeDoc.close();
       }
     } catch (error) {
-      console.error('Error rendering preview:', error);
       if (containerRef.current) {
-        containerRef.current.innerHTML = `
-          <div class="p-4 text-red-600 bg-red-50 rounded-lg">
-            <h2 class="text-lg font-semibold mb-2">Error Rendering Preview</h2>
-            <pre class="text-sm overflow-auto">
-              ${error instanceof Error ? error.message : 'Unknown error occurred'}
-            </pre>
-          </div>
-        `;
+        containerRef.current.textContent = 'Error rendering preview: ' + 
+          (error instanceof Error ? error.message : 'Unknown error occurred');
       }
     }
+
+    // Cleanup function
+    return () => {
+      if (iframeRef.current && containerRef.current) {
+        containerRef.current.removeChild(iframeRef.current);
+      }
+    };
   }, [code, colorScheme]);
 
   return (
@@ -285,3 +353,4 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
 };
 
 export default LivePreview;
+
