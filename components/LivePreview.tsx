@@ -105,6 +105,8 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
       iframe.style.width = '100%';
       iframe.style.height = '100%';
       iframe.style.border = 'none';
+      iframe.sandbox = 'allow-scripts allow-same-origin';
+      iframe.setAttribute('importance', 'high');
       containerRef.current.appendChild(iframe);
 
       // Transform the code:
@@ -217,30 +219,61 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
                   retainLines: true
                 }).code;
                 
-                // Evaluate the transformed code
-                eval(transformed);
-
-                // Try to find the component using the exported name first
-                let MainComponent = ${componentName ? componentName : 'null'};
+                // Create a blob URL for the component code
+                const blob = new Blob([`
+                  const execute = () => {
+                    ${transformed}
+                    
+                    // Find the component
+                    const componentName = ${JSON.stringify(componentName)};
+                    let MainComponent = window[componentName];
+                    
+                    if (!MainComponent) {
+                      const components = Object.values(window).filter(
+                        val => typeof val === 'function' && 
+                              /^[A-Z]/.test(val?.name || '') &&
+                              val.toString().includes('React.createElement')
+                      );
+                      MainComponent = components[components.length - 1];
+                    }
+                    
+                    if (MainComponent) {
+                      const root = ReactDOM.createRoot(document.getElementById('root'));
+                      root.render(
+                        React.createElement(React.StrictMode, null,
+                          React.createElement(MainComponent)
+                        )
+                      );
+                    } else {
+                      throw new Error('No React component found');
+                    }
+                  };
+                  
+                  window.addEventListener('message', (event) => {
+                    if (event.data === 'executeComponent') {
+                      execute();
+                    }
+                  });
+                `], { type: 'text/javascript' });
                 
-                // If not found by name, try to find it by scanning window object
-                if (!MainComponent) {
-                  const components = Object.values(window).filter(
-                    val => typeof val === 'function' && 
-                          /^[A-Z]/.test(val?.name || '') &&
-                          val.toString().includes('React.createElement')
-                  );
-                  MainComponent = components[components.length - 1];
-                }
-
-                if (MainComponent) {
-                  const root = ReactDOM.createRoot(document.getElementById('root'));
-                  root.render(
-                    <React.StrictMode>
-                      <MainComponent />
-                    </React.StrictMode>
-                  );
-                } else {
+                const blobUrl = URL.createObjectURL(blob);
+                
+                // Add the script to the iframe
+                const script = iframeDoc.createElement('script');
+                script.src = blobUrl;
+                script.onload = () => {
+                  // Clean up the blob URL
+                  URL.revokeObjectURL(blobUrl);
+                  // Execute the component
+                  iframe.contentWindow?.postMessage('executeComponent', '*');
+                };
+                iframeDoc.body.appendChild(script);
+                
+              } catch (error) {
+                document.getElementById('root').innerHTML =
+                  '<div style="padding: 1rem; color: red;">Error compiling component: ' + error.message + '</div>';
+                console.error('Component compilation error:', error);
+              }
                   document.getElementById('root').innerHTML =
                     '<div style="padding: 1rem; color: red;">No React component found in the code. Please ensure the code includes a properly named React component with a default export.</div>';
                 }
