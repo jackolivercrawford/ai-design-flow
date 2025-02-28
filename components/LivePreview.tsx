@@ -353,4 +353,3 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
 };
 
 export default LivePreview;
-
