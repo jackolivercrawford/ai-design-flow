@@ -234,14 +234,14 @@ Generate a complete React/Tailwind mockup that satisfies ALL these requirements.
 
       return NextResponse.json(mockupData);
     } catch (parseError) {
-      console.error('Error parsing mockup data:', parseError);
+      // console.error('Error parsing mockup data:', parseError);
       return NextResponse.json(
         { error: 'Failed to parse mockup data' },
         { status: 500 }
       );
     }
   } catch (error) {
-    console.error('Error generating mockup:', error);
+    // console.error('Error generating mockup:', error);
     return NextResponse.json(
       { error: 'Failed to generate mockup' },
       { status: 500 }

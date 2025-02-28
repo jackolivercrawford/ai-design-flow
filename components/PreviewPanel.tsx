@@ -141,7 +141,7 @@ export default function PreviewPanel({
         setMockupData(JSON.parse(currentMockup));
       }
     } catch (error) {
-      console.error('Error loading data:', error);
+      // console.error('Error loading data:', error);
     }
   }, []);
 
@@ -219,7 +219,7 @@ export default function PreviewPanel({
       // Set as active version only
       setActiveVersion(newVersion);
     } catch (error) {
-      console.error('Error generating mockup:', error);
+      // console.error('Error generating mockup:', error);
       setError(error instanceof Error ? error.message : 'Failed to generate mockup');
     } finally {
       setIsMockupLoading(false);
@@ -616,7 +616,7 @@ export default function PreviewPanel({
                                             )}
                                             {/* Additional Tags */}
                                             {req.tags?.map((tag, tagIndex) => {
-                                              console.log('Rendering tag:', tag, 'for requirement:', req.text);
+                                              // console.log('Rendering tag:', tag, 'for requirement:', req.text);
                                               return (
                                                 <span
                                                   key={`${req.id || index}-tag-${tagIndex}`}

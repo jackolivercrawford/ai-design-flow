@@ -250,7 +250,7 @@ export async function POST(request: NextRequest) {
       depth,
       parentContext,
     } = await request.json();
-    console.log('API received knowledge base:', knowledgeBase);
+    // console.log('API received knowledge base:', knowledgeBase);
 
     // Calculate current depth by counting parents in previousQuestions
     let currentDepth = 0;
@@ -285,7 +285,7 @@ Use this information to:
 - Highlight any conflicts between different sources`
       : 'No knowledge base provided.';
 
-    console.log('Formatted knowledge base context:', knowledgeBaseContext);
+    // console.log('Formatted knowledge base context:', knowledgeBaseContext);
 
     // If we have a parent answer, extract subtopics
     let parentAnswerSubtopics: string[] = [];
@@ -503,7 +503,7 @@ Topics already covered (DO NOT repeat these or related topics):
 
     const content = completion.choices[0].message.content?.trim();
     if (!content) {
-      console.error('Empty response from OpenAI');
+      // console.error('Empty response from OpenAI');
       // Return a default fallback response
       return NextResponse.json({
         questions: ["What are the core features needed for this design?"],
@@ -519,7 +519,7 @@ Topics already covered (DO NOT repeat these or related topics):
       });
     }
 
-    console.log('Raw OpenAI response:', content);
+    // console.log('Raw OpenAI response:', content);
 
     let parsedResponse: {
       questions: string[];
@@ -564,11 +564,11 @@ Topics already covered (DO NOT repeat these or related topics):
         parsedResponse.questions = ["What are the core features needed for this design?"];
       }
 
-      console.log('Final formatted response:', parsedResponse);
+      // console.log('Final formatted response:', parsedResponse);
       return NextResponse.json(parsedResponse);
     } catch (jsonError) {
-      console.error("Error parsing JSON response:", jsonError);
-      console.error("Raw content was:", content);
+      // console.error("Error parsing JSON response:", jsonError);
+      // console.error("Raw content was:", content);
 
       // Attempt to salvage partial data
       let fallbackQuestion = "What are the core features needed for this design?";
@@ -578,7 +578,7 @@ Topics already covered (DO NOT repeat these or related topics):
           fallbackQuestion = match[1];
         }
       } catch (extractionError) {
-        console.error("No fallback question found in partial content");
+        // console.error("No fallback question found in partial content");
       }
 
       return NextResponse.json({
@@ -595,7 +595,7 @@ Topics already covered (DO NOT repeat these or related topics):
       });
     }
   } catch (error) {
-    console.error('Error in route:', error);
+    // console.error('Error in route:', error);
     return NextResponse.json({ error: 'Failed to generate questions' }, { status: 500 });
   }
 }

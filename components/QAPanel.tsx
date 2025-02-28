@@ -44,7 +44,7 @@ export default function QAPanel({
         alert('No relevant information found in the knowledge base. Please provide your expert answer.');
       }
     } catch (error) {
-      console.error('Error generating answer:', error);
+      // console.error('Error generating answer:', error);
       alert('There was an error accessing the knowledge base. Please provide your answer manually.');
     } finally {
       setIsAutoPopulating(false);

@@ -11,14 +11,14 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
     const data = await pdfParse(buffer);
     return data.text;
   } catch (error) {
-    console.error('Error extracting text from PDF:', error);
+    // console.error('Error extracting text from PDF:', error);
     throw new Error('Failed to extract text from PDF');
   }
 }
 
 async function processContent(content: string) {
   try {
-    console.log('Starting content processing...');
+    // console.log('Starting content processing...');
     const completion = await openai.chat.completions.create({
       model: "o3-mini",
       messages: [
@@ -49,23 +49,23 @@ Return your response in this exact JSON format:
       reasoning_effort: 'medium'
     });
 
-    console.log('OpenAI response received');
+    // console.log('OpenAI response received');
     const responseContent = completion.choices[0].message.content;
     if (!responseContent) {
-      console.error('Empty response content from OpenAI');
+      // console.error('Empty response content from OpenAI');
       throw new Error('Empty response from OpenAI');
     }
 
     try {
       const parsedContent = JSON.parse(responseContent);
-      console.log('Successfully parsed OpenAI response');
+      // console.log('Successfully parsed OpenAI response');
       return parsedContent;
     } catch (parseError) {
-      console.error('Error parsing OpenAI response:', parseError, '\nResponse content:', responseContent);
+      // console.error('Error parsing OpenAI response:', parseError, '\nResponse content:', responseContent);
       throw new Error('Failed to parse OpenAI response');
     }
   } catch (error) {
-    console.error('Error in processContent:', error);
+    // console.error('Error in processContent:', error);
     if (error instanceof Error) {
       throw new Error(`Failed to process content: ${error.message}`);
     }
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: unknown) {
-    console.error('Error in API route:', error);
+    // console.error('Error in API route:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     return new Response(JSON.stringify({ error: 'Internal server error', details: errorMessage }), {
       status: 500,

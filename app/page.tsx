@@ -1,10 +1,10 @@
 // app/page.tsx
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import PromptInput from '@/components/PromptInput';
-import { QASettings } from '@/types/settings';
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import PromptInput from "@/components/PromptInput";
+import { QASettings } from "@/types/settings";
 
 interface SavedProgress {
   qaTree: any;
@@ -19,7 +19,7 @@ export default function PromptPage() {
   const [savedSession, setSavedSession] = useState<SavedProgress | null>(null);
 
   useEffect(() => {
-    const savedProgress = localStorage.getItem('qaProgress');
+    const savedProgress = localStorage.getItem("qaProgress");
     if (savedProgress) {
       try {
         const progress = JSON.parse(savedProgress);
@@ -33,20 +33,20 @@ export default function PromptPage() {
   const handlePromptSubmit = (prompt: string, settings: QASettings) => {
     console.log("User prompt:", prompt);
     console.log("Settings:", settings);
-    
+
     // Clear any existing progress and versions
-    localStorage.removeItem('qaProgress');
-    localStorage.removeItem('mockupVersions');
-    localStorage.removeItem('currentMockup');
-    
+    localStorage.removeItem("qaProgress");
+    localStorage.removeItem("mockupVersions");
+    localStorage.removeItem("currentMockup");
+
     // Save new prompt and settings
-    localStorage.setItem('designPrompt', prompt);
-    localStorage.setItem('qaSettings', JSON.stringify(settings));
-    router.push('/qna');
+    localStorage.setItem("designPrompt", prompt);
+    localStorage.setItem("qaSettings", JSON.stringify(settings));
+    router.push("/qna");
   };
 
   const handleContinueSession = () => {
-    router.push('/qna');
+    router.push("/qna");
   };
 
   return (
@@ -55,7 +55,9 @@ export default function PromptPage() {
       <header className="mb-8 text-center relative">
         <h1 className="text-5xl font-bold bg-gradient-to-r from-emerald-600 to-emerald-400 bg-clip-text text-transparent drop-shadow-sm relative">
           Proto
-          <span className="bg-gradient-to-r from-emerald-500 to-emerald-300 bg-clip-text text-transparent">synthetic</span>
+          <span className="bg-gradient-to-r from-emerald-500 to-emerald-300 bg-clip-text text-transparent">
+            synthetic
+          </span>
           <div className="absolute -top-4 -right-4 w-8 h-8 border-2 border-emerald-200 rounded-full opacity-50"></div>
           <div className="absolute -bottom-2 -left-4 w-6 h-6 border-2 border-emerald-300 rounded-full opacity-40"></div>
         </h1>
@@ -63,21 +65,28 @@ export default function PromptPage() {
           Enter your design prompt to kick off your interactive design journey.
         </p>
       </header>
-      
+
       {/* Saved Session */}
       {savedSession && (
         <div className="w-full max-w-2xl mb-8">
           <div className="bg-white rounded-lg shadow-lg p-6 border border-gray-200">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Continue Previous Session</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-4">
+              Continue Previous Session
+            </h2>
             <div className="space-y-2 mb-4">
               <p className="text-gray-700">
-                <span className="font-medium">Prompt:</span> {savedSession.prompt}
+                <span className="font-medium">Prompt:</span>{" "}
+                {savedSession.prompt}
               </p>
               <p className="text-gray-700">
-                <span className="font-medium">Progress:</span> {savedSession.questionCount} questions answered
+                <span className="font-medium">Progress:</span>{" "}
+                {savedSession.questionCount} questions answered
               </p>
               <p className="text-gray-700">
-                <span className="font-medium">Mode:</span> {savedSession.settings.traversalMode === 'dfs' ? 'Depth-First' : 'Breadth-First'}
+                <span className="font-medium">Mode:</span>{" "}
+                {savedSession.settings.traversalMode === "dfs"
+                  ? "Depth-First"
+                  : "Breadth-First"}
               </p>
             </div>
             <div className="flex gap-4">
@@ -97,7 +106,7 @@ export default function PromptPage() {
           </div>
         </div>
       )}
-      
+
       {/* Prompt Input */}
       {!savedSession && (
         <div className="w-full max-w-2xl">

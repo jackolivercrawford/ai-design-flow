@@ -690,7 +690,7 @@ export default function QnAPage() {
     uncoveredAspects?: string[]
   ): Promise<{ nodes: QANode[]; shouldStopBranch: boolean; stopReason: string; suggestedAnswer?: string }> => {
     try {
-      console.log('Fetching questions with knowledge base:', settings?.knowledgeBase);
+      // console.log('Fetching questions with knowledge base:', settings?.knowledgeBase);
       // Compute the parent's siblings (if available) by using the tree structure.
       // (Note: We assume that qaTree is available in this scope.)
       const grandParent = qaTree ? findParentNode(qaTree, parentNode) : null;
@@ -729,24 +729,24 @@ export default function QnAPage() {
         throw new Error(`API request failed: ${errorData.error || response.statusText}`);
       }
       const data = await response.json();
-      console.log('Received API response with suggested answer:', data.suggestedAnswer);
+      // console.log('Received API response with suggested answer:', data.suggestedAnswer);
       if (!data || !Array.isArray(data.questions) || data.questions.length === 0) {
         throw new Error('Invalid response format or no questions received');
       }
       if (setSuggestion) {
         if (data.suggestedAnswer) {
-          console.log('Setting suggested answer:', {
-            text: data.suggestedAnswer,
-            confidence: data.confidence || 'low',
-            sourceReferences: data.sourceReferences || [],
-          });
+          // console.log('Setting suggested answer:', {
+          //   text: data.suggestedAnswer,
+          //   confidence: data.confidence || 'low',
+          //   sourceReferences: data.sourceReferences || [],
+          // });
           setSuggestedAnswer(
             data.suggestedAnswer
               ? { text: data.suggestedAnswer, confidence: data.confidence || 'low', sourceReferences: data.sourceReferences || [] }
               : null
           );
         } else {
-          console.log('Clearing suggested answer');
+          // console.log('Clearing suggested answer');
           setSuggestedAnswer(null);
         }
       }
@@ -764,7 +764,7 @@ export default function QnAPage() {
         suggestedAnswer: data.suggestedAnswer,
       };
     } catch (error) {
-      console.error("Error in fetchQuestionsForNode:", error);
+      // console.error("Error in fetchQuestionsForNode:", error);
       const errorNode: QANode = {
         id: uuidv4(),
         question: "Failed to generate question. Please try again or refresh the page.",
@@ -820,7 +820,7 @@ export default function QnAPage() {
   const updateRequirements = async (nodeId: string | null) => {
     try {
       if (!qaTree || !requirementsDoc) {
-        console.warn('Missing qaTree or requirementsDoc, skipping requirements update');
+        // console.warn('Missing qaTree or requirementsDoc, skipping requirements update');
         return;
       }
       const response = await fetch('/api/update-requirements', {
@@ -848,14 +848,14 @@ export default function QnAPage() {
       setRequirementsDoc(updatedDoc);
       saveProgress();
     } catch (error) {
-      console.error('Error updating requirements:', error);
+      // console.error('Error updating requirements:', error);
     }
   };
 
   // -------------------- Automation Functions --------------------
 
   const startAutomation = () => {
-    console.log('startAutomation called - Setting isAutomating to true');
+    // console.log('startAutomation called - Setting isAutomating to true');
     // Clear any existing timeouts first
     if (automationTimeoutRef.current) {
       clearTimeout(automationTimeoutRef.current);
@@ -869,22 +869,22 @@ export default function QnAPage() {
   };
 
   const stopAutomation = () => {
-    console.log('stopAutomation called - Setting isAutomating to false');
+    // console.log('stopAutomation called - Setting isAutomating to false');
     setIsAutomating(false);
     // Always clean up timeout on stop
     if (automationTimeoutRef.current) {
-      console.log('Clearing automation timeout');
+      // console.log('Clearing automation timeout');
       clearTimeout(automationTimeoutRef.current);
       automationTimeoutRef.current = null;
     }
   };
 
   const runNextAutomatedStep = async () => {
-    console.log('runNextAutomatedStep called', {
-      isAutomating,
-      hasCurrentNode: !!currentNode,
-      isLoadingNextQuestion,
-    });
+    // console.log('runNextAutomatedStep called', {
+    //   isAutomating,
+    //   hasCurrentNode: !!currentNode,
+    //   isLoadingNextQuestion,
+    // });
 
     // Clear any existing timeout first
     if (automationTimeoutRef.current) {
@@ -894,53 +894,53 @@ export default function QnAPage() {
 
     // Exit early if automation is off or we're in a loading state
     if (!isAutomating || isLoadingNextQuestion) {
-      console.log('Automation is off or loading, not proceeding');
+      // console.log('Automation is off or loading, not proceeding');
       return;
     }
 
     if (!currentNode) {
-      console.log('No current node, stopping automation');
+      // console.log('No current node, stopping automation');
       stopAutomation();
       return;
     }
 
     try {
-      console.log('Getting suggested answer');
+      // console.log('Getting suggested answer');
       const autoAnswer = await handleAutoPopulate();
 
       // Check if automation was stopped during the async operation
       if (!isAutomating) {
-        console.log('Automation was turned off during answer generation');
+        // console.log('Automation was turned off during answer generation');
         return;
       }
 
       if (autoAnswer) {
-        console.log('Got suggested answer, submitting after delay');
+        // console.log('Got suggested answer, submitting after delay');
         await new Promise((resolve) => setTimeout(resolve, 500));
         
         // Check automation state again after delay
         if (!isAutomating) {
-          console.log('Automation was turned off during delay');
+          // console.log('Automation was turned off during delay');
           return;
         }
 
         await handleAnswer(autoAnswer);
       } else {
-        console.log('No suggested answer available, stopping automation');
+        // console.log('No suggested answer available, stopping automation');
         stopAutomation();
       }
     } catch (error) {
-      console.error('Error in automation step:', error);
+      // console.error('Error in automation step:', error);
       stopAutomation();
     }
   };
 
   useEffect(() => {
-    console.log('Automation effect triggered', {
-      isAutomating,
-      isLoadingNextQuestion,
-      hasCurrentNode: !!currentNode,
-    });
+    // // console.log('Automation effect triggered', {
+    //   isAutomating,
+    //   isLoadingNextQuestion,
+    //   hasCurrentNode: !!currentNode,
+    // });
 
     let isEffectActive = true;
 
@@ -972,7 +972,7 @@ export default function QnAPage() {
         try {
           await runNextAutomatedStep();
         } catch (error) {
-          console.error('Error in automation effect:', error);
+          // console.error('Error in automation effect:', error);
           stopAutomation();
         }
       }
@@ -1012,10 +1012,10 @@ export default function QnAPage() {
       localStorage.setItem('sessionMetadata', JSON.stringify(metadata));
       setSessionMetadata(metadata);
       if (!isAutoSave) {
-        console.log('Progress saved successfully');
+        // console.log('Progress saved successfully');
       }
     } catch (error) {
-      console.error('Error saving progress:', error);
+      // console.error('Error saving progress:', error);
     }
   };
 
@@ -1098,7 +1098,7 @@ export default function QnAPage() {
     if (savedProgress) {
       try {
         const progress: SavedProgress = JSON.parse(savedProgress);
-        console.log('Loaded settings with knowledge base:', progress.settings.knowledgeBase);
+        // console.log('Loaded settings with knowledge base:', progress.settings.knowledgeBase);
         setPrompt(progress.prompt);
         setSettings(progress.settings);
         setQaTree(progress.qaTree);
@@ -1112,12 +1112,12 @@ export default function QnAPage() {
         setIsInitialLoad(false);
         return;
       } catch (error) {
-        console.error("Error loading saved progress:", error);
+        // console.error("Error loading saved progress:", error);
       }
     }
     if (storedPrompt && storedSettings) {
       const parsedSettings = JSON.parse(storedSettings);
-      console.log('Starting new session with knowledge base:', parsedSettings.knowledgeBase);
+      // console.log('Starting new session with knowledge base:', parsedSettings.knowledgeBase);
       setPrompt(storedPrompt);
       setSettings(parsedSettings);
       const rootNode: QANode = {
@@ -1158,7 +1158,7 @@ export default function QnAPage() {
         setIsInitialLoad(false);
       });
     } else {
-      console.error("No design prompt or settings found.");
+      // console.error("No design prompt or settings found.");
       router.push('/');
     }
   }, [router]);
@@ -1166,22 +1166,22 @@ export default function QnAPage() {
   // -------------------- Handle Answer Submission --------------------
 
   const handleAnswer = async (answer: string) => {
-    console.log('handleAnswer called', { hasCurrentNode: !!currentNode, hasSettings: !!settings });
+    // console.log('handleAnswer called', { hasCurrentNode: !!currentNode, hasSettings: !!settings });
     if (!currentNode || !settings) return;
     setIsLoadingNextQuestion(true);
     setSuggestedAnswer(null);
     try {
-      console.log('Setting answer and updating requirements');
+      // console.log('Setting answer and updating requirements');
       currentNode.answer = answer;
       await updateRequirements(currentNode.id);
       
       // Get next question regardless of automation state
-      console.log('Getting next question');
+      // console.log('Getting next question');
       const nextNode = await getNextQuestion(currentNode);
       
       if (nextNode) {
         if (!askedQuestions.has(nextNode.question)) {
-          console.log('Setting new question');
+          // console.log('Setting new question');
           setAskedQuestions(prev => new Set(prev).add(nextNode.question));
           setIsInitialLoad(true);
           setCurrentNode(nextNode);
@@ -1197,7 +1197,7 @@ export default function QnAPage() {
             automationTimeoutRef.current = setTimeout(runNextAutomatedStep, 1000);
           }
         } else {
-          console.warn('Duplicate question detected:', nextNode.question);
+          // console.warn('Duplicate question detected:', nextNode.question);
           // Don't set currentNode to null in non-auto mode, try to get another question
           if (isAutomating) {
             setCurrentNode(null);
@@ -1216,7 +1216,7 @@ export default function QnAPage() {
           }
         }
       } else {
-        console.log('No next question available');
+        // console.log('No next question available');
         // In non-auto mode, try one more time to get a question from a different branch
         if (!isAutomating) {
           const rootHistory = getAllAnsweredQuestions(qaTree!);
@@ -1234,7 +1234,7 @@ export default function QnAPage() {
         await updateRequirements(null);
       }
     } catch (error) {
-      console.error('Error in handleAnswer:', error);
+      // console.error('Error in handleAnswer:', error);
       if (isAutomating) {
         stopAutomation();
       }
@@ -1246,13 +1246,13 @@ export default function QnAPage() {
   // -------------------- Auto-Populate Suggested Answer --------------------
 
   const handleAutoPopulate = async (): Promise<string | null> => {
-    console.log('handleAutoPopulate called');
+    // console.log('handleAutoPopulate called');
     try {
       if (suggestedAnswer) {
-        console.log('Using existing suggested answer');
+        // console.log('Using existing suggested answer');
         return suggestedAnswer.text;
       }
-      console.log('Building question history');
+      // console.log('Building question history');
       const questionHistory: QuestionHistoryItem[] = [];
       const collectHistory = (n: QANode) => {
         if (n.question !== `Prompt: ${prompt}`) {
@@ -1265,7 +1265,7 @@ export default function QnAPage() {
         n.children.forEach(collectHistory);
       };
       collectHistory(qaTree!);
-      console.log('Fetching suggested answer from API');
+      // console.log('Fetching suggested answer from API');
       const response = await fetch('/api/generate-questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1282,15 +1282,15 @@ export default function QnAPage() {
         throw new Error('Failed to generate answer');
       }
       const data = await response.json();
-      console.log('Auto-populate API response:', data);
+      // console.log('Auto-populate API response:', data);
       if (data.suggestedAnswer) {
-        console.log('Returning suggested answer from API');
+        // console.log('Returning suggested answer from API');
         return data.suggestedAnswer;
       }
-      console.log('No suggested answer in API response');
+      // console.log('No suggested answer in API response');
       return null;
     } catch (error) {
-      console.error('Error auto-populating answer:', error);
+      // console.error('Error auto-populating answer:', error);
       return null;
     }
   };
@@ -1336,7 +1336,7 @@ export default function QnAPage() {
         }
       })
       .catch((error) => {
-        console.error('Error generating first question:', error);
+        // console.error('Error generating first question:', error);
       })
       .finally(() => {
         setIsLoading(false);
@@ -1350,7 +1350,7 @@ export default function QnAPage() {
     try {
       await updateRequirements(currentNode?.id || null);
     } catch (error) {
-      console.error('Error updating requirements:', error);
+      // console.error('Error updating requirements:', error);
     } finally {
       setIsGenerating(false);
     }

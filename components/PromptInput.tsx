@@ -64,7 +64,7 @@ const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
         knowledgeBase: [...(prev.knowledgeBase || []), newSource]
       }));
     } catch (error) {
-      console.error('Error processing knowledge base:', error);
+      // console.error('Error processing knowledge base:', error);
       // You might want to show an error message to the user here
     } finally {
       setIsProcessingFile(false);
