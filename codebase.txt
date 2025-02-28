@@ -346,6 +346,215 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+/**
+ * BFS_RULES and DFS_RULES are appended conditionally inside the system prompt.
+ * The CRITICAL_RELEVANCE_RULE ensures that child questions quote the parent’s answer.
+ */
+
+// BFS instructions
+const BFS_RULES = `
+BFS Guidelines:
+          - CRITICAL: At Level 1 (top level), generate exactly 4-5 comprehensive questions that cover the main aspects.
+          - For Level 2+, generate exactly 2-3 questions per parent aspect from the parent's answer.
+          - Each sibling at the same level MUST focus on a different aspect from the parent's answer.
+          - CRITICAL: ALL Level 2 children of ALL Level 1 questions must be generated before ANY Level 3 questions.
+          - Example progression:
+            Parent Q1: "What are the core user flows and functional requirements?"
+            Parent A1: "The interface should offer search, filtering, and zoom levels..."
+            Valid Child Q5: "What specific search capabilities should be implemented?"
+            Valid Child Q6: "What filtering options should be available to users?"
+            Valid Child Q7: "How should the zoom level functionality work?"
+      
+          Level Structure and Progression:
+          - Level 1 (exactly 4-5 questions): Core requirements and fundamental aspects.
+            Example: "What are the core user flows?", "What accessibility features are needed?"
+      
+          - Level 2 (exactly 2-3 questions per parent aspect): Direct exploration of parent aspects.
+            Example: If Level 1 answer mentions "search, filtering, and zoom":
+            * Q5-Q7 explores search aspects.
+            * Q8-Q10 explores filtering aspects.
+            * Q11-Q13 explores zoom aspects.
+            CRITICAL: Generate Level 2 questions for ALL Level 1 answers before moving to Level 3.
+      
+          - Level 3+ (exactly 2-3 questions per parent aspect): Implementation details.
+            Example: If Level 2 answer about search mentions "real-time search and filters":
+            * "How should real-time search results be displayed?"
+            * "What search result filtering options are needed?"
+            * "What performance requirements for search response time?"
+      
+          Aspect Coverage Rules:
+          1. Each child question MUST:
+             * Directly reference a specific aspect from parent's answer using exact terminology.
+             * Maintain clear topic lineage from Level 1 through current level.
+             * Ask for more specific details about that aspect.
+      
+          2. Sibling questions MUST:
+             * Each focus on a different aspect from parent's answer.
+             * Not overlap in their focus areas.
+             * Together cover all major aspects mentioned in parent's answer.
+             * Stay at the same depth level as each other.
+      
+          3. Moving Deeper Rules:
+             * NEVER generate Level 3 questions until ALL Level 2 questions for ALL Level 1 parents are complete.
+             * Each deeper question must make the parent aspect more specific.
+             * Maintain clear topic lineage by referencing both direct parent and Level 1 ancestor.
+      
+          Cycling Behavior:
+          1. When a branch is fully explored:
+             * First complete all siblings at current level.
+             * Only move deeper when ALL nodes at current level across ALL branches are complete.
+             * If all branches are explored, return to Level 1 with new aspects.
+      
+          2. When generating new Level 1 questions after a cycle:
+             * Must cover completely different aspects than ALL previous Level 1 questions.
+             * Should maintain the same level of importance as original Level 1 questions.
+      
+          Progression Rules:
+          1. After getting exactly 4-5 Level 1 questions answered:
+             * Generate Level 2 questions for EACH answered Level 1 question.
+             * Only add new Level 1 questions if starting a new cycle.
+      
+          2. When to move deeper:
+             * ALL questions at current level are answered.
+             * EACH parent has exactly 2-3 child questions.
+             * ALL aspects from ALL parent answers are covered.
+      
+          3. When to stay at current level:
+             * ANY aspects from ANY parent answer are still unexplored.
+             * ANY parent has fewer than 2 child questions.
+   * ANY questions at current level are unanswered.
+`;
+
+// DFS instructions
+const DFS_RULES = `
+DFS Guidelines:
+          - CRITICAL: In DFS mode, fully explore ONE topic branch before moving to siblings.
+          - Maximum depth is 5 levels, but can be less if topics are fully explored.
+          - When all branches are exhausted, return to Level 1 with new aspects.
+      
+          Sibling Count Guidelines:
+          - Level 1: Exactly 4-5 main topic questions.
+          - Level 2-5: Exactly 2-3 questions per parent aspect.
+      
+          Example proper DFS progression:
+          Q1: "What are the core navigation features needed?"
+          Parent A1: "Need a main menu, search bar, and user profile section."
+      
+          First Branch (Main Menu) - Complete this ENTIRE branch before siblings:
+          Q2: "What specific items should be in the main menu?"
+          A2: "Home, Products, Categories, Cart, and User Profile links."
+          Q3: "How should the menu items be organized?"
+          A3: "Primary items visible, secondary in dropdown."
+          Q4: "What interactions should menu items have?"
+          A4: "Hover previews and dropdown menus."
+          [MUST complete ALL menu questions before moving to search]
+      
+          Second Branch (Search) - Only start after menu is complete:
+          Q5: "What search functionality is required?"
+          A5: "Real-time search with filters and suggestions."
+          Q6: "How should search results be displayed?"
+          A6: "Grid layout with quick preview cards."
+          Q7: "What advanced search options are needed?"
+          A7: "Category filters and price range selectors."
+          [MUST complete ALL search questions before user profile]
+      
+          Third Branch (User Profile) - Only start after search is complete:
+          Q8: "What user profile information should be shown?"
+          Q9: "What profile customization options are needed?"
+      
+          Topic Exploration Rules:
+          1. Each branch MUST:
+             * Start with broad feature questions.
+             * Progress to specific implementation details.
+             * End with edge cases and optimizations.
+             * Maintain clear topic lineage throughout.
+      
+          2. Question Depth Requirements:
+             * Level 1: Broad feature questions (exactly 4-5)
+             * Level 2: Feature breakdown (exactly 2-3 per feature)
+             * Level 3: Technical implementation details (exactly 2-3 per Level 2 answer)
+             * Level 4: Edge cases (exactly 2-3 per Level 3 answer)
+             * Level 5: Optimizations (exactly 2-3 per Level 4 answer)
+      
+          Branch Completion Rules:
+          1. A branch is ONLY complete when:
+             - ALL aspects of the current topic are fully explored.
+             - Questions have reached implementation-level detail.
+             - Edge cases and optimizations are addressed.
+             - Reached maximum depth (5 levels) OR
+             - ALL possible questions about the topic are answered.
+      
+          2. When to stop current branch (shouldStopBranch=true):
+             - Reached maximum depth (5 levels) OR
+             - ALL aspects from parent's answer are fully explored AND
+             - Questions would become too specific to be useful OR
+             - Current topic is fully defined with implementation details.
+      
+          3. When to move to siblings:
+             - ONLY after current branch is FULLY explored.
+             - When shouldStopBranch=true is returned AND
+             - No more meaningful child questions can be generated.
+             - NEVER move to siblings until current topic is complete.
+      
+          4. Question Depth Progression:
+             Level 1: High-level feature questions (exactly 4-5).
+             Level 2: Specific requirements (exactly 2-3 per parent).
+             Level 3: Technical implementation details (exactly 2-3 per parent).
+             Level 4: Edge case handling (exactly 2-3 per parent).
+             Level 5: Performance optimization (exactly 2-3 per parent).
+      
+          Topic Lineage Rules:
+          1. Each question MUST:
+             * Directly reference its parent topic.
+             * Use exact terminology from parent's answer.
+             * Maintain clear connection to Level 1 ancestor.
+             * Progress logically deeper into the topic.
+      
+          2. Moving Between Siblings:
+             * NEVER move to a sibling until current branch is complete.
+             * Each sibling must explore a different main topic.
+             * Siblings must be at the same depth level.
+             * Complete ALL aspects of current topic before moving.
+      
+          3. Starting New Level 1 Questions:
+             * Only after ALL current Level 1 branches are complete.
+             * Must cover completely different aspects than ALL previous Level 1 questions.
+             * Maintain same level of importance as original Level 1s.
+      
+          Question Generation Rules:
+          1. Each new question MUST:
+             * Be more specific than its parent.
+             * Focus on unexplored aspects of parent's answer.
+             * Maintain clear topic focus.
+             * Progress logically deeper into implementation.
+      
+          2. Depth Requirements:
+             * Level 1: Core feature identification.
+             * Level 2: Feature requirement specification.
+             * Level 3: Technical implementation details.
+             * Level 4: Edge case handling.
+             * Level 5: Performance optimization.
+      
+          3. When generating questions:
+             * Use exact terminology from parent's answer.
+             * Focus on one specific aspect at a time.
+             * Ensure logical progression of detail.
+   * Maintain clear topic boundaries.
+`;
+
+// Shared CRITICAL RELEVANCE RULE - applies to both BFS & DFS:
+const CRITICAL_RELEVANCE_RULE = `
+CRITICAL RELEVANCE RULE:
+1. The new question MUST explicitly quote at least one exact phrase from the parent's answer in quotes 
+   (e.g., "voice-activated controls" or "categorized floor directory").
+2. The new question MUST demand deeper detail or specific implementation guidelines for that phrase.
+3. If the parent’s answer already covers that phrase fully, the new question must explore edge cases, advanced features, or constraints related to it.
+4. The new question must NOT be fully answerable by the parent's answer alone; it must prompt for additional clarifications or deeper specifics.
+5. Failure to quote the parent's exact phrase is not permitted for the new child question.
+6. The new question MUST explicitly reference both the parent's question and its answer (for example, by quoting key parts of each).
+7. Use the parent's question and answer as anchors to drive the follow-up inquiry.
+`;
+
 export async function POST(request: NextRequest) {
   try {
     const {
@@ -405,16 +614,11 @@ Use this information to:
       parentAnswerSubtopics = extractSubtopicsFromAnswer(parentContext.parentAnswer);
     }
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      temperature: 0.3,
-      messages: [
-        {
-          role: 'system',
-          content: isAutoPopulate
-            ? 
-// ------------------- AUTO-POPULATE (Suggested Answer) -------------------
-`You are an expert UX design assistant that helps suggest answers based on the knowledge base and context. Your task is to provide a well-reasoned answer to the current question and return it as a JSON object.
+    // Build the systemPrompt for either auto-populate or BFS/DFS question generation
+    const systemPrompt = isAutoPopulate
+      ? 
+      // ------------------- AUTO-POPULATE (Suggested Answer) -------------------
+      `You are an expert UX design assistant that helps suggest answers based on the knowledge base and context. Your task is to provide a well-reasoned answer to the current question and return it as a JSON object.
 
 Knowledge Base Context:
 ${knowledgeBaseContext}
@@ -448,9 +652,9 @@ Return your response in this JSON format:
   "sourceReferences": [array of source indices that contributed],
   "confidence": "high" | "medium" | "low"
 }`
-            : 
-// ------------------- FOLLOW-UP QUESTION GENERATION -------------------
-`You are an expert UX design assistant that helps generate follow-up questions for a design prompt. Your task is to generate ONE follow-up question based on the traversal mode and return it as a JSON object.
+      :
+      // ------------------- FOLLOW-UP QUESTION GENERATION -------------------
+      `You are an expert UX design assistant that helps generate follow-up questions for a design prompt. Your task is to generate ONE follow-up question based on the traversal mode and return it as a JSON object.
 
 ${
   parentContext
@@ -485,17 +689,9 @@ CRITICAL: The generated question MUST:
 }
 
 // ------------------------------------------------------------
-// STRONGER CRITICAL RELEVANCE RULE - forces quoting a subtopic and referencing both parent's question and answer
+// SHARED CRITICAL RELEVANCE RULE (applies to BOTH BFS AND DFS):
 // ------------------------------------------------------------
-CRITICAL RELEVANCE RULE:
-1. The new question MUST explicitly quote at least one exact phrase from the parent's answer in quotes 
-   (e.g., "voice-activated controls" or "categorized floor directory").
-2. The new question MUST demand deeper detail or specific implementation guidelines for that phrase.
-3. If the parent’s answer already covers that phrase fully, the new question must explore edge cases, advanced features, or constraints related to it.
-4. The new question must NOT be fully answerable by the parent's answer alone; it must prompt for additional clarifications or deeper specifics.
-5. Failure to quote the parent's exact phrase is not permitted for the new child question.
-6. The new question MUST explicitly reference both the parent's question and its answer (for example, by quoting key parts of each).
-7. Use the parent's question and answer as anchors to drive the follow-up inquiry.
+${CRITICAL_RELEVANCE_RULE}
 
 Follow these guidelines:
 1. Question Progression Levels:
@@ -503,337 +699,129 @@ Follow these guidelines:
 
    BFS Mode Levels:
    - Level 1 (Basic Needs): Broad, fundamental questions about purpose, audience, and core requirements
-     Example: "What is the fundamental purpose of the portfolio website?"
-   - Level 2 (Features): Main sections and key features, but not specifics yet
-     Example: "What main sections should be included in the navigation?"
-   - Level 3 (Details): Specific details about each feature/section identified in level 2
-     Example: "What project details should be displayed in each portfolio item?"
-   - Level 4 (Refinements): Technical specifications and implementation details
-     Example: "What image formats and sizes should be supported for project thumbnails?"
-   - Level 5 (Polish): Edge cases and final refinements
-     Example: "How should the portfolio handle projects with missing images?"
+   - Level 2 (Features): Main sections and key features
+   - Level 3 (Details): Specific details about each feature or section
+   - Level 4 (Refinements): Technical specs and implementation details
+   - Level 5 (Polish): Edge cases, final refinements
 
 2. Child Question Generation Rules:
    - Child questions MUST be more specific than their parent question.
    - Child questions MUST explore a specific aspect mentioned in the parent's answer.
    - NEVER ask the same question as the parent with slightly different wording.
-   - Example progression:
-     Parent Q: "What sections should the portfolio include?"
-     Parent A: "The portfolio should include a projects section, about me, skills, and contact."
-     Valid child Q: "What specific project details should be displayed in the projects section?"
-     Invalid child Q: "What content should be included in the portfolio?"
 
 3. Traversal Rules (${traversalMode}):
-   ${
-     traversalMode === 'bfs'
-       ? `BFS Guidelines:
-        - CRITICAL: At Level 1 (top level), generate exactly 4-5 comprehensive questions that cover the main aspects.
-        - For Level 2+, generate exactly 2-3 questions per parent aspect from the parent's answer.
-        - Each sibling at the same level MUST focus on a different aspect from the parent's answer.
-        - CRITICAL: ALL Level 2 children of ALL Level 1 questions must be generated before ANY Level 3 questions.
-        - Example progression:
-          Parent Q1: "What are the core user flows and functional requirements?"
-          Parent A1: "The interface should offer search, filtering, and zoom levels..."
-          Valid Child Q5: "What specific search capabilities should be implemented?"
-          Valid Child Q6: "What filtering options should be available to users?"
-          Valid Child Q7: "How should the zoom level functionality work?"
+${traversalMode === 'bfs' ? BFS_RULES : DFS_RULES}
 
-        Level Structure and Progression:
-        - Level 1 (exactly 4-5 questions): Core requirements and fundamental aspects.
-          Example: "What are the core user flows?", "What accessibility features are needed?"
+      4. Topic Management:
+   - BFS: Generate siblings for each aspect first
+   - DFS: Explore one aspect deeply before siblings
+      
+      5. Question Generation:
+         - Generate exactly ONE question.
+   - For BFS: Return shouldStopBranch=true if no unexplored aspects remain
+   - For DFS: Return shouldStopBranch=true when the aspect is fully explored
+      
+      6. Stopping Criteria:
+   - Topic fully explored, or the knowledge base is sufficient.
+      
+      7. Knowledge Base Context:
+      ${knowledgeBaseContext}
+      
+      8. Previous Questions Already Asked:
+      ${previousQuestions
+        .map(
+          (q: { question: string; answer: string }, index: number) =>
+            `${index + 1}. Q: ${q.question}\n   A: ${q.answer}`
+        )
+        .join('\n')}
+      
+      9. Response Format:
+      Return your response in this exact JSON format:
+      {
+        "questions": ["Next question to ask"],
+        "shouldStopBranch": boolean,
+        "stopReason": "Detailed explanation of why we should stop this branch",
+        "suggestedAnswer": "string with best guess answer based on knowledge base",
+        "sourceReferences": [array of source indices that contributed],
+        "confidence": "high" | "medium" | "low",
+        "topicsCovered": ["list of topics this question relates to"],
+        "parentTopic": "The main topic this question belongs to",
+        "subtopics": ["Potential child topics for this question"]
+}`;
 
-        - Level 2 (exactly 2-3 questions per parent aspect): Direct exploration of parent aspects.
-          Example: If Level 1 answer mentions "search, filtering, and zoom":
-          * Q5-Q7 explores search aspects.
-          * Q8-Q10 explores filtering aspects.
-          * Q11-Q13 explores zoom aspects.
-          CRITICAL: Generate Level 2 questions for ALL Level 1 answers before moving to Level 3.
+    // Next, build the userPrompt to finalize the conversation:
+    const userPrompt = isAutoPopulate
+      ? // AUTO-POPULATE user instructions
+            `The design prompt is: "${prompt}"
+      
+      Current Question: "${currentQuestion}"
+      
+      Based on the knowledge base and previous Q&A context:
+      1. Analyze the knowledge base for relevant information about this specific question.
+      2. Consider the context from previous questions and answers.
+      3. Provide a clear, direct answer following the guidelines.
+      4. Indicate which knowledge base sources (if any) contributed to the answer.
+      5. Rate your confidence in the answer as high/medium/low.
+      
+      Return your response in this format:
+      {
+        "questions": [],
+        "shouldStopBranch": false,
+        "stopReason": "",
+        "suggestedAnswer": "Your suggested answer here",
+        "sourceReferences": [array of source indices that contributed],
+        "confidence": "high" | "medium" | "low"
+      }`
+      : // FOLLOW-UP question user instructions
+            `The design prompt is: "${prompt}".
+      Previous Q&A History:
+      ${JSON.stringify(previousQuestions, null, 2)}
+      
+      Current Question: ${
+        previousQuestions[previousQuestions.length - 1]?.question || 'Initial question'
+      }
+      
+      CRITICAL REQUIREMENTS:
+      1. Review ALL previous questions and their topics carefully.
+      2. Generate ONE question that explores a COMPLETELY DIFFERENT aspect not covered in ANY previous question.
+3. If BFS, ensure the new question:
+   - Stays at the current level
+   - Covers a new topic not yet discussed
+   - Follows the BFS rules
+4. If DFS, continue deeper on the current aspect until fully explored
+5. Provide a suggestedAnswer following the guidelines
 
-        - Level 3+ (exactly 2-3 questions per parent aspect): Implementation details.
-          Example: If Level 2 answer about search mentions "real-time search and filters":
-          * "How should real-time search results be displayed?"
-          * "What search result filtering options are needed?"
-          * "What performance requirements for search response time?"
+Topics already covered (DO NOT repeat these or related topics):
+      ${previousQuestions
+        .map((q: { question: string }, index: number) => `${index + 1}. ${q.question}`)
+        .join('\n')}
+      
+      Remember:
+- No second-person pronouns
+- No repeating or rephrasing parent's question
+- BFS covers all aspects at a level; DFS goes deeper on one aspect.`;
 
-        Aspect Coverage Rules:
-        1. Each child question MUST:
-           * Directly reference a specific aspect from parent's answer using exact terminology.
-           * Maintain clear topic lineage from Level 1 through current level.
-           * Ask for more specific details about that aspect.
-
-        2. Sibling questions MUST:
-           * Each focus on a different aspect from parent's answer.
-           * Not overlap in their focus areas.
-           * Together cover all major aspects mentioned in parent's answer.
-           * Stay at the same depth level as each other.
-
-        3. Moving Deeper Rules:
-           * NEVER generate Level 3 questions until ALL Level 2 questions for ALL Level 1 parents are complete.
-           * Each deeper question must make the parent aspect more specific.
-           * Maintain clear topic lineage by referencing both direct parent and Level 1 ancestor.
-
-        Cycling Behavior:
-        1. When a branch is fully explored:
-           * First complete all siblings at current level.
-           * Only move deeper when ALL nodes at current level across ALL branches are complete.
-           * If all branches are explored, return to Level 1 with new aspects.
-
-        2. When generating new Level 1 questions after a cycle:
-           * Must cover completely different aspects than ALL previous Level 1 questions.
-           * Should maintain the same level of importance as original Level 1 questions.
-           * Example: If first cycle covered "user profiles" and "content management",
-             second cycle might cover "analytics" and "performance optimization".
-
-        Progression Rules:
-        1. After getting exactly 4-5 Level 1 questions answered:
-           * Generate Level 2 questions for EACH answered Level 1 question.
-           * Only add new Level 1 questions if starting a new cycle.
-
-        2. When to move deeper:
-           * ALL questions at current level are answered.
-           * EACH parent has exactly 2-3 child questions.
-           * ALL aspects from ALL parent answers are covered.
-
-        3. When to stay at current level:
-           * ANY aspects from ANY parent answer are still unexplored.
-           * ANY parent has fewer than 2 child questions.
-           * ANY questions at current level are unanswered.`
-       : `DFS Guidelines:
-        - CRITICAL: In DFS mode, fully explore ONE topic branch before moving to siblings.
-        - Maximum depth is 5 levels, but can be less if topics are fully explored.
-        - When all branches are exhausted, return to Level 1 with new aspects.
-
-        Sibling Count Guidelines:
-        - Level 1: Exactly 4-5 main topic questions.
-        - Level 2-5: Exactly 2-3 questions per parent aspect.
-
-        Example proper DFS progression:
-        Q1: "What are the core navigation features needed?"
-        Parent A1: "Need a main menu, search bar, and user profile section."
-
-        First Branch (Main Menu) - Complete this ENTIRE branch before siblings:
-        Q2: "What specific items should be in the main menu?"
-        A2: "Home, Products, Categories, Cart, and User Profile links."
-        Q3: "How should the menu items be organized?"
-        A3: "Primary items visible, secondary in dropdown."
-        Q4: "What interactions should menu items have?"
-        A4: "Hover previews and dropdown menus."
-        [MUST complete ALL menu questions before moving to search]
-
-        Second Branch (Search) - Only start after menu is complete:
-        Q5: "What search functionality is required?"
-        A5: "Real-time search with filters and suggestions."
-        Q6: "How should search results be displayed?"
-        A6: "Grid layout with quick preview cards."
-        Q7: "What advanced search options are needed?"
-        A7: "Category filters and price range selectors."
-        [MUST complete ALL search questions before user profile]
-
-        Third Branch (User Profile) - Only start after search is complete:
-        Q8: "What user profile information should be shown?"
-        Q9: "What profile customization options are needed?"
-
-        Topic Exploration Rules:
-        1. Each branch MUST:
-           * Start with broad feature questions.
-           * Progress to specific implementation details.
-           * End with edge cases and optimizations.
-           * Maintain clear topic lineage throughout.
-
-        2. Question Depth Requirements:
-           * Level 1: Broad feature questions (exactly 4-5)
-             Example: "What core navigation features are needed?"
-           * Level 2: Feature breakdown (exactly 2-3 per feature)
-             Example: "What specific items in the main menu?"
-           * Level 3: Implementation details (exactly 2-3 per Level 2 answer)
-             Example: "How should dropdown menus behave?"
-           * Level 4: Edge cases (exactly 2-3 per Level 3 answer)
-             Example: "How to handle menu overflow on mobile?"
-           * Level 5: Optimizations (exactly 2-3 per Level 4 answer)
-             Example: "What menu item preloading strategy to use?"
-
-        Branch Completion Rules:
-        1. A branch is ONLY complete when:
-           - ALL aspects of the current topic are fully explored.
-           - Questions have reached implementation-level detail.
-           - Edge cases and optimizations are addressed.
-           - Reached maximum depth (5 levels) OR
-           - ALL possible questions about the topic are answered.
-
-        2. When to stop current branch (shouldStopBranch=true):
-           - Reached maximum depth (5 levels) OR
-           - ALL aspects from parent's answer are fully explored AND
-           - Questions would become too specific to be useful OR
-           - Current topic is fully defined with implementation details.
-
-        3. When to move to siblings:
-           - ONLY after current branch is FULLY explored.
-           - When shouldStopBranch=true is returned AND
-           - No more meaningful child questions can be generated.
-           - NEVER move to siblings until current topic is complete.
-
-        4. Question Depth Progression:
-           Level 1: High-level feature questions (exactly 4-5).
-           Level 2: Specific requirements (Specific requirements (exactly 2-3 per parent).
-           Level 3: Technical implementation details (exactly 2-3 per parent).
-           Level 4: Edge cases (exactly 2-3 per parent).
-           Level 5: Performance optimization (exactly 2-3 per parent).
-
-        Topic Lineage Rules:
-        1. Each question MUST:
-           * Directly reference its parent topic.
-           * Use exact terminology from parent's answer.
-           * Maintain clear connection to Level 1 ancestor.
-           * Progress logically deeper into the topic.
-
-        2. Moving Between Siblings:
-           * NEVER move to a sibling until current branch is complete.
-           * Each sibling must explore a different main topic.
-           * Siblings must be at the same depth level.
-           * Complete ALL aspects of current topic before moving.
-
-        3. Starting New Level 1 Questions:
-           * Only after ALL current Level 1 branches are complete.
-           * Must cover completely different aspects than ALL previous Level 1 questions.
-           * Maintain same level of importance as original Level 1s.
-           * Example: If first set covered "navigation" and "search",
-             second set might cover "performance" and "security".
-
-        Question Generation Rules:
-        1. Each new question MUST:
-           * Be more specific than its parent.
-           * Focus on unexplored aspects of parent's answer.
-           * Maintain clear topic focus.
-           * Progress logically deeper into implementation.
-
-        2. Depth Requirements:
-           * Level 1: Core feature identification.
-           * Level 2: Feature requirement specification.
-           * Level 3: Technical implementation details.
-           * Level 4: Edge case handling.
-           * Level 5: Performance optimization.
-
-        3. When generating questions:
-           * Use exact terminology from parent's answer.
-           * Focus on one specific aspect at a time.
-           * Ensure logical progression of detail.
-           * Maintain clear topic boundaries.`
-   }
-
-4. Topic Management:
-   - In BFS mode:
-     * First identify ALL distinct aspects/topics from the parent's answer.
-     * Generate siblings to cover EACH aspect before going deeper.
-     * Only mark shouldStopBranch=true if ALL aspects have been covered by siblings.
-   - In DFS mode:
-     * Focus on exploring one aspect deeply before moving to siblings.
-     * Mark shouldStopBranch=true when the current aspect is fully explored.
-
-5. Question Generation:
-   - Generate exactly ONE question.
-   - For BFS mode siblings:
-     * Look at the parent's answer for unexplored aspects.
-     * Each sibling should focus on a DIFFERENT aspect.
-     * Return shouldStopBranch=true ONLY if no unexplored aspects remain.
-   - For DFS mode:
-     * Focus on drilling deeper into the current aspect.
-     * Return shouldStopBranch=true when the aspect is fully explored.
-
-6. Stopping Criteria:
-   - Stop the current branch if:
-     * The topic is fully explored (all aspects covered).
-     * Further questions would be too specific.
-     * A different topic needs attention.
-     * The knowledge base provides sufficient information.
-     * The question would be redundant with the parent's answer.
-
-7. Knowledge Base Context:
-${knowledgeBaseContext}
-
-8. Previous Questions Already Asked:
-${previousQuestions
-  .map(
-    (q: { question: string; answer: string }, index: number) =>
-      `${index + 1}. Q: ${q.question}\n   A: ${q.answer}`
-  )
-  .join('\n')}
-
-9. Response Format:
-Return your response in this exact JSON format:
-{
-  "questions": ["Next question to ask"],
-  "shouldStopBranch": boolean,
-  "stopReason": "Detailed explanation of why we should stop this branch",
-  "suggestedAnswer": "string with best guess answer based on knowledge base",
-  "sourceReferences": [array of source indices that contributed],
-  "confidence": "high" | "medium" | "low",
-  "topicsCovered": ["list of topics this question relates to"],
-  "parentTopic": "The main topic this question belongs to",
-  "subtopics": ["Potential child topics for this question"]
-}`
+    // Call OpenAI with the system + user prompts
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o', // or "gpt-4", etc.
+      temperature: 0.3,
+      messages: [
+        {
+          role: 'system',
+          content: systemPrompt,
         },
         {
           role: 'user',
-          content: isAutoPopulate
-            ? `The design prompt is: "${prompt}"
-
-Current Question: "${currentQuestion}"
-
-Based on the knowledge base and previous Q&A context:
-1. Analyze the knowledge base for relevant information about this specific question.
-2. Consider the context from previous questions and answers.
-3. Provide a clear, direct answer following the guidelines.
-4. Indicate which knowledge base sources (if any) contributed to the answer.
-5. Rate your confidence in the answer as high/medium/low.
-
-Return your response in this format:
-{
-  "questions": [],
-  "shouldStopBranch": false,
-  "stopReason": "",
-  "suggestedAnswer": "Your suggested answer here",
-  "sourceReferences": [array of source indices that contributed],
-  "confidence": "high" | "medium" | "low"
-}`
-            : `The design prompt is: "${prompt}".
-Previous Q&A History:
-${JSON.stringify(previousQuestions, null, 2)}
-
-Current Question: ${
-  previousQuestions[previousQuestions.length - 1]?.question || 'Initial question'
-}
-
-CRITICAL REQUIREMENTS:
-1. Review ALL previous questions and their topics carefully.
-2. Generate ONE question that explores a COMPLETELY DIFFERENT aspect not covered in ANY previous question.
-3. For BFS mode, ensure the new question:
-   - Stays at the same level.
-   - Covers a new topic not related to any previous questions.
-   - Follows the level-specific topic guidelines.
-4. Provide a suggested answer following the guidelines.
-
-Topics already covered (DO NOT ask about these or related topics):
-${previousQuestions
-  .map((q: { question: string }, index: number) => `${index + 1}. ${q.question}`)
-  .join('\n')}
-
-Remember:
-- NEVER repeat a topic that's been covered in previous questions.
-- Each new question must explore a different aspect of the design.
-- In BFS mode, stay at the current level but explore new topics.
-- Make clear, direct statements in suggested answers.
-- Never use second person pronouns.`
-        }
+          content: userPrompt,
+        },
       ],
-      // max_completion_tokens: 4000,
       response_format: { type: "json_object" },
-      // reasoning_effort: 'medium'
     });
 
     const content = completion.choices[0].message.content?.trim();
     if (!content) {
       console.error('Empty response from OpenAI');
-      // Return a default response instead of throwing
+      // Return a default fallback response
       return NextResponse.json({
         questions: ["What are the core features needed for this design?"],
         shouldStopBranch: false,
@@ -843,7 +831,6 @@ Remember:
         confidence: "low",
         topicsCovered: ["core_features"],
         parentTopic: "requirements",
-        // ADDED: include parentReference here, even if empty
         parentReference: "",
         subtopics: []
       });
@@ -851,7 +838,7 @@ Remember:
 
     console.log('Raw OpenAI response:', content);
 
-    let response: {
+    let parsedResponse: {
       questions: string[];
       shouldStopBranch: boolean;
       stopReason: string;
@@ -861,82 +848,75 @@ Remember:
       topicsCovered: string[];
       parentTopic: string;
       subtopics: string[];
-      // parse parentReference if present
       parentReference?: string;
     };
 
     try {
-      // First try to parse the JSON response
-      response = JSON.parse(content);
+      // Attempt to parse JSON
+      parsedResponse = JSON.parse(content);
 
-      // Ensure required fields exist with defaults
-      response = {
-        questions: Array.isArray(response.questions)
-          ? response.questions
-          : [response.questions || "What are the core features needed for this design?"],
-        shouldStopBranch: response.shouldStopBranch || false,
-        stopReason: response.stopReason || "",
-        suggestedAnswer: response.suggestedAnswer || null,
-        sourceReferences: response.sourceReferences || [],
-        confidence: response.confidence || "low",
-        topicsCovered: response.topicsCovered || [],
-        parentTopic: response.parentTopic || "requirements",
-        subtopics: response.subtopics || [],
-        parentReference: response.parentReference || ""
+      // Ensure required fields have defaults
+      parsedResponse = {
+        questions: Array.isArray(parsedResponse.questions)
+          ? parsedResponse.questions
+          : [parsedResponse.questions || "What are the core features needed for this design?"],
+        shouldStopBranch: parsedResponse.shouldStopBranch || false,
+        stopReason: parsedResponse.stopReason || "",
+        suggestedAnswer: parsedResponse.suggestedAnswer || null,
+        sourceReferences: parsedResponse.sourceReferences || [],
+        confidence: parsedResponse.confidence || "low",
+        topicsCovered: parsedResponse.topicsCovered || [],
+        parentTopic: parsedResponse.parentTopic || "requirements",
+        subtopics: parsedResponse.subtopics || [],
+        parentReference: parsedResponse.parentReference || ""
       };
 
-      // Clean up questions to ensure they're plain text
-      response.questions = response.questions
-        .map((q: any) => {
-          if (typeof q === 'string') return q;
-          return q.question || q.text || JSON.stringify(q);
-        })
+      // Normalize question array items to strings
+      parsedResponse.questions = parsedResponse.questions
+        .map((q: any) => (typeof q === 'string' ? q : JSON.stringify(q)))
         .filter(Boolean);
 
-      // If no valid questions after cleanup, provide a default
-      if (response.questions.length === 0) {
-        response.questions = ["What are the core features needed for this design?"];
+      // If no valid questions, provide a default
+      if (!parsedResponse.questions.length) {
+        parsedResponse.questions = ["What are the core features needed for this design?"];
       }
 
-      console.log('Formatted response:', response);
-      return NextResponse.json(response);
+      console.log('Final formatted response:', parsedResponse);
+      return NextResponse.json(parsedResponse);
     } catch (jsonError) {
-      console.error("Error parsing API response:", jsonError);
-      console.error("Raw content causing parse error:", content);
+      console.error("Error parsing JSON response:", jsonError);
+      console.error("Raw content was:", content);
 
-      // Try to extract a valid question from the partial response
-      let extractedQuestion = "What are the core features needed for this design?";
+      // Attempt to salvage partial data
+      let fallbackQuestion = "What are the core features needed for this design?";
       try {
-        const questionMatch = content.match(/"questions":\s*\[\s*"([^"]+)"/);
-        if (questionMatch && questionMatch[1]) {
-          extractedQuestion = questionMatch[1];
+        const match = content.match(/"questions":\s*\[\s*"([^"]+)"/);
+        if (match && match[1]) {
+          fallbackQuestion = match[1];
         }
-      } catch (e) {
-        console.error("Failed to extract question from partial response");
+      } catch (extractionError) {
+        console.error("No fallback question found in partial content");
       }
 
-      // Provide a default response using any extracted data
       return NextResponse.json({
-        questions: [extractedQuestion],
+        questions: [fallbackQuestion],
         shouldStopBranch: false,
         stopReason: "",
         suggestedAnswer: null,
         sourceReferences: [],
         confidence: "low",
-        topicsCovered: ["core_features"],
+        topicsCovered: [],
         parentTopic: "requirements",
         parentReference: "",
         subtopics: []
       });
     }
   } catch (error) {
-    console.error('Error generating questions:', error);
-    return NextResponse.json(
-      { error: 'Failed to generate questions' },
-      { status: 500 }
-    );
+    console.error('Error in route:', error);
+    return NextResponse.json({ error: 'Failed to generate questions' }, { status: 500 });
   }
 }
+
 
 ----- /Users/jackcrawford/ai-design-flow/app/api/process-knowledge-base/route.ts -----
 import { NextRequest } from 'next/server';
@@ -1262,7 +1242,7 @@ Update the requirements document with any new information from the Q&A and knowl
         const tags: string[] = [];
         let priority: 'high' | 'medium' | 'low';
 
-        // Priority determination first (more comprehensive)
+        // Priority determination
         if (
           textLower.includes('critical') || 
           textLower.includes('essential') || 
@@ -1273,9 +1253,12 @@ Update the requirements document with any new information from the Q&A and knowl
           textLower.includes('crucial') ||
           textLower.includes('key') ||
           textLower.includes('primary') ||
-          textLower.includes('core')
+          textLower.includes('core') ||
+          textLower.includes('safety') ||
+          textLower.includes('emergency')
         ) {
           priority = 'high';
+          tags.push('high priority');
         } else if (
           textLower.includes('optional') || 
           textLower.includes('nice to have') ||
@@ -1288,48 +1271,71 @@ Update the requirements document with any new information from the Q&A and knowl
           textLower.includes('additional')
         ) {
           priority = 'low';
+          tags.push('low priority');
         } else {
           priority = 'medium';
+          tags.push('medium priority');
         }
 
-        // Category determination (existing logic)
+        // Category and feature tags
         if (textLower.includes('security') || textLower.includes('emergency') || textLower.includes('safety')) {
           category = 'security';
-          priority = 'high'; // Security always high priority
-          tags.push('safety');
-        } else if (textLower.includes('user') || textLower.includes('interface') || textLower.includes('display') || textLower.includes('visual')) {
-          category = 'ux';
-          tags.push('interface');
-        } else if (textLower.includes('performance') || textLower.includes('speed') || textLower.includes('efficiency')) {
-          category = 'performance';
-          tags.push('optimization');
-        } else if (textLower.includes('accessible') || textLower.includes('disability')) {
-          category = 'accessibility';
-          priority = 'high'; // Accessibility always high priority
-          tags.push('ada-compliance');
-        } else if (textLower.includes('technical') || textLower.includes('system') || textLower.includes('integration')) {
-          category = 'technical';
-          tags.push('integration');
+          if (textLower.includes('security')) tags.push('security');
+          if (textLower.includes('safety')) tags.push('safety');
+          if (textLower.includes('emergency')) tags.push('emergency');
         }
 
-        // Additional tags based on content
-        if (textLower.includes('monitor') || textLower.includes('sensor')) {
-          tags.push('monitoring');
+        if (textLower.includes('user') || textLower.includes('interface') || textLower.includes('display') || textLower.includes('visual')) {
+          category = 'ux';
+          tags.push('ux');
+          if (textLower.includes('interface')) tags.push('interface');
+          if (textLower.includes('display')) tags.push('display');
+          if (textLower.includes('visual')) tags.push('visual');
         }
-        if (textLower.includes('data') || textLower.includes('analytics')) {
-          tags.push('data');
+
+        // Functional features
+        if (textLower.includes('search') || textLower.includes('find') || textLower.includes('lookup')) {
+          tags.push('functional');
         }
-        if (textLower.includes('ai') || textLower.includes('machine learning')) {
-          tags.push('ai');
-        }
-        if (textLower.includes('maintenance')) {
-          tags.push('maintenance');
-        }
-        if (textLower.includes('real-time') || textLower.includes('realtime')) {
+
+        // Real-time features
+        if (textLower.includes('real-time') || textLower.includes('realtime') || textLower.includes('live')) {
           tags.push('real-time');
         }
 
-        return { category, tags, priority };
+        // Status and monitoring
+        if (textLower.includes('status') || textLower.includes('state') || textLower.includes('condition')) {
+          tags.push('status');
+        }
+
+        if (textLower.includes('monitor') || textLower.includes('track') || textLower.includes('observe')) {
+          tags.push('monitoring');
+        }
+
+        // Diagnostics and management
+        if (textLower.includes('diagnostic')) {
+          tags.push('diagnostics');
+        }
+
+        if (textLower.includes('remote') && textLower.includes('management')) {
+          tags.push('remote management');
+        }
+
+        // AI and voice features
+        if (textLower.includes('voice') || textLower.includes('speak') || textLower.includes('audio')) {
+          tags.push('voice');
+        }
+
+        if (textLower.includes('ai') || textLower.includes('intelligent') || textLower.includes('smart')) {
+          tags.push('ai');
+        }
+
+        // Remove any duplicate tags
+        return {
+          category,
+          tags: [...new Set(tags)],
+          priority
+        };
       }
 
       // Ensure all requirements have proper structure and IDs
@@ -1350,7 +1356,28 @@ Update the requirements document with any new information from the Q&A and knowl
                 updatedAt: new Date().toISOString()
               };
             }
-            // If it's already an object but missing ID
+
+            // Try to find matching requirement in existing document to preserve metadata
+            const existingReq = Object.values(existingDocument.categories)
+              .flatMap((cat: any) => cat.requirements)
+              .find((existing: any) => existing.text === req.text);
+
+            if (existingReq) {
+              // If found, analyze the text for new tags but preserve existing metadata
+              const analysis = analyzeRequirement(req.text);
+              return {
+                ...existingReq,
+                text: req.text,
+                // Merge existing tags with newly detected ones
+                tags: [...new Set([...(existingReq.tags || []), ...analysis.tags])],
+                // Update priority and category only if they're not already set
+                priority: existingReq.priority || analysis.priority,
+                category: existingReq.category || analysis.category,
+                updatedAt: new Date().toISOString()
+              };
+            }
+
+            // If it's a new requirement but already has some structure
             if (!req.id) {
               const analysis = analyzeRequirement(req.text);
               req.id = uuidv4();
@@ -1561,7 +1588,6 @@ export default function QnAPage() {
       .map((s) => s.trim())
       .filter(Boolean);
   }
-
   // -------------------- DFS Ordering with Automation --------------------
 
   // getNextQuestion follows DFS:
@@ -1570,14 +1596,17 @@ export default function QnAPage() {
   // – It then returns the next candidate; if none exists at that level, it recursively backtracks.
   // The suggested answer from the candidate is saved so that the UI displays the answer corresponding to the shown question.
   const getNextQuestion = async (node: QANode): Promise<QANode | null> => {
-    // Remove the early exit for non-auto mode
     const isDFS = settings?.traversalMode === 'dfs';
+  
+    // ------------------------ DFS MODE ------------------------
     if (isDFS) {
+      // If current node has an answer, we proceed to build a DFS branch history
       if (node.answer) {
-        // -------------------- DFS: Build branch history and determine depth
+        // 1. Build branch history & determine depth
         const branchHistory: QuestionHistoryItem[] = [];
         let current: QANode | null = node;
         let depth = 0;
+  
         while (current) {
           if (current.question !== `Prompt: ${prompt}`) {
             branchHistory.unshift({
@@ -1592,9 +1621,8 @@ export default function QnAPage() {
           current = parent;
         }
   
-        // ----- DFS DEPTH CAP: Limit depth to 5 -----
+        // 2. If we are at depth >= 5, backtrack and look for siblings or new branches
         if (depth >= 5) {
-          // At depth 5, backtrack incrementally to find siblings or new branches
           let temp: QANode | null = node;
           while (temp) {
             const parent = findParentNode(qaTree, temp);
@@ -1602,21 +1630,29 @@ export default function QnAPage() {
             const siblings = parent.children;
             const index = siblings.findIndex(n => n.id === temp!.id);
   
-            // If a next sibling already exists, return it
+            // If a next sibling exists, return it
             if (index >= 0 && index < siblings.length - 1) {
               return siblings[index + 1];
             }
   
-            // Otherwise, attempt to fetch new siblings if there's only one
+            // Otherwise, if there's only one sibling, fetch new siblings
             if (siblings.length === 1) {
               const parentHistory = getAllAnsweredQuestions(parent);
+  
+              // Pass parent's subtopics for DFS sibling generation
+              const parentSubs = parent.answer
+                ? extractSubtopicsFromAnswerText(parent.answer)
+                : [];
+  
               const { nodes: generatedSiblings } = await fetchQuestionsForNode(
                 prompt,
                 parent,
                 parentHistory,
                 getNodeDepth(parent),
-                true
+                true,
+                parentSubs
               );
+  
               if (generatedSiblings.length > 0) {
                 parent.children = [
                   ...parent.children,
@@ -1628,19 +1664,22 @@ export default function QnAPage() {
                 }
               }
             }
-            // If no next sibling is found, move up one level
+            // If no next sibling is found, move up
             temp = parent;
           }
   
           // If backtracking fails, generate new Level 1 questions
           const rootHistory = getAllAnsweredQuestions(qaTree!);
+          const emptySubs: string[] = []; // pass empty array for subtopics
           const { nodes: newTopLevel, suggestedAnswer } = await fetchQuestionsForNode(
             prompt,
             qaTree!,
             rootHistory,
             1,
-            true
+            true,
+            emptySubs
           );
+  
           if (newTopLevel.length > 0) {
             newTopLevel[0].questionNumber = questionCount + 1;
             qaTree!.children = newTopLevel;
@@ -1651,16 +1690,15 @@ export default function QnAPage() {
             );
             return newTopLevel[0];
           }
-          return null;
-        }
-        // ----- End DFS DEPTH CAP -----
   
-        // Extract subtopics from this node's answer, so we can pass them along
+          return null;
+        } // end depth >= 5
+  
+        // 3. If depth < 5, try generating a child for this node
         const parentAnswerSubtopics = node.answer
           ? extractSubtopicsFromAnswerText(node.answer)
           : [];
   
-        // If depth < 5, try generating a child
         const {
           nodes: children,
           shouldStopBranch,
@@ -1671,7 +1709,7 @@ export default function QnAPage() {
           branchHistory,
           depth,
           true,
-          parentAnswerSubtopics // Pass subtopics as uncoveredAspects
+          parentAnswerSubtopics
         );
   
         if (children.length > 0 && (!shouldStopBranch || depth < 5)) {
@@ -1688,39 +1726,50 @@ export default function QnAPage() {
           return child;
         }
   
-        // If no child was generated or we're at depth 5, force siblings
+        // 4. If no child was generated, or we're at depth 5, try generating siblings
         const parentNode = findParentNode(qaTree, node);
         if (parentNode) {
           const parentHistory = getAllAnsweredQuestions(parentNode);
+  
+          // pass parent's subtopics for sibling generation
+          const parentAnswerSubtopics2 = parentNode.answer
+            ? extractSubtopicsFromAnswerText(parentNode.answer)
+            : [];
+  
           const { nodes: newSiblings } = await fetchQuestionsForNode(
             prompt,
             parentNode,
             parentHistory,
             getNodeDepth(parentNode),
-            true
+            true,
+            parentAnswerSubtopics2
           );
+  
           if (newSiblings.length > 0) {
             parentNode.children = [
               ...parentNode.children,
               ...newSiblings.filter(s => !parentNode.children.find(ex => ex.id === s.id)),
             ];
             const index = parentNode.children.findIndex(n => n.id === node.id);
+  
             if (index >= 0 && index < parentNode.children.length - 1) {
               return parentNode.children[index + 1];
             } else if (parentNode.children.length > 0) {
               return parentNode.children[0];
             }
           }
-          // Fallback: try going up another level
+          // fallback: go up another level
           return await getNextQuestion(parentNode);
         }
   
-        // Final fallback: generate new Level 1 questions
+        // 5. Final fallback: generate new Level 1 questions
         const rootHistory2 = getAllAnsweredQuestions(qaTree!);
+        const emptySubs2: string[] = [];
         const {
           nodes: newTopLevel,
           suggestedAnswer: fallbackAnswer,
-        } = await fetchQuestionsForNode(prompt, qaTree!, rootHistory2, 1, true);
+        } = await fetchQuestionsForNode(prompt, qaTree!, rootHistory2, 1, true, emptySubs2);
+  
         if (newTopLevel.length > 0) {
           newTopLevel[0].questionNumber = questionCount + 1;
           qaTree!.children = newTopLevel;
@@ -1732,14 +1781,16 @@ export default function QnAPage() {
           return newTopLevel[0];
         }
         return null;
-      }
+      } // end if (node.answer)
   
-      // Fallback for DFS if node.answer is falsy:
+      // If DFS and node.answer is falsy, generate new Level 1 questions
       const rootHistory = getAllAnsweredQuestions(qaTree!);
+      const emptySubs3: string[] = [];
       const {
         nodes: newTopLevel,
         suggestedAnswer: fallbackAnswer,
-      } = await fetchQuestionsForNode(prompt, qaTree!, rootHistory, 1, true);
+      } = await fetchQuestionsForNode(prompt, qaTree!, rootHistory, 1, true, emptySubs3);
+  
       if (newTopLevel.length > 0) {
         newTopLevel[0].questionNumber = questionCount + 1;
         qaTree!.children = newTopLevel;
@@ -1751,18 +1802,22 @@ export default function QnAPage() {
         return newTopLevel[0];
       }
       return null;
-    } else {
-      // -------------------- BFS MODE --------------------
+    }
+  
+    // ------------------------ BFS MODE ------------------------
+    else {
       const parent = findParentNode(qaTree, node);
       if (!parent) {
-        // If there's no parent, we're at the root level
+        // BFS: if no parent, generate new top-level questions
         const rootHistory = getAllAnsweredQuestions(qaTree!);
+        const emptySubsBFS1: string[] = [];
         const { nodes: newTopLevel } = await fetchQuestionsForNode(
           prompt,
           qaTree!,
           rootHistory,
           1,
-          true
+          true,
+          emptySubsBFS1
         );
         if (newTopLevel.length > 0) {
           newTopLevel[0].questionNumber = questionCount + 1;
@@ -1772,7 +1827,7 @@ export default function QnAPage() {
         return null;
       }
   
-      // Gather parent's subtopics so BFS also sees the parent's actual answer
+      // Gather parent's subtopics so BFS can reference them
       const parentAnswerSubtopics = parent.answer
         ? extractSubtopicsFromAnswerText(parent.answer)
         : [];
@@ -1781,10 +1836,11 @@ export default function QnAPage() {
       const currentIndex = currentLevelNodes.indexOf(node);
       const currentDepth = getNodeDepth(node);
   
-      // Original BFS approach to figure out uncovered aspects, sibling generation, etc.
+      // BFS approach: figure out uncovered aspects, sibling generation, etc.
       const parentAspects = parent.answer
         ? extractAspectsFromAnswer(parent.answer)
         : ['basic_requirements'];
+  
       const coveredAspects = new Set(
         currentLevelNodes
           .filter(n => n.answer)
@@ -1799,7 +1855,7 @@ export default function QnAPage() {
           .flat()
       );
   
-      // If we happen to be at depth 2 and the parent has enough children, try next L1 node, etc.
+      // If at depth 2 and parent has enough children, try next L1 node, etc.
       if (currentDepth === 2) {
         const currentLevel1Node = findParentNode(qaTree, node);
         const hasEnoughChildren =
@@ -1819,12 +1875,19 @@ export default function QnAPage() {
           );
           if (nextLevel1WithoutChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextLevel1WithoutChildren);
+  
+            // BFS fallback subtopics
+            const subsForNextL1 = nextLevel1WithoutChildren.answer
+              ? extractSubtopicsFromAnswerText(nextLevel1WithoutChildren.answer)
+              : [];
+  
             const { nodes: newChildren } = await fetchQuestionsForNode(
               prompt,
               nextLevel1WithoutChildren,
               nodeHistory,
               2,
-              true
+              true,
+              subsForNextL1
             );
             if (newChildren.length > 0) {
               newChildren[0].questionNumber = questionCount + 1;
@@ -1838,6 +1901,7 @@ export default function QnAPage() {
         }
       }
   
+      // Build a history for siblings who have answers
       const levelHistory: QuestionHistoryItem[] = currentLevelNodes
         .filter(n => n.answer)
         .map(n => ({
@@ -1857,12 +1921,13 @@ export default function QnAPage() {
       );
       const hasEnoughTopLevelQuestions = isTopLevel && currentLevelNodes.length >= 4;
       const hasEnoughSiblingsForLevel = !isTopLevel && currentLevelNodes.length >= 3;
+  
       const shouldGenerateMoreSiblings =
         (isTopLevel && !hasEnoughTopLevelQuestions && uncoveredAspects.length > 0) ||
         (!isTopLevel && uncoveredAspects.length > 0 && !hasEnoughSiblingsForLevel);
   
       if (shouldGenerateMoreSiblings) {
-        // Use parent's subtopics so BFS sibling generation can be more targeted
+        // BFS sibling generation with parent's subtopics
         const { nodes: newSiblings } = await fetchQuestionsForNode(
           prompt,
           parent,
@@ -1878,7 +1943,7 @@ export default function QnAPage() {
         }
       }
   
-      // BFS fallback if currentDepth >= 3, see if we can handle incomplete L2 nodes, etc.
+      // BFS fallback if currentDepth >= 3
       if (currentDepth >= 3) {
         const l2Nodes = getAllNodesAtDepth(qaTree!, 2);
         const incompleteL2 = l2Nodes.find(l2Node => {
@@ -1889,14 +1954,20 @@ export default function QnAPage() {
           );
           return l2Node.children.length < expectedChildren;
         });
+  
         if (incompleteL2) {
           const nodeHistory = getAllAnsweredQuestions(incompleteL2);
+          const subsForIncompleteL2 = incompleteL2.answer
+            ? extractSubtopicsFromAnswerText(incompleteL2.answer)
+            : [];
+  
           const { nodes: newChild } = await fetchQuestionsForNode(
             prompt,
             incompleteL2,
             nodeHistory,
             2,
-            true
+            true,
+            subsForIncompleteL2
           );
           if (newChild.length > 0) {
             newChild[0].questionNumber = questionCount + 1;
@@ -1906,29 +1977,39 @@ export default function QnAPage() {
         }
       }
   
+      // If all current level nodes are answered, see if they have enough children
       const allCurrentLevelNodes = getAllNodesAtDepth(qaTree!, currentDepth);
       const allCurrentLevelAnswered = allCurrentLevelNodes.every(n => n.answer);
+  
       if (allCurrentLevelAnswered) {
         const allNodesHaveEnoughChildren = allCurrentLevelNodes.every(n => {
           if (!n.answer) return true;
           const aspects = extractAspectsFromAnswer(n.answer);
           return n.children.length >= Math.min(3, aspects.length);
         });
+  
         if (allNodesHaveEnoughChildren) {
+          // Try to find a node that needs children at deeper level
           const nextNodeNeedingChildren = allCurrentLevelNodes.find(
             n =>
               n.answer &&
               n.children.length <
                 Math.min(3, extractAspectsFromAnswer(n.answer).length)
           );
+  
           if (nextNodeNeedingChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextNodeNeedingChildren);
+            const subsForNextNode = nextNodeNeedingChildren.answer
+              ? extractSubtopicsFromAnswerText(nextNodeNeedingChildren.answer)
+              : [];
+  
             const { nodes: children } = await fetchQuestionsForNode(
               prompt,
               nextNodeNeedingChildren,
               nodeHistory,
               currentDepth + 1,
-              true
+              true,
+              subsForNextNode
             );
             if (children.length > 0) {
               children[0].questionNumber = questionCount + 1;
@@ -1939,15 +2020,15 @@ export default function QnAPage() {
               return children[0];
             }
           }
-          const allChildrenAtNextDepth = allCurrentLevelNodes.flatMap(
-            n => n.children
-          );
-          const unansweredChildAtNextDepth = allChildrenAtNextDepth.find(
-            n => !n.answer
-          );
+  
+          // Or check if there's an unanswered child at the next depth
+          const allChildrenAtNextDepth = allCurrentLevelNodes.flatMap(n => n.children);
+          const unansweredChildAtNextDepth = allChildrenAtNextDepth.find(n => !n.answer);
           if (unansweredChildAtNextDepth) {
             return unansweredChildAtNextDepth;
           }
+  
+          // Otherwise see if there's another node needing children at the next depth
           const nextDepthNodeNeedingChildren = allChildrenAtNextDepth.find(
             n =>
               n.answer &&
@@ -1956,12 +2037,17 @@ export default function QnAPage() {
           );
           if (nextDepthNodeNeedingChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextDepthNodeNeedingChildren);
+            const subsForNextDepth = nextDepthNodeNeedingChildren.answer
+              ? extractSubtopicsFromAnswerText(nextDepthNodeNeedingChildren.answer)
+              : [];
+  
             const { nodes: children } = await fetchQuestionsForNode(
               prompt,
               nextDepthNodeNeedingChildren,
               nodeHistory,
               currentDepth + 2,
-              true
+              true,
+              subsForNextDepth
             );
             if (children.length > 0) {
               children[0].questionNumber = questionCount + 1;
@@ -1973,10 +2059,12 @@ export default function QnAPage() {
             }
           }
         } else {
+          // Some nodes at this level are not answered or lack children
           const nextUnansweredNode = allCurrentLevelNodes.find(n => !n.answer);
           if (nextUnansweredNode) {
             return nextUnansweredNode;
           }
+  
           const nextNodeNeedingChildren = allCurrentLevelNodes.find(
             n =>
               n.answer &&
@@ -1985,12 +2073,17 @@ export default function QnAPage() {
           );
           if (nextNodeNeedingChildren) {
             const nodeHistory = getAllAnsweredQuestions(nextNodeNeedingChildren);
+            const subsForNextNode2 = nextNodeNeedingChildren.answer
+              ? extractSubtopicsFromAnswerText(nextNodeNeedingChildren.answer)
+              : [];
+  
             const { nodes: children } = await fetchQuestionsForNode(
               prompt,
               nextNodeNeedingChildren,
               nodeHistory,
               currentDepth + 1,
-              true
+              true,
+              subsForNextNode2
             );
             if (children.length > 0) {
               children[0].questionNumber = questionCount + 1;
@@ -2002,13 +2095,17 @@ export default function QnAPage() {
             }
           }
         }
+  
+        // BFS fallback: generate new Level 1 questions if needed
         const rootHistory = getAllAnsweredQuestions(qaTree!);
+        const emptySubsBFS2: string[] = [];
         const { nodes: newTopLevel } = await fetchQuestionsForNode(
           prompt,
           qaTree!,
           rootHistory,
           1,
-          true
+          true,
+          emptySubsBFS2
         );
         if (newTopLevel.length > 0) {
           newTopLevel[0].questionNumber = questionCount + 1;
@@ -2016,49 +2113,23 @@ export default function QnAPage() {
           return newTopLevel[0];
         }
       }
-    }
+    } // end BFS branch
   
-    // Final fallback: generate new Level 1 questions if everything else fails
-    const rootHistory = getAllAnsweredQuestions(qaTree!);
+    // If we get here, try final fallback: generate new top-level questions
+    const finalHistory = getAllAnsweredQuestions(qaTree!);
+    const emptySubs: string[] = [];
     const { nodes: newTopLevel } = await fetchQuestionsForNode(
       prompt,
       qaTree!,
-      rootHistory,
+      finalHistory,
       1,
-      true
+      true,
+      emptySubs
     );
     if (newTopLevel.length > 0) {
       newTopLevel[0].questionNumber = questionCount + 1;
       qaTree!.children = [...qaTree!.children, ...newTopLevel];
       return newTopLevel[0];
-    }
-    return null;
-  };
-
-  // -------------------- Additional Helpers --------------------
-
-  // Find all nodes at the same level as the target.
-  const findNodesAtSameLevel = (root: QANode | null, target: QANode): QANode[] => {
-    if (!root) return [];
-    const parent = findParentNode(root, target);
-    if (!parent) return root.children;
-    return parent.children;
-  };
-
-  // Find the first unanswered child (BFS).
-  const findFirstUnansweredChild = (root: QANode | null): QANode | null => {
-    if (!root) return null;
-    const queue: QANode[] = [root];
-    while (queue.length > 0) {
-      const node = queue.shift()!;
-      if (node.children.length > 0) {
-        for (const child of node.children) {
-          if (!child.answer) return child;
-          queue.push(child);
-        }
-      } else if (!node.answer && node.question !== `Prompt: ${prompt}`) {
-        return node;
-      }
     }
     return null;
   };
@@ -2187,6 +2258,31 @@ export default function QnAPage() {
     }
     return null;
   };
+
+  const findNodesAtSameLevel = (root: QANode | null, target: QANode): QANode[] => {
+    if (!root) return [];
+    const parent = findParentNode(root, target);
+    if (!parent) return root.children;
+    return parent.children;
+  };
+
+    // Find the first unanswered child (BFS).
+    const findFirstUnansweredChild = (root: QANode | null): QANode | null => {
+      if (!root) return null;
+      const queue: QANode[] = [root];
+      while (queue.length > 0) {
+        const node = queue.shift()!;
+        if (node.children.length > 0) {
+          for (const child of node.children) {
+            if (!child.answer) return child;
+            queue.push(child);
+          }
+        } else if (!node.answer && node.question !== `Prompt: ${prompt}`) {
+          return node;
+        }
+      }
+      return null;
+    };
 
   // Update requirements document.
   const updateRequirements = async (nodeId: string | null) => {
@@ -2400,8 +2496,31 @@ export default function QnAPage() {
       
       setQaTree(version.qaTree);
       setRequirementsDoc(version.requirementsDoc);
-      const firstUnanswered = findFirstUnansweredChild(version.qaTree);
-      setCurrentNode(firstUnanswered);
+
+      // Restore the exact state from when the version was saved
+      if (version.currentState) {
+        const node = version.currentState.currentNodeId 
+          ? findNodeById(version.qaTree, version.currentState.currentNodeId)
+          : findFirstUnansweredChild(version.qaTree);
+        setCurrentNode(node);
+        setSuggestedAnswer(version.currentState.suggestedAnswer);
+      } else {
+        // Fallback for older versions without currentState
+        const firstUnanswered = findFirstUnansweredChild(version.qaTree);
+        setCurrentNode(firstUnanswered);
+        if (firstUnanswered) {
+          handleAutoPopulate().then(suggestedText => {
+            if (suggestedText) {
+              setSuggestedAnswer({
+                text: suggestedText,
+                confidence: 'medium',
+                sourceReferences: []
+              });
+            }
+          });
+        }
+      }
+
       let count = 0;
       const countAnswers = (node: QANode) => {
         if (node.answer) count++;
@@ -2409,7 +2528,17 @@ export default function QnAPage() {
       };
       countAnswers(version.qaTree);
       setQuestionCount(count);
-      saveProgress();
+
+      // Save progress with the restored state
+      const progressData = {
+        qaTree: version.qaTree,
+        currentNodeId: version.currentState?.currentNodeId || null,
+        questionCount: count,
+        prompt,
+        settings,
+        requirementsDoc: version.requirementsDoc
+      };
+      localStorage.setItem('qaProgress', JSON.stringify(progressData));
     }
   };
 
@@ -2744,43 +2873,53 @@ export default function QnAPage() {
   // -------------------- Render --------------------
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
-      <HeaderToolbar
-        onRestart={handleRestart}
-        onGenerate={handleGenerate}
-        onSave={() => handleSaveSession()}
-        showRestartButton={!isLoading}
-        showGenerateButton={!isLoading && qaTree !== null}
-        showSaveButton={!isLoading && qaTree !== null}
-        isAutomating={isAutomating}
-        onStartAutomation={startAutomation}
-        onStopAutomation={stopAutomation}
-      />
-      <div className="py-2 px-6 bg-white border-b border-gray-200">
-        <div className="flex justify-between items-center">
-          <div className="text-sm text-gray-600">
-            Questions: {questionCount}
-          </div>
-          <div className="text-sm text-gray-600">
-            Mode: {settings?.traversalMode === 'dfs' ? 'Depth-First' : 'Breadth-First'}
+      <style jsx global>{`
+        body {
+          background-color: rgb(243, 244, 246);  /* This matches bg-gray-100 */
+        }
+      `}</style>
+      <div className="fixed top-0 left-0 right-0 z-10">
+        <HeaderToolbar
+          onRestart={handleRestart}
+          onGenerate={handleGenerate}
+          onSave={() => handleSaveSession()}
+          showRestartButton={!isLoading}
+          showGenerateButton={!isLoading && qaTree !== null}
+          showSaveButton={!isLoading && qaTree !== null}
+          isAutomating={isAutomating}
+          onStartAutomation={startAutomation}
+          onStopAutomation={stopAutomation}
+          hasKnowledgeBase={!!settings?.knowledgeBase?.length}
+        />
+        <div className="py-2 px-6 bg-white border-b border-gray-200">
+          <div className="flex justify-between items-center">
+            <div className="text-sm text-gray-600">
+              Questions: {questionCount}
+            </div>
+            <div className="text-sm text-gray-600">
+              Mode: {settings?.traversalMode === 'dfs' ? 'Depth-First' : 'Breadth-First'}
+            </div>
           </div>
         </div>
       </div>
-      <main className="flex-1 flex">
+      <main className="flex flex-1 pt-24 relative">
         {/* Left: Canvas Tree view */}
-        <div className="w-2/3 p-6 overflow-auto">
-          <div className="bg-white rounded-lg shadow-lg p-6 min-h-full">
+        <div className="w-2/3 p-6 overflow-hidden flex flex-col">
+          <div className="bg-white rounded-lg shadow-lg p-6 min-h-0 flex-1 flex flex-col">
             <h2 className="text-2xl font-bold mb-6 text-gray-900">Question Tree</h2>
-            {isLoading ? (
-              <div className="flex items-center justify-center h-32">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              </div>
-            ) : (
-              <CanvasTree node={qaTree} />
-            )}
+            <div className="overflow-auto flex-1">
+              {isLoading ? (
+                <div className="flex items-center justify-center h-32">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : (
+                <CanvasTree node={qaTree} />
+              )}
+            </div>
           </div>
         </div>
         {/* Right: Q&A Panel */}
-        <div className="w-1/3 p-6 overflow-auto border-l border-gray-200">
+        <div className="fixed right-0 top-24 bottom-0 w-1/3 p-6 border-l border-gray-200 bg-gray-100">
           <QAPanel
             currentQuestion={currentNode ? currentNode.question : "No more questions. Q&A complete."}
             onSubmitAnswer={handleAnswer}
@@ -2795,6 +2934,9 @@ export default function QnAPage() {
         onClose={() => setIsPreviewOpen(false)}
         requirementsDoc={requirementsDoc!}
         qaTree={qaTree}
+        currentNode={currentNode}
+        suggestedAnswer={suggestedAnswer}
+        settings={settings!}
         onVersionRestore={handleVersionRestore}
       />
     </div>
@@ -2900,8 +3042,10 @@ export default function PromptPage() {
     console.log("User prompt:", prompt);
     console.log("Settings:", settings);
     
-    // Clear any existing progress
+    // Clear any existing progress and versions
     localStorage.removeItem('qaProgress');
+    localStorage.removeItem('mockupVersions');
+    localStorage.removeItem('currentMockup');
     
     // Save new prompt and settings
     localStorage.setItem('designPrompt', prompt);
@@ -2916,9 +3060,14 @@ export default function PromptPage() {
   return (
     <div className="min-h-screen flex flex-col justify-center items-center bg-gray-50 px-4">
       {/* Header */}
-      <header className="mb-8 text-center">
-        <h1 className="text-4xl font-bold text-gray-800">Welcome to AI Design Flow</h1>
-        <p className="mt-4 text-lg text-gray-600">
+      <header className="mb-8 text-center relative">
+        <h1 className="text-5xl font-bold bg-gradient-to-r from-emerald-600 to-emerald-400 bg-clip-text text-transparent drop-shadow-sm relative">
+          Proto
+          <span className="bg-gradient-to-r from-emerald-500 to-emerald-300 bg-clip-text text-transparent">synthetic</span>
+          <div className="absolute -top-4 -right-4 w-8 h-8 border-2 border-emerald-200 rounded-full opacity-50"></div>
+          <div className="absolute -bottom-2 -left-4 w-6 h-6 border-2 border-emerald-300 rounded-full opacity-40"></div>
+        </h1>
+        <p className="mt-6 text-lg text-gray-600 font-light tracking-wide">
           Enter your design prompt to kick off your interactive design journey.
         </p>
       </header>
@@ -3066,6 +3215,7 @@ interface HeaderToolbarProps {
   isAutomating?: boolean;
   onStartAutomation?: () => void;
   onStopAutomation?: () => void;
+  hasKnowledgeBase?: boolean;
 }
 
 const HeaderToolbar: React.FC<HeaderToolbarProps> = ({ 
@@ -3077,18 +3227,24 @@ const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
   showSaveButton = false,
   isAutomating = false,
   onStartAutomation,
-  onStopAutomation
+  onStopAutomation,
+  hasKnowledgeBase = false
 }) => {
   return (
     <header className="bg-white border-b border-gray-200">
-      <div className="w-full px-2">
-        <div className="flex justify-between items-center h-16 max-w-[1920px] mx-auto">
+      <div className="w-full">
+        <div className="flex justify-between items-center h-16 mx-4">
           <div className="pl-2">
-            <Link href="/" className="text-xl font-bold text-gray-900 hover:text-gray-700 transition-colors">
-              AI Design Flow
+            <Link href="/" className="relative group">
+              <span className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-emerald-400 bg-clip-text text-transparent relative">
+                Proto
+                <span className="bg-gradient-to-r from-emerald-500 to-emerald-300 bg-clip-text text-transparent">synthetic</span>
+                <div className="absolute -top-1 -right-2 w-4 h-4 border-2 border-emerald-200 rounded-full opacity-0 group-hover:opacity-50 transition-opacity"></div>
+                <div className="absolute -bottom-1 -left-2 w-3 h-3 border-2 border-emerald-300 rounded-full opacity-0 group-hover:opacity-40 transition-opacity"></div>
+              </span>
             </Link>
           </div>
-          <div className="pr-2 flex space-x-4">
+          <div className="flex space-x-4">
             {showSaveButton && onSave && (
               <button
                 onClick={onSave}
@@ -3108,7 +3264,7 @@ const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
                 Restart Q&A
               </button>
             )}
-            {onStartAutomation && onStopAutomation && (
+            {hasKnowledgeBase && onStartAutomation && onStopAutomation && (
               <button
                 onClick={isAutomating ? onStopAutomation : onStartAutomation}
                 className={`px-4 py-2 rounded-lg transition-colors flex items-center space-x-2 ${
@@ -3512,6 +3668,8 @@ const LivePreview: React.FC<LivePreviewProps> = ({ code, colorScheme }) => {
 
 export default LivePreview;
 
+
+
 ----- /Users/jackcrawford/ai-design-flow/components/PreviewArea.tsx -----
 interface PreviewAreaProps {
   requirements: string;
@@ -3538,7 +3696,8 @@ export default function PreviewArea({ requirements, uiCode }: PreviewAreaProps) 
 } 
 
 ----- /Users/jackcrawford/ai-design-flow/components/PreviewPanel.tsx -----
-import { RequirementsDocument, MockupVersion } from '@/types';
+import { RequirementsDocument, MockupVersion, QANode } from '@/types';
+import { QASettings } from '@/types/settings';
 import { useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import dynamic from 'next/dynamic';
@@ -3577,6 +3736,9 @@ interface PreviewPanelProps {
   onClose: () => void;
   requirementsDoc: RequirementsDocument;
   qaTree: any;
+  currentNode: QANode | null;
+  suggestedAnswer: { text: string; confidence: 'high' | 'medium' | 'low'; sourceReferences: number[]; } | null;
+  settings: QASettings;
   onVersionRestore?: (version: MockupVersion) => void;
 }
 
@@ -3610,14 +3772,44 @@ const ensureCompleteColorScheme = (version: MockupVersion): MockupVersion => {
   };
 };
 
+const style = `
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .version-list {
+    position: relative;
+  }
+
+  .version-item {
+    position: relative;
+    transition: all 0.3s ease-out;
+  }
+
+  .version-item.deleting {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+`;
+
 export default function PreviewPanel({
   isOpen,
   onClose,
   requirementsDoc,
   qaTree,
+  currentNode,
+  suggestedAnswer,
+  settings,
   onVersionRestore
 }: PreviewPanelProps) {
-  const [activeTab, setActiveTab] = useState<'requirements' | 'mockup' | 'versions'>('requirements');
+  const [activeTab, setActiveTab] = useState<'mockup' | 'specs' | 'requirements'>('mockup');
   const [mockupData, setMockupData] = useState<MockupData | null>(null);
   const [isMockupLoading, setIsMockupLoading] = useState(false);
   const [versions, setVersions] = useState<MockupVersion[]>([]);
@@ -3633,9 +3825,11 @@ export default function PreviewPanel({
       if (storedVersions) {
         const parsedVersions = JSON.parse(storedVersions);
         setVersions(parsedVersions);
-        // Set the most recent version as active if it exists
+        // Set the most recent version as both active and selected if it exists
         if (parsedVersions.length > 0) {
-          setActiveVersion(parsedVersions[parsedVersions.length - 1]);
+          const mostRecent = parsedVersions[parsedVersions.length - 1];
+          setActiveVersion(mostRecent);
+          setSelectedVersion(mostRecent);
         }
       }
 
@@ -3657,15 +3851,21 @@ export default function PreviewPanel({
   const generateMockup = async (saveCurrentVersion: boolean = false) => {
     setIsMockupLoading(true);
     setError(null);
+    // Clear current mockup data immediately when regenerating
+    setMockupData(null);
 
     // If requested, save current version before generating new one
     if (saveCurrentVersion && mockupData) {
       const currentVersion: MockupVersion = {
         id: uuidv4(),
         timestamp: new Date().toISOString(),
-        qaTree,
-        requirementsDoc,
-        mockupData
+        qaTree: JSON.parse(JSON.stringify(qaTree)),
+        requirementsDoc: JSON.parse(JSON.stringify(requirementsDoc)),
+        currentState: {
+          currentNodeId: currentNode?.id || null,
+          suggestedAnswer: suggestedAnswer ? { ...suggestedAnswer } : null
+        },
+        mockupData: { ...mockupData }
       };
 
       const updatedVersions = [...versions, currentVersion];
@@ -3700,8 +3900,12 @@ export default function PreviewPanel({
       const newVersion: MockupVersion = {
         id: uuidv4(),
         timestamp: new Date().toISOString(),
-        qaTree,
-        requirementsDoc,
+        qaTree: JSON.parse(JSON.stringify(qaTree)),
+        requirementsDoc: JSON.parse(JSON.stringify(requirementsDoc)),
+        currentState: {
+          currentNodeId: currentNode?.id || null,
+          suggestedAnswer: suggestedAnswer ? { ...suggestedAnswer } : null
+        },
         mockupData: data
       };
 
@@ -3709,11 +3913,9 @@ export default function PreviewPanel({
       const updatedVersions = [...versions, newVersion];
       setVersions(updatedVersions);
       localStorage.setItem('mockupVersions', JSON.stringify(updatedVersions));
-      
-      // Set as active version and clear selected version
-      setActiveVersion(newVersion);
-      setSelectedVersion(null);
 
+      // Set as active version only
+      setActiveVersion(newVersion);
     } catch (error) {
       console.error('Error generating mockup:', error);
       setError(error instanceof Error ? error.message : 'Failed to generate mockup');
@@ -3733,17 +3935,45 @@ export default function PreviewPanel({
   };
 
   const handleVersionRestore = (version: MockupVersion) => {
+    // First restore the mockup and UI state
     const completeVersion = ensureCompleteColorScheme(version);
     setMockupData(completeVersion.mockupData);
     setActiveVersion(completeVersion);
     setSelectedVersion(null);
     // Save restored mockup as current
     localStorage.setItem('currentMockup', JSON.stringify(completeVersion.mockupData));
+    // Save the entire version state to qaProgress to ensure tree restoration
+    localStorage.setItem('qaProgress', JSON.stringify({
+      qaTree: completeVersion.qaTree,
+      currentNodeId: completeVersion.currentState?.currentNodeId || null,
+      questionCount: countAnswers(completeVersion.qaTree),
+      prompt: completeVersion.requirementsDoc.prompt,
+      settings,
+      requirementsDoc: completeVersion.requirementsDoc
+    }));
     setActiveTab('mockup');
     
     if (onVersionRestore) {
-      onVersionRestore(version);
+      onVersionRestore(completeVersion);
     }
+  };
+
+  // Helper function to count answers in a tree
+  const countAnswers = (tree: QANode): number => {
+    let count = 0;
+    const traverse = (node: QANode) => {
+      if (node.answer) count++;
+      node.children.forEach(traverse);
+    };
+    traverse(tree);
+    return count;
+  };
+
+  // Add this helper function after the countAnswers function
+  const countTotalRequirements = (doc: RequirementsDocument): number => {
+    return Object.values(doc.categories).reduce((total, category) => 
+      total + category.requirements.length, 0
+    );
   };
 
   const handleCopyCode = () => {
@@ -3784,326 +4014,51 @@ export default function PreviewPanel({
     }
   };
 
-  const renderContent = () => {
-    if (activeTab === 'mockup') {
-      return (
-        <>
-          {/* Live Preview (Left Side) */}
-          <div className="w-2/3 h-full border-r border-gray-200 bg-gray-50 overflow-auto">
-            <div className="h-full">
-              {mockupData ? (
-                <LivePreview code={mockupData.code} colorScheme={mockupData.colorScheme} />
-              ) : (
-                <div className="flex items-center justify-center h-full text-gray-500">
-                  Click "Generate Mockup" to create a mockup based on your requirements
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Details Panel (Right Side) */}
-          <div className="w-1/3 h-full overflow-auto">
-            <div className="p-6">
-              {error ? (
-                <div className="p-6 text-center">
-                  <div className="text-red-600 mb-4">{error}</div>
-                  <button
-                    onClick={() => {
-                      setError(null);
-                      generateMockup();
-                    }}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Try Again
-                  </button>
-                </div>
-              ) : isMockupLoading ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="flex flex-col items-center space-y-4">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                    <p className="text-gray-600">
-                      Generating mockup...
-                    </p>
-                  </div>
-                </div>
-              ) : mockupData ? (
-                <div className="space-y-8">
-                  {/* Code */}
-                  <div>
-                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Generated Code</h2>
-                    <div className="relative">
-                      <pre className="bg-gray-50 p-4 rounded-lg overflow-auto text-sm max-h-96">
-                        <code className="text-gray-800">{mockupData.code}</code>
-                      </pre>
-                      <button
-                        onClick={handleCopyCode}
-                        className="absolute top-2 right-2 p-2 bg-white rounded-md shadow-sm hover:bg-gray-50"
-                        title="Copy code"
-                      >
-                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Components */}
-                  <div>
-                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Components</h2>
-                    <ul className="list-disc list-inside space-y-2">
-                      {mockupData.components.map((component, index) => (
-                        <li key={index} className="text-gray-700">{component}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Features */}
-                  <div>
-                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Implemented Features</h2>
-                    <ul className="list-disc list-inside space-y-2">
-                      {mockupData.features.map((feature, index) => (
-                        <li key={index} className="text-gray-700">{feature}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Next Steps */}
-                  <div>
-                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Next Steps</h2>
-                    <ul className="list-disc list-inside space-y-2">
-                      {mockupData.nextSteps.map((step, index) => (
-                        <li key={index} className="text-gray-700">{step}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </>
-      );
+  const handleVersionDelete = (versionId: string) => {
+    if (window.confirm('Are you sure you want to delete this version? This action cannot be undone.')) {
+      // Find the DOM element for the version being deleted
+      const versionElement = document.querySelector(`[data-version-id="${versionId}"]`);
+      if (versionElement) {
+        // Add the deleting class to trigger the animation
+        versionElement.classList.add('deleting');
+        
+        // Wait for the animation to complete before updating state
+        setTimeout(() => {
+          const updatedVersions = versions.filter(v => v.id !== versionId);
+          setVersions(updatedVersions);
+          localStorage.setItem('mockupVersions', JSON.stringify(updatedVersions));
+          
+          // If the deleted version was selected, clear selection
+          if (selectedVersion?.id === versionId) {
+            setSelectedVersion(null);
+          }
+          
+          // If the deleted version was active, set the most recent as active
+          if (activeVersion?.id === versionId) {
+            const mostRecent = updatedVersions[updatedVersions.length - 1];
+            setActiveVersion(mostRecent || null);
+          }
+        }, 300); // Match this with the CSS transition duration
+      }
     }
-
-    if (activeTab === 'versions') {
-      return (
-        <div className="flex h-full">
-          {/* Version History (Left Side) */}
-          <div className="w-1/3 h-full border-r border-gray-200 overflow-auto">
-            <div className="p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Version History</h2>
-              <div className="space-y-4">
-                {[...versions].reverse().map((version) => (
-                  <div
-                    key={version.id}
-                    className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                      version.id === activeVersion?.id
-                        ? 'border-green-500 bg-green-50'
-                        : version.id === selectedVersion?.id
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-blue-300'
-                    }`}
-                    onClick={() => handleVersionSelect(version)}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-gray-900">
-                            Version from {new Date(version.timestamp).toLocaleString()}
-                          </p>
-                          {version.id === activeVersion?.id && (
-                            <span className="px-2 py-1 bg-green-100 text-green-800 text-sm rounded-full">
-                              Active
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-600 mt-1">
-                          {version.requirementsDoc.categories.basicNeeds.requirements.length} requirements,{' '}
-                          {version.mockupData.components.length} components
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Version Preview (Right Side) */}
-          <div className="w-2/3 h-full overflow-auto">
-            {(selectedVersion || activeVersion) ? (
-              <div className="h-full">
-                <LivePreview 
-                  code={(selectedVersion || activeVersion)!.mockupData.code} 
-                  colorScheme={(selectedVersion || activeVersion)!.mockupData.colorScheme} 
-                />
-                <div className="p-6">
-                  <div className="space-y-8">
-                    {/* Components */}
-                    <div>
-                      <h2 className="text-xl font-semibold text-gray-900 mb-4">Components</h2>
-                      <ul className="list-disc list-inside space-y-2">
-                        {(selectedVersion || activeVersion)!.mockupData.components.map((component, index) => (
-                          <li key={index} className="text-gray-700">{component}</li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    {/* Features */}
-                    <div>
-                      <h2 className="text-xl font-semibold text-gray-900 mb-4">Implemented Features</h2>
-                      <ul className="list-disc list-inside space-y-2">
-                        {(selectedVersion || activeVersion)!.mockupData.features.map((feature, index) => (
-                          <li key={index} className="text-gray-700">{feature}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-full text-gray-500">
-                No versions available
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    }
-
-    // Requirements tab content
-    return (
-      <div className="w-full h-full overflow-auto">
-        <div className="p-6">
-          <div className="space-y-8">
-            <div className="prose max-w-none">
-              <h1 className="text-2xl font-bold text-gray-900 mb-4">
-                {requirementsDoc.prompt.split('\n')[0]}
-              </h1>
-              <p className="text-sm text-gray-500 mb-8">
-                Last updated: {new Date(requirementsDoc.lastUpdated).toLocaleString()}
-              </p>
-            </div>
-
-            {Object.entries(requirementsDoc.categories).map(([key, category]) => (
-              <div key={key} className="space-y-4">
-                <h2 className="text-xl font-semibold text-gray-900">
-                  {category.title}
-                </h2>
-                {category.requirements && category.requirements.length > 0 ? (
-                  <ul className="space-y-3">
-                    {[...category.requirements]
-                      .sort((a, b) => {
-                        const priorityOrder: Record<string, number> = { 'high': 0, 'medium': 1, 'low': 2 };
-                        const aPriority = (a.priority && priorityOrder[a.priority.toLowerCase()]) ?? 1;
-                        const bPriority = (b.priority && priorityOrder[b.priority.toLowerCase()]) ?? 1;
-                        return aPriority - bPriority;
-                      })
-                      .map((req, index) => (
-                      <li
-                        key={req.id || `${key}-${index}-${req.text}`}
-                        className="bg-white rounded-lg border border-gray-200 p-4"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <p className="text-gray-900">{req.text}</p>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {req.priority && (
-                                <span className={`px-2 py-1 rounded-full text-xs ${
-                                  req.priority === 'high'
-                                    ? 'bg-red-100 text-red-800'
-                                    : req.priority === 'medium'
-                                    ? 'bg-yellow-100 text-yellow-800'
-                                    : 'bg-green-100 text-green-800'
-                                }`}>
-                                  {req.priority} priority
-                                </span>
-                              )}
-                              {req.category && (
-                                <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                                  {req.category}
-                                </span>
-                              )}
-                              {req.tags?.map((tag, tagIndex) => (
-                                <span
-                                  key={`${req.id || index}-tag-${tagIndex}`}
-                                  className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800"
-                                >
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-gray-500 italic">No requirements in {category.title}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
   };
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-end">
+      <style>{style}</style>
       <div className="w-full bg-white h-full shadow-lg flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+          <h2 className="text-xl font-semibold text-gray-900">Design Preview</h2>
           <div className="flex space-x-4">
             <button
-              onClick={() => setActiveTab('requirements')}
-              className={`px-4 py-2 rounded-lg ${
-                activeTab === 'requirements'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
+              onClick={() => generateMockup(!!mockupData)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
-              Requirements
+              {versions.length > 0 ? 'Regenerate Mockup' : 'Generate Mockup'}
             </button>
-            <button
-              onClick={() => setActiveTab('mockup')}
-              className={`px-4 py-2 rounded-lg ${
-                activeTab === 'mockup'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              Mockup
-            </button>
-            <button
-              onClick={() => setActiveTab('versions')}
-              className={`px-4 py-2 rounded-lg ${
-                activeTab === 'versions'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              Versions ({versions.length})
-            </button>
-          </div>
-          <div className="flex space-x-4">
-            {activeTab === 'mockup' && (
-              <button
-                onClick={() => generateMockup(!!mockupData)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                {versions.length > 0 ? 'Regenerate Mockup' : 'Generate Mockup'}
-              </button>
-            )}
-            {activeTab === 'versions' && selectedVersion && selectedVersion.id !== activeVersion?.id && (
-              <button
-                onClick={() => handleVersionRestore(selectedVersion)}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-              >
-                Restore Version
-              </button>
-            )}
             <button
               onClick={onClose}
               className="text-gray-500 hover:text-gray-700"
@@ -4117,29 +4072,277 @@ export default function PreviewPanel({
 
         {/* Content */}
         <div className="flex-1 overflow-hidden flex">
-          {renderContent()}
-        </div>
+          {/* Version History (Left Side) */}
+          <div className="w-1/3 h-full border-r border-gray-200 overflow-auto">
+            <div className="p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Version History</h2>
+              <div className="version-list space-y-4">
+                {[...versions].reverse().map((version, index) => (
+                  <div
+                    key={version.id}
+                    data-version-id={version.id}
+                    className={`version-item p-4 border rounded-lg ${
+                      version.id === selectedVersion?.id
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-blue-300'
+                    } ${index === 0 && isMockupLoading ? 'cursor-default opacity-70' : 'cursor-pointer'}`}
+                    style={{
+                      animation: 'slideIn 0.2s ease-out'
+                    }}
+                    onClick={() => {
+                      // Only allow selection if not currently generating
+                      if (!(index === 0 && isMockupLoading)) {
+                        handleVersionSelect(version);
+                      }
+                    }}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-gray-900">
+                            {index === 0 && isMockupLoading ? 'Generating new version...' : `Version from ${new Date(version.timestamp).toLocaleString()}`}
+                          </p>
+                          {index === 0 && isMockupLoading && (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1 flex gap-2">
+                          {index === 0 && isMockupLoading ? (
+                            <>
+                              <span className="inline-block bg-gray-200 rounded-full h-4 w-16 animate-pulse"></span>
+                              <span className="inline-block bg-gray-200 rounded-full h-4 w-16 animate-pulse"></span>
+                            </>
+                          ) : (
+                            <>
+                              {countTotalRequirements(version.requirementsDoc)} requirements,{' '}
+                              {version.mockupData.components.length} components
+                            </>
+                          )}
+                        </p>
+                      </div>
+                      {/* Add delete button */}
+                      {!(index === 0 && isMockupLoading) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation(); // Prevent version selection when clicking delete
+                            handleVersionDelete(version.id);
+                          }}
+                          className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                          title="Delete version"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-200">
-          <div className="flex justify-between">
-            <button
-              className="px-4 py-2 text-gray-600 hover:text-gray-800"
-              onClick={handleDownload}
-            >
-              Download {activeTab === 'requirements' ? 'Requirements' : 'Code'}
-            </button>
-            {activeTab === 'mockup' && mockupData && (
-              <div className="flex space-x-4">
-                <button
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-                  onClick={() => {
-                    // TODO: Implement Figma export
-                    alert('Figma export coming soon!');
-                  }}
-                >
-                  Export to Figma
-                </button>
+          {/* Version Preview (Right Side) */}
+          <div className="w-2/3 h-full overflow-auto">
+            {!selectedVersion && isMockupLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="flex flex-col items-center space-y-4">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                  <p className="text-gray-600">Generating new mockup...</p>
+                </div>
+              </div>
+            ) : (selectedVersion || activeVersion) ? (
+              <div className="h-full flex flex-col">
+                {/* Version Preview Tabs */}
+                <div className="border-b border-gray-200">
+                  <div className="flex space-x-4 px-6 pt-4">
+                    <button
+                      onClick={() => setActiveTab('mockup')}
+                      className={`px-4 py-2 rounded-t-lg ${
+                        activeTab === 'mockup'
+                          ? 'bg-white text-blue-700 border-t border-l border-r border-gray-200'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      Mockup
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('specs')}
+                      className={`px-4 py-2 rounded-t-lg ${
+                        activeTab === 'specs'
+                          ? 'bg-white text-blue-700 border-t border-l border-r border-gray-200'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      Specs
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('requirements')}
+                      className={`px-4 py-2 rounded-t-lg ${
+                        activeTab === 'requirements'
+                          ? 'bg-white text-blue-700 border-t border-l border-r border-gray-200'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      Requirements
+                    </button>
+                  </div>
+                </div>
+
+                {/* Version Preview Content */}
+                <div className="flex-1 overflow-auto">
+                  {activeTab === 'mockup' && (
+                    <div className="h-full">
+                      <LivePreview 
+                        code={(selectedVersion || activeVersion)!.mockupData.code} 
+                        colorScheme={(selectedVersion || activeVersion)!.mockupData.colorScheme} 
+                      />
+                    </div>
+                  )}
+                  {activeTab === 'specs' && (
+                    <div className="p-6 space-y-8">
+                      {/* Code */}
+                      <div>
+                        <h2 className="text-xl font-semibold text-gray-900 mb-4">Generated Code</h2>
+                        <div className="relative">
+                          <pre className="bg-gray-50 p-4 rounded-lg overflow-auto text-sm max-h-96">
+                            <code className="text-gray-800">{(selectedVersion || activeVersion)!.mockupData.code}</code>
+                          </pre>
+                          <button
+                            onClick={handleCopyCode}
+                            className="absolute top-2 right-2 p-2 bg-white rounded-md shadow-sm hover:bg-gray-50"
+                            title="Copy code"
+                          >
+                            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Components */}
+                      <div>
+                        <h2 className="text-xl font-semibold text-gray-900 mb-4">Components</h2>
+                        <ul className="list-disc list-inside space-y-2">
+                          {(selectedVersion || activeVersion)!.mockupData.components.map((component, index) => (
+                            <li key={index} className="text-gray-700">{component}</li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      {/* Features */}
+                      <div>
+                        <h2 className="text-xl font-semibold text-gray-900 mb-4">Implemented Features</h2>
+                        <ul className="list-disc list-inside space-y-2">
+                          {(selectedVersion || activeVersion)!.mockupData.features.map((feature, index) => (
+                            <li key={index} className="text-gray-700">{feature}</li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      {/* Next Steps */}
+                      <div>
+                        <h2 className="text-xl font-semibold text-gray-900 mb-4">Next Steps</h2>
+                        <ul className="list-disc list-inside space-y-2">
+                          {(selectedVersion || activeVersion)!.mockupData.nextSteps.map((step, index) => (
+                            <li key={index} className="text-gray-700">{step}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                  {activeTab === 'requirements' && (
+                    <div className="p-6">
+                      <div className="space-y-8">
+                        <div className="prose max-w-none flex justify-between items-start">
+                          <div>
+                            <h1 className="text-2xl font-bold text-gray-900">
+                              {(selectedVersion || activeVersion)!.requirementsDoc.prompt.split('\n')[0]}
+                            </h1>
+                          </div>
+                          <button
+                            onClick={handleDownload}
+                            className="px-4 py-2 text-gray-600 hover:text-gray-800 flex items-center gap-2"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Download Requirements
+                          </button>
+                        </div>
+
+                        {Object.entries((selectedVersion || activeVersion)!.requirementsDoc.categories).map(([key, category]) => (
+                          <div key={key} className="space-y-4">
+                            <h2 className="text-xl font-semibold text-gray-900">
+                              {category.title}
+                            </h2>
+                            {category.requirements && category.requirements.length > 0 ? (
+                              <ul className="space-y-3">
+                                {[...category.requirements]
+                                  .sort((a, b) => {
+                                    const priorityOrder: Record<string, number> = { 'high': 0, 'medium': 1, 'low': 2 };
+                                    const aPriority = (a.priority && priorityOrder[a.priority.toLowerCase()]) ?? 1;
+                                    const bPriority = (b.priority && priorityOrder[b.priority.toLowerCase()]) ?? 1;
+                                    return aPriority - bPriority;
+                                  })
+                                  .map((req, index) => (
+                                    <li
+                                      key={req.id || `${key}-${index}-${req.text}`}
+                                      className="bg-white rounded-lg border border-gray-200 p-4"
+                                    >
+                                      <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                          <p className="text-gray-900">{req.text}</p>
+                                          <div className="mt-2 flex flex-wrap gap-2">
+                                            {/* Priority Tag */}
+                                            {req.priority && (
+                                              <span className={`px-2 py-1 rounded-full text-xs ${
+                                                req.priority === 'high'
+                                                  ? 'bg-red-100 text-red-800'
+                                                  : req.priority === 'medium'
+                                                    ? 'bg-yellow-100 text-yellow-800'
+                                                    : 'bg-green-100 text-green-800'
+                                              }`}>
+                                                {req.priority} priority
+                                              </span>
+                                            )}
+                                            {/* Category Tag */}
+                                            {req.category && (
+                                              <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                                                {req.category}
+                                              </span>
+                                            )}
+                                            {/* Additional Tags */}
+                                            {req.tags?.map((tag, tagIndex) => {
+                                              console.log('Rendering tag:', tag, 'for requirement:', req.text);
+                                              return (
+                                                <span
+                                                  key={`${req.id || index}-tag-${tagIndex}`}
+                                                  className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800"
+                                                >
+                                                  {tag}
+                                                </span>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </li>
+                                  ))}
+                              </ul>
+                            ) : (
+                              <p className="text-gray-500 italic">No requirements in {category.title}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                No versions available
               </div>
             )}
           </div>
@@ -4611,6 +4814,14 @@ export interface MockupVersion {
   name?: string;
   qaTree: QANode;
   requirementsDoc: RequirementsDocument;
+  currentState: {
+    currentNodeId: string | null;
+    suggestedAnswer: {
+      text: string;
+      confidence: 'high' | 'medium' | 'low';
+      sourceReferences: number[];
+    } | null;
+  };
   mockupData: {
     code: string;
     colorScheme: {
