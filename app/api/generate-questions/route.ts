@@ -1,6 +1,6 @@
 // /app/api/generate-questions/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import { KnowledgeBaseSource } from '@/types/settings';
 
 // A helper to extract subtopics from a parent's answer (basic version).
@@ -25,8 +25,8 @@ function extractSubtopicsFromAnswer(answer: string): string[] {
   return subtopics;
 }
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
 /**
@@ -484,26 +484,23 @@ Topics already covered (DO NOT repeat these or related topics):
 - No repeating or rephrasing parent's question
 - BFS covers all aspects at a level; DFS goes deeper on one aspect.`;
 
-    // Call OpenAI with the system + user prompts
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o', // or "gpt-4", etc.
+    // Call Claude with the system + user prompts
+    const completion = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
       temperature: 0.3,
+      system: systemPrompt,
       messages: [
-        {
-          role: 'system',
-          content: systemPrompt,
-        },
         {
           role: 'user',
           content: userPrompt,
         },
       ],
-      response_format: { type: "json_object" },
     });
 
-    const content = completion.choices[0].message.content?.trim();
+    const content = completion.content[0].type === 'text' ? completion.content[0].text.trim() : null;
     if (!content) {
-      // console.error('Empty response from OpenAI');
+      // console.error('Empty response from Claude');
       // Return a default fallback response
       return NextResponse.json({
         questions: ["What are the core features needed for this design?"],
@@ -519,7 +516,7 @@ Topics already covered (DO NOT repeat these or related topics):
       });
     }
 
-    // console.log('Raw OpenAI response:', content);
+    // console.log('Raw Claude response:', content);
 
     let parsedResponse: {
       questions: string[];

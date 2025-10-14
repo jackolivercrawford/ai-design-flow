@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { RequirementsDocument, QANode, RequirementCategory } from "@/types";
 import { KnowledgeBaseSource } from "@/types/settings";
 import { v4 as uuidv4 } from "uuid";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
 function findNodeById(root: QANode | null, id: string): QANode | null {
@@ -69,12 +69,11 @@ export async function POST(request: NextRequest) {
     //   knowledgeBaseContext: knowledgeBaseContext.substring(0, 100) + '...'
     // });
 
-    const completion = await openai.chat.completions.create({
-      model: "o3-mini",
-      messages: [
-        {
-          role: "system",
-          content: `You are a UI/UX-focused requirements document updater. Your task is to update a requirements document based on Q&A session information and knowledge base data, translating all requirements into their UI/UX implications.
+    const completion = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 16000,
+      temperature: 0.3,
+      system: `You are a UI/UX-focused requirements document updater. Your task is to update a requirements document based on Q&A session information and knowledge base data, translating all requirements into their UI/UX implications.
 
 CRITICAL INSTRUCTIONS:
 1. Transform ALL requirements to focus on UI/UX implications, following these guidelines for each category:
@@ -149,7 +148,7 @@ CRITICAL INSTRUCTIONS:
     }
   }
 }`,
-        },
+      messages: [
         {
           role: "user",
           content: `Current Document: ${JSON.stringify(existingDocument)}
@@ -158,16 +157,13 @@ Knowledge Base: ${knowledgeBaseContext}
 
 Update the requirements document with any new information from the Q&A and knowledge base, ensuring all requirements are expressed in terms of their UI/UX implications. Return ONLY the updated document as a JSON object.`,
         },
-      ],
-      max_completion_tokens: 16000,
-      response_format: { type: "json_object" },
-      reasoning_effort: "medium",
+      ]
     });
 
-    const content = completion.choices[0].message.content;
+    const content = completion.content[0].type === 'text' ? completion.content[0].text : null;
     if (!content) {
-      // console.error("Empty response from OpenAI");
-      // console.log("Returning existing document due to empty OpenAI response");
+      // console.error("Empty response from Claude");
+      // console.log("Returning existing document due to empty Claude response");
       return NextResponse.json(existingDocument);
     }
 

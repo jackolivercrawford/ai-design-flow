@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import { RequirementsDocument, RequirementCategory } from '@/types';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
 export async function POST(request: NextRequest) {
@@ -37,12 +37,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const completion = await openai.chat.completions.create({
-      model: "o3-mini",
-      messages: [
-        {
-          role: "system",
-          content: `You are an expert UI developer specializing in industrial and control system interfaces. Your task is to generate a complete, production-ready React component mockup based on the provided requirements. You MUST use React with Tailwind CSS and DaisyUI for styling. DaisyUI is already included via CDN in the preview environment.
+    const completion = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 25000,
+      system: `You are an expert UI developer specializing in industrial and control system interfaces. Your task is to generate a complete, production-ready React component mockup based on the provided requirements. You MUST use React with Tailwind CSS and DaisyUI for styling. DaisyUI is already included via CDN in the preview environment.
 
 CRITICAL: YOU MUST USE DAISYUI COMPONENTS AND GRAYSCALE CLASSES INSTEAD OF RAW TAILWIND CLASSES. For example:
 
@@ -165,7 +163,7 @@ CRITICAL REQUIREMENTS FOR DAISYUI USAGE:
    - Sizes: \`btn-lg\`, \`btn-sm\`, \`input-lg\`, etc.
    - Styles: \`btn-outline\`, \`btn-ghost\`, etc.
 
-Return your response in this exact JSON format:
+IMPORTANT: You must return ONLY valid JSON with no additional text before or after the JSON object. Return your response in this exact JSON format:
 {
   "code": "Complete React/Tailwind/DaisyUI component code as shown in the example above",
   "components": [
@@ -177,8 +175,8 @@ Return your response in this exact JSON format:
   "nextSteps": [
     "List of suggested improvements or additions for future iterations"
   ]
-}`
-        },
+}`,
+      messages: [
         {
           role: "user",
           content: `Design Prompt: ${requirementsDoc.prompt}
@@ -188,15 +186,12 @@ ${formattedRequirements}
 
 Generate a complete React/Tailwind mockup that satisfies ALL these requirements. The mockup should be immediately usable and include all necessary types and styling. Each requirement should be reflected in the implementation.`
         }
-      ],
-      max_completion_tokens: 25000,
-      response_format: { type: "json_object" },
-      reasoning_effort: 'medium'
+      ]
     });
 
-    const content = completion.choices[0].message.content;
+    const content = completion.content[0].type === 'text' ? completion.content[0].text : null;
     if (!content) {
-      throw new Error('Empty response from OpenAI');
+      throw new Error('Empty response from Claude');
     }
 
     try {

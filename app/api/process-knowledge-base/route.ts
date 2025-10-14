@@ -1,9 +1,9 @@
 import { NextRequest } from 'next/server';
-import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import pdfParse from 'pdf-parse';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
@@ -19,50 +19,46 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
 async function processContent(content: string) {
   try {
     // console.log('Starting content processing...');
-    const completion = await openai.chat.completions.create({
-      model: "o3-mini",
-      messages: [
-        {
-          role: "system",
-          content: `You are a knowledge base processor. Extract key information from the provided document and return it as a JSON object. Focus on:
+    const completion = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 4000,
+      system: `You are a knowledge base processor. Extract key information from the provided document and return it as a JSON object. Focus on:
 1. Requirements and constraints
 2. Technical specifications
 3. Design guidelines
 4. User preferences or patterns
 5. Industry standards or best practices
 
-Return your response in this exact JSON format:
+IMPORTANT: You must return ONLY valid JSON with no additional text before or after the JSON object. Return your response in this exact JSON format:
 {
   "requirements": [],
   "technicalSpecifications": [],
   "designGuidelines": [],
   "userPreferences": [],
-  "industryStandards": []}`
-        },
+  "industryStandards": []
+}`,
+      messages: [
         {
           role: "user",
           content
         }
-      ],
-      max_completion_tokens: 4000,
-      response_format: { type: "json_object" },
-      reasoning_effort: 'medium'
+      ]
     });
 
-    // console.log('OpenAI response received');
-    const responseContent = completion.choices[0].message.content;
+    // console.log('Claude response received');
+    const responseContent = completion.content[0].type === 'text' ? completion.content[0].text : null;
     if (!responseContent) {
-      // console.error('Empty response content from OpenAI');
-      throw new Error('Empty response from OpenAI');
+      // console.error('Empty response content from Claude');
+      throw new Error('Empty response from Claude');
     }
 
     try {
       const parsedContent = JSON.parse(responseContent);
-      // console.log('Successfully parsed OpenAI response');
+      // console.log('Successfully parsed Claude response');
       return parsedContent;
     } catch (parseError) {
-      // console.error('Error parsing OpenAI response:', parseError, '\nResponse content:', responseContent);
-      throw new Error('Failed to parse OpenAI response');
+      // console.error('Error parsing Claude response:', parseError, '\nResponse content:', responseContent);
+      throw new Error('Failed to parse Claude response');
     }
   } catch (error) {
     // console.error('Error in processContent:', error);
