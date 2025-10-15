@@ -367,6 +367,28 @@ export default function QnAPage() {
       const currentLevelNodes = parent.children;
       const currentIndex = currentLevelNodes.indexOf(node);
       const currentDepth = getNodeDepth(node);
+
+      // Enforce 4–5 level-1 questions before generating level-2 children
+      if (parent === qaTree && currentDepth === 1) {
+        const level1Nodes = qaTree!.children;
+        if (level1Nodes.length < 4) {
+          const rootHistory = getAllAnsweredQuestions(qaTree!);
+          const emptySubs: string[] = [];
+          const { nodes: newSibling } = await fetchQuestionsForNode(
+            prompt,
+            qaTree!,
+            rootHistory,
+            1,
+            true,
+            emptySubs
+          );
+          if (newSibling.length > 0) {
+            newSibling[0].questionNumber = questionCount + 1;
+            qaTree!.children = [...qaTree!.children, ...newSibling];
+            return newSibling[0];
+          }
+        }
+      }
   
       // BFS approach: figure out uncovered aspects, sibling generation, etc.
       const parentAspects = parent.answer

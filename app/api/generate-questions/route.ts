@@ -298,6 +298,15 @@ Use this information to:
     }
 
     // Build the systemPrompt for either auto-populate or BFS/DFS question generation
+    const includeCriticalRule = !!parentContext && depth > 1;
+    const topLevelBfsBlock = depth === 1 ? `
+TOP-LEVEL BFS RULES:
+- Generate a new level-1 question covering a different main aspect.
+- Do NOT reference or quote any previous answers or terms from them.
+- Keep it broad and foundational, not a follow-up to any prior question.
+Examples of main aspects: safety & emergency, monitoring & diagnostics, maintenance tooling, accessibility, admin/operations.
+` : '';
+
     const systemPrompt = isAutoPopulate
       ? 
       // ------------------- AUTO-POPULATE (Suggested Answer) -------------------
@@ -337,7 +346,7 @@ Return your response in this JSON format:
 }`
       :
       // ------------------- FOLLOW-UP QUESTION GENERATION -------------------
-      `You are an expert UX design assistant that helps generate follow-up questions for a design prompt. Your task is to generate ONE follow-up question based on the traversal mode and return it as a JSON object.
+      `You are an expert UX design assistant that helps generate follow-up questions for a design prompt. Your task is to generate ONE question based on the traversal mode and return it as a JSON object.
 
 ${
   parentContext
@@ -374,7 +383,7 @@ CRITICAL: The generated question MUST:
 // ------------------------------------------------------------
 // SHARED CRITICAL RELEVANCE RULE (applies to BOTH BFS AND DFS):
 // ------------------------------------------------------------
-${CRITICAL_RELEVANCE_RULE}
+${includeCriticalRule ? CRITICAL_RELEVANCE_RULE : ''}
 
 Follow these guidelines:
 1. Question Progression Levels:
@@ -409,6 +418,8 @@ ${traversalMode === 'bfs' ? BFS_RULES : DFS_RULES}
       
       7. Knowledge Base Context:
       ${knowledgeBaseContext}
+      
+      ${topLevelBfsBlock}
       
       8. Previous Questions Already Asked:
       ${previousQuestions
