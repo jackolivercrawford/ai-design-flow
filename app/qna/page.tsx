@@ -736,14 +736,11 @@ export default function QnAPage() {
   ): Promise<{ nodes: QANode[]; shouldStopBranch: boolean; stopReason: string; suggestedAnswer?: string }> => {
     try {
       // console.log('Fetching questions with knowledge base:', settings?.knowledgeBase);
-      // Compute the parent's siblings (if available) by using the tree structure.
-      // (Note: We assume that qaTree is available in this scope.)
-      const grandParent = qaTree ? findParentNode(qaTree, parentNode) : null;
-      const siblingQuestions = grandParent
-        ? grandParent.children
-          .filter(child => child.id !== parentNode.id)
-          .map(child => child.question)
-        : [];
+      // Get the parent's EXISTING CHILDREN so we can avoid duplicate sibling questions
+      // These are the siblings of the question we're about to generate
+      const siblingQuestions = parentNode.children
+        .filter(child => child.question) // Only include children with questions
+        .map(child => child.question);
 
       const parentContext =
         parentNode.question !== `Prompt: ${designPrompt}`

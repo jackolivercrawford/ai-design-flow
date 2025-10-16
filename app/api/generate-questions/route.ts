@@ -248,6 +248,21 @@ STRICT PARENT-ONLY CONTEXT (DFS):
 5. If deeper exploration would require cross-branch information, set "shouldStopBranch": true and explain the reason in "stopReason".
 `;
 
+// Sibling deduplication rule (applies to both BFS and DFS)
+const SIBLING_DEDUPLICATION_RULE = `
+CRITICAL SIBLING DEDUPLICATION (MANDATORY):
+1. If sibling questions exist, you MUST generate a question about a COMPLETELY DIFFERENT aspect of the parent's answer.
+2. Review each sibling question carefully and identify what aspect/topic it addresses.
+3. Your new question MUST NOT overlap with ANY sibling's focus area.
+4. If all major aspects from the parent's answer are already covered by siblings, explore:
+   - Edge cases of existing aspects
+   - Implementation details not yet addressed
+   - Constraints or optimization considerations
+   - Alternative approaches or fallback scenarios
+5. NEVER generate a question that is semantically similar to any sibling, even if worded differently.
+6. If you cannot find a unique aspect to explore, set "shouldStopBranch": true.
+`;
+
 export async function POST(request: NextRequest) {
   try {
     const {
@@ -398,6 +413,8 @@ ${includeCriticalRule ? CRITICAL_RELEVANCE_RULE : ''}
 
 ${traversalMode === 'dfs' ? STRICT_PARENT_ONLY_RULE_DFS : ''}
 
+${parentContext?.siblingQuestions?.length > 0 ? SIBLING_DEDUPLICATION_RULE : ''}
+
 Follow these guidelines:
 1. Question Progression Levels:
    Current Depth: ${depth}/5
@@ -500,6 +517,13 @@ ${traversalMode === 'bfs' ? BFS_RULES : DFS_RULES}
 4. If DFS, continue deeper on the current aspect until fully explored
 5. Provide a suggestedAnswer following the guidelines (keep it concise: 1-2 sentences maximum)
 6. If DFS, reference ONLY the direct parent's question and answer; ignore all other answers.
+${parentContext?.siblingQuestions?.length > 0 ? `
+7. CRITICAL SIBLING DEDUPLICATION: The following sibling questions already exist for the same parent.
+   Your new question MUST explore a DIFFERENT aspect than ALL of these:
+   ${parentContext.siblingQuestions.map((sq: string, idx: number) => `   ${idx + 1}. "${sq}"`).join('\n')}
+   
+   Analyze what aspect each sibling addresses, then choose a COMPLETELY DIFFERENT aspect from the parent's answer.
+   If no unique aspects remain, set "shouldStopBranch": true.` : ''}
 
 Topics already covered (DO NOT repeat these or related topics):
       ${previousQuestions
