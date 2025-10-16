@@ -255,7 +255,8 @@ Design must be a grayscale wireframe, clean and elegant, using progressive discl
         }
       });
     } catch (parseError) {
-      // console.error('Error parsing mockup data:', parseError);
+      console.error('Error parsing mockup data:', parseError);
+      console.error('Raw response that failed to parse:', content);
       return NextResponse.json(
         { error: 'Failed to parse mockup data' },
         { status: 500 }
@@ -263,6 +264,9 @@ Design must be a grayscale wireframe, clean and elegant, using progressive discl
     }
   } catch (error) {
     console.error('Error generating mockup:', error);
+    if (error instanceof Error) {
+      console.error('Error details:', error.message, error.stack);
+    }
     const errorMessage = error instanceof Error ? error.message : 'Failed to generate mockup';
     return NextResponse.json(
       { error: errorMessage },
