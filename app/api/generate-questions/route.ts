@@ -403,7 +403,7 @@ Follow these guidelines:
 
 3. Traversal Rules (${traversalMode}):
 ${traversalMode === 'bfs' ? BFS_RULES : DFS_RULES}
-
+      
       4. Topic Management:
    - BFS: Generate siblings for each aspect first
    - DFS: Explore one aspect deeply before siblings
