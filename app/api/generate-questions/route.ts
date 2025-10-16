@@ -298,8 +298,8 @@ Use this information to:
     }
 
     // Build the systemPrompt for either auto-populate or BFS/DFS question generation
-    const includeCriticalRule = !!parentContext && depth > 1;
-    const topLevelBfsBlock = depth === 1 ? `
+    const includeCriticalRule = !!parentContext;
+    const topLevelBfsBlock = (depth === 1 && traversalMode === 'bfs') ? `
 TOP-LEVEL BFS RULES:
 - Generate a new level-1 question covering a different main aspect.
 - Do NOT reference or quote any previous answers or terms from them.
