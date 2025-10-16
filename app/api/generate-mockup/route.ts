@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     // Check requirements size
     const promptText = `Design Prompt: ${requirementsDoc.prompt}\n\nRequirements:\n${formattedRequirements}`;
     const estimatedTokens = promptText.split(/\s+/).length;
-    if (estimatedTokens > 2000) {
+    if (estimatedTokens > 10000) {
       return NextResponse.json(
         { error: 'Requirements document is too large. Please reduce the number of requirements or split into multiple requests.' },
         { status: 400 }
@@ -236,9 +236,10 @@ Generate a complete React/Tailwind mockup that satisfies ALL these requirements.
       );
     }
   } catch (error) {
-    // console.error('Error generating mockup:', error);
+    console.error('Error generating mockup:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to generate mockup';
     return NextResponse.json(
-      { error: 'Failed to generate mockup' },
+      { error: errorMessage },
       { status: 500 }
     );
   }
