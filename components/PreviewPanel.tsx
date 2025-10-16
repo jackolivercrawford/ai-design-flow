@@ -178,8 +178,14 @@ export default function PreviewPanel({
     try {
       const response = await fetch('/api/generate-mockup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requirementsDoc })
+        headers: { 
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache'  // Prevent caching
+        },
+        body: JSON.stringify({ 
+          requirementsDoc,
+          timestamp: Date.now()  // Cache-busting timestamp
+        })
       });
 
       if (!response.ok) {

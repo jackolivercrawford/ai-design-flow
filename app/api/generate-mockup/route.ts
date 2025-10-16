@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
     const completion = await anthropic.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 25000,
+      temperature: 0.7,  // Add controlled creativity (0.7 = some variation)
       system: `You are an expert UI developer specializing in industrial and control system interfaces. Your task is to generate a complete, production-ready React component mockup based on the provided requirements. You MUST use React with Tailwind CSS and DaisyUI for styling. DaisyUI is already included via CDN in the preview environment.
 
 CRITICAL: YOU MUST USE DAISYUI COMPONENTS AND GRAYSCALE CLASSES INSTEAD OF RAW TAILWIND CLASSES. For example:
@@ -244,7 +245,14 @@ Design must be a grayscale wireframe, clean and elegant, using progressive discl
         mockupData.code = mockupData.code.replace(/\sas\s+\w+/g, '');
       }
 
-      return NextResponse.json(mockupData);
+      // Return with cache-control headers to prevent caching
+      return NextResponse.json(mockupData, {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
     } catch (parseError) {
       // console.error('Error parsing mockup data:', parseError);
       return NextResponse.json(
