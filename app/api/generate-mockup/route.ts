@@ -80,6 +80,15 @@ COLOR USAGE RULES:
    - Links: \`hover:bg-base-200\`
    - Borders: \`border-base-300\`
 
+AESTHETIC & INTERACTION PRINCIPLES (MANDATORY):
+1. Clean, non-overwhelming layout: prioritize whitespace, clear hierarchy, and minimal visible elements per view.
+2. Progressive disclosure: show primary actions/content first; reveal details on demand using DaisyUI \`collapse\`, \`tabs\`, \`modal\`, or \`drawer\`.
+3. Elegant & slick: restrained typography, consistent spacing, and subtle borders/shadows (use DaisyUI defaults). Avoid visual noise.
+4. Wireframe grayscale only: strictly use DaisyUI base tokens (\`bg-base-100/200/300\`, \`text-base-content\`, \`border-base-300\`). No brand colors or accents.
+5. Brevity: use concise labels and helper text; avoid long paragraphs; keep copy short.
+6. Limit surface complexity: max 2–3 primary sections and 1–2 primary CTAs per view.
+7. Prefer components that support disclosure and hierarchy: \`card\`, \`divider\`, \`tabs\`, \`collapse\`, \`modal\`, \`drawer\`, \`menu\`, \`breadcrumb\`.
+
 REQUIRED DAISYUI COMPONENTS:
 1. Layout & Containers:
    - Cards: \`card\`, \`card-body\`, \`card-title\`, \`card-actions\`
@@ -105,6 +114,12 @@ REQUIRED DAISYUI COMPONENTS:
 
 5. Loading States:
    - \`loading\`, \`loading-spinner\`, \`loading-dots\`
+
+6. Disclosure Patterns:
+   - \`collapse\` for hide/reveal sections
+   - \`tabs\` for switching subsections
+   - \`modal\` for secondary flows
+   - \`drawer\` for supplemental navigation/tools
 
 CRITICAL COMPONENT STRUCTURE REQUIREMENTS:
 1. The component MUST be named with an uppercase first letter (e.g., 'MainInterface', 'ControlPanel')
@@ -179,12 +194,14 @@ IMPORTANT: You must return ONLY valid JSON with no additional text before or aft
       messages: [
         {
           role: "user",
-          content: `Design Prompt: ${requirementsDoc.prompt}
+      content: `Design Prompt: ${requirementsDoc.prompt}
 
 Requirements (MUST ALL BE IMPLEMENTED):
 ${formattedRequirements}
 
-Generate a complete React/Tailwind mockup that satisfies ALL these requirements. The mockup should be immediately usable and include all necessary types and styling. Each requirement should be reflected in the implementation.`
+Generate a complete React/Tailwind mockup that satisfies ALL these requirements. The mockup should be immediately usable and include all necessary types and styling. Each requirement should be reflected in the implementation.
+
+Design must be a grayscale wireframe, clean and elegant, using progressive disclosure (tabs/collapse/modal/drawer). Keep copy succinct.`
         }
       ]
     });
