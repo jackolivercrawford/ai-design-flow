@@ -238,6 +238,16 @@ CRITICAL RELEVANCE RULE:
 7. Use the parent's question and answer as anchors to drive the follow-up inquiry.
 `;
 
+// DFS-only: strictly forbid using any non-parent answers when generating a child
+const STRICT_PARENT_ONLY_RULE_DFS = `
+STRICT PARENT-ONLY CONTEXT (DFS):
+1. You may ONLY reference and quote the DIRECT parent's question and answer.
+2. Do NOT reference, quote, or rely on answers from siblings, cousins, nephews, or any other non-parent nodes.
+3. Ignore ALL previous answers except the direct parent's.
+4. You may mention the Level 1 ancestor ONLY for lineage (name/topic), not to quote or reuse its answer.
+5. If deeper exploration would require cross-branch information, set "shouldStopBranch": true and explain the reason in "stopReason".
+`;
+
 export async function POST(request: NextRequest) {
   try {
     const {
@@ -386,6 +396,8 @@ CRITICAL: The generated question MUST:
 // ------------------------------------------------------------
 ${includeCriticalRule ? CRITICAL_RELEVANCE_RULE : ''}
 
+${traversalMode === 'dfs' ? STRICT_PARENT_ONLY_RULE_DFS : ''}
+
 Follow these guidelines:
 1. Question Progression Levels:
    Current Depth: ${depth}/5
@@ -422,11 +434,11 @@ ${traversalMode === 'bfs' ? BFS_RULES : DFS_RULES}
       
       ${topLevelBfsBlock}
       
-      8. Previous Questions Already Asked:
+      8. Previous Questions Already Asked (questions only; answers omitted intentionally):
       ${previousQuestions
         .map(
-          (q: { question: string; answer: string }, index: number) =>
-            `${index + 1}. Q: ${q.question}\n   A: ${q.answer}`
+          (q: { question: string }, index: number) =>
+            `${index + 1}. Q: ${q.question}`
         )
         .join('\n')}
       
@@ -469,8 +481,10 @@ ${traversalMode === 'bfs' ? BFS_RULES : DFS_RULES}
       }`
       : // FOLLOW-UP question user instructions
             `The design prompt is: "${prompt}".
-      Previous Q&A History:
-      ${JSON.stringify(previousQuestions, null, 2)}
+      Previous questions asked so far (questions only; answers intentionally omitted):
+      ${previousQuestions
+        .map((q: { question: string }, index: number) => `${index + 1}. ${q.question}`)
+        .join('\n')}
       
       Current Question: ${
         previousQuestions[previousQuestions.length - 1]?.question || 'Initial question'
@@ -485,6 +499,7 @@ ${traversalMode === 'bfs' ? BFS_RULES : DFS_RULES}
    - Follows the BFS rules
 4. If DFS, continue deeper on the current aspect until fully explored
 5. Provide a suggestedAnswer following the guidelines (keep it concise: 1-2 sentences maximum)
+6. If DFS, reference ONLY the direct parent's question and answer; ignore all other answers.
 
 Topics already covered (DO NOT repeat these or related topics):
       ${previousQuestions
@@ -494,7 +509,8 @@ Topics already covered (DO NOT repeat these or related topics):
       Remember:
 - No second-person pronouns
 - No repeating or rephrasing parent's question
-- BFS covers all aspects at a level; DFS goes deeper on one aspect.`;
+- BFS covers all aspects at a level; DFS goes deeper on one aspect.
+- In DFS, NEVER reference or quote any answers other than the direct parent's.`;
 
     // Call Claude with the system + user prompts
     const completion = await anthropic.messages.create({
@@ -528,7 +544,7 @@ Topics already covered (DO NOT repeat these or related topics):
       });
     }
 
-    // console.log('Raw Claude response:', content);
+    console.log('Raw Claude response:', content);
 
     let parsedResponse: {
       questions: string[];
@@ -576,18 +592,20 @@ Topics already covered (DO NOT repeat these or related topics):
       // console.log('Final formatted response:', parsedResponse);
       return NextResponse.json(parsedResponse);
     } catch (jsonError) {
-      // console.error("Error parsing JSON response:", jsonError);
-      // console.error("Raw content was:", content);
+      console.error("Error parsing JSON response:", jsonError);
+      console.error("Raw content was:", content);
 
       // Attempt to salvage partial data
       let fallbackQuestion = "What are the core features needed for this design?";
       try {
-        const match = content.match(/"questions":\s*\[\s*"([^"]+)"/);
+        // Match questions array, handling escaped quotes within the question string
+        const match = content.match(/"questions":\s*\[\s*"((?:[^"\\]|\\.)*)"/);
         if (match && match[1]) {
-          fallbackQuestion = match[1];
+          // Unescape any escaped quotes in the extracted question
+          fallbackQuestion = match[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
         }
       } catch (extractionError) {
-        // console.error("No fallback question found in partial content");
+        console.error("No fallback question found in partial content", extractionError);
       }
 
       return NextResponse.json({

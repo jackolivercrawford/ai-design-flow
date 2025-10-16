@@ -86,7 +86,7 @@ export default function QnAPage() {
     return depth;
   };
 
-  // Get all answered questions from the tree.
+  // Get all answered questions from the tree (for BFS or full context).
   const getAllAnsweredQuestions = (root: QANode): QuestionHistoryItem[] => {
     const history: QuestionHistoryItem[] = [];
     const traverse = (node: QANode) => {
@@ -101,6 +101,27 @@ export default function QnAPage() {
     };
     traverse(root);
     return history;
+  };
+
+  // Get only the direct ancestor lineage (parent → grandparent → root) for DFS strict parent-only mode.
+  const getAncestorLineage = (node: QANode): QuestionHistoryItem[] => {
+    const lineage: QuestionHistoryItem[] = [];
+    let current: QANode | null = node;
+    
+    while (current) {
+      if (current.question !== `Prompt: ${prompt}`) {
+        lineage.unshift({
+          question: current.question,
+          answer: current.answer,
+          topics: extractTopics(current.question),
+        });
+      }
+      const parent = findParentNode(qaTree, current);
+      if (!parent || parent === current) break;
+      current = parent;
+    }
+    
+    return lineage;
   };
 
   // Find the parent of a given node.
@@ -169,13 +190,14 @@ export default function QnAPage() {
   
             // Otherwise, if there's only one sibling, fetch new siblings
             if (siblings.length === 1) {
-              const parentHistory = getAllAnsweredQuestions(parent);
+              // DFS: Use only parent's ancestor lineage, not entire subtree
+              const parentHistory = getAncestorLineage(parent);
   
               // Pass parent's subtopics for DFS sibling generation
               const parentSubs = parent.answer
                 ? extractSubtopicsFromAnswerText(parent.answer)
                 : [];
-  
+
               const { nodes: generatedSiblings } = await fetchQuestionsForNode(
                 prompt,
                 parent,
@@ -261,13 +283,14 @@ export default function QnAPage() {
         // 4. If no child was generated, or we're at depth 5, try generating siblings
         const parentNode = findParentNode(qaTree, node);
         if (parentNode) {
-          const parentHistory = getAllAnsweredQuestions(parentNode);
+          // DFS: Use only parent's ancestor lineage, not entire subtree
+          const parentHistory = getAncestorLineage(parentNode);
   
           // pass parent's subtopics for sibling generation
           const parentAnswerSubtopics2 = parentNode.answer
             ? extractSubtopicsFromAnswerText(parentNode.answer)
             : [];
-  
+
           const { nodes: newSiblings } = await fetchQuestionsForNode(
             prompt,
             parentNode,
