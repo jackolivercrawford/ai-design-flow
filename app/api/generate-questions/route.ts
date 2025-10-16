@@ -334,6 +334,7 @@ Guidelines for suggesting answers:
 8. If multiple knowledge base sources agree, use that information with high confidence.
 9. If sources conflict, use the most relevant or recent information.
 10. If no relevant information exists, provide a reasonable suggestion based on UX best practices.
+11. Keep answers CONCISE - aim for 1-2 sentences maximum. Be brief and direct.
 
 Return your response in this JSON format:
 {
@@ -483,7 +484,7 @@ ${traversalMode === 'bfs' ? BFS_RULES : DFS_RULES}
    - Covers a new topic not yet discussed
    - Follows the BFS rules
 4. If DFS, continue deeper on the current aspect until fully explored
-5. Provide a suggestedAnswer following the guidelines
+5. Provide a suggestedAnswer following the guidelines (keep it concise: 1-2 sentences maximum)
 
 Topics already covered (DO NOT repeat these or related topics):
       ${previousQuestions
