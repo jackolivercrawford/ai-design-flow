@@ -188,10 +188,10 @@ DFS Guidelines:
       
           Topic Lineage Rules:
           1. Each question MUST:
-             * Directly reference its parent topic.
-             * Use exact terminology from parent's answer.
-             * Maintain clear connection to Level 1 ancestor.
-             * Progress logically deeper into the topic.
+             * Directly reference its parent topic ONLY.
+             * Use exact terminology from parent's answer ONLY.
+             * Build solely upon the immediate parent's answer.
+             * Progress logically deeper into the parent's specific answer.
       
           2. Moving Between Siblings:
              * NEVER move to a sibling until current branch is complete.
@@ -242,10 +242,11 @@ CRITICAL RELEVANCE RULE:
 const STRICT_PARENT_ONLY_RULE_DFS = `
 STRICT PARENT-ONLY CONTEXT (DFS):
 1. You may ONLY reference and quote the DIRECT parent's question and answer.
-2. Do NOT reference, quote, or rely on answers from siblings, cousins, nephews, or any other non-parent nodes.
-3. Ignore ALL previous answers except the direct parent's.
-4. You may mention the Level 1 ancestor ONLY for lineage (name/topic), not to quote or reuse its answer.
-5. If deeper exploration would require cross-branch information, set "shouldStopBranch": true and explain the reason in "stopReason".
+2. Do NOT reference, quote, or rely on ANY other questions or answers (grandparents, siblings, cousins, nephews, etc.).
+3. Do NOT build upon or reference concepts from ancestor questions - only the immediate parent.
+4. The new question must stem DIRECTLY and SOLELY from the parent's answer, not from any broader context.
+5. If you see other questions in the history, ignore them - they are only for deduplication, not for context.
+6. If deeper exploration would require information from non-parent nodes, set "shouldStopBranch": true.
 `;
 
 // Sibling deduplication rule (applies to both BFS and DFS)
@@ -534,7 +535,9 @@ Topics already covered (DO NOT repeat these or related topics):
 - No second-person pronouns
 - No repeating or rephrasing parent's question
 - BFS covers all aspects at a level; DFS goes deeper on one aspect.
-- In DFS, NEVER reference or quote any answers other than the direct parent's.`;
+- In DFS, NEVER reference or quote any answers other than the direct parent's.
+- In DFS, your question must stem SOLELY from the parent's answer - ignore grandparents and ancestors.
+- The previousQuestions list is ONLY for avoiding duplicates - do not use it for context or inspiration.`;
 
     // Call Claude with the system + user prompts
     const completion = await anthropic.messages.create({
