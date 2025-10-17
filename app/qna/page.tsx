@@ -53,6 +53,8 @@ export default function QnAPage() {
   const [sessionMetadata, setSessionMetadata] = useState<SessionMetadata | null>(null);
   const [isLeavingPage, setIsLeavingPage] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isSimplifying, setIsSimplifying] = useState(false);
+  const [simplifyStatus, setSimplifyStatus] = useState<string | null>(null);
 
   // -------------------- Helpers --------------------
 
@@ -1129,6 +1131,21 @@ export default function QnAPage() {
     }
   };
 
+  // -------------------- Keyboard Shortcut: Option+Cmd+G to Simplify --------------------
+  
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check for Option (Alt) + Command (Meta) + G
+      if (event.altKey && event.metaKey && event.key.toLowerCase() === 'g') {
+        event.preventDefault();
+        handleSimplifyRequirements();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [requirementsDoc, isSimplifying]);
+
   // -------------------- On Mount: Load or Start a New Session --------------------
 
   useEffect(() => {
@@ -1398,6 +1415,39 @@ export default function QnAPage() {
     }
   };
 
+  const handleSimplifyRequirements = async () => {
+    if (!requirementsDoc || isSimplifying) return;
+
+    setIsSimplifying(true);
+    setSimplifyStatus('Simplifying requirements...');
+
+    try {
+      const response = await fetch('/api/simplify-requirements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requirementsDoc })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to simplify requirements');
+      }
+
+      const simplifiedDoc = await response.json();
+      setRequirementsDoc(simplifiedDoc);
+      saveProgress();
+      setSimplifyStatus('✓ Requirements simplified successfully!');
+      
+      // Auto-hide success message after 3 seconds
+      setTimeout(() => setSimplifyStatus(null), 3000);
+    } catch (error) {
+      console.error('Error simplifying requirements:', error);
+      setSimplifyStatus('✗ Failed to simplify requirements');
+      setTimeout(() => setSimplifyStatus(null), 3000);
+    } finally {
+      setIsSimplifying(false);
+    }
+  };
+
   // -------------------- Extract Aspects from Answer --------------------
 
   const extractAspectsFromAnswer = (answer: string): string[] => {
@@ -1512,7 +1562,43 @@ export default function QnAPage() {
         suggestedAnswer={suggestedAnswer}
         settings={settings!}
         onVersionRestore={handleVersionRestore}
+        onSimplify={handleSimplifyRequirements}
+        isSimplifying={isSimplifying}
       />
+
+      {/* Simplify Status Notification */}
+      {simplifyStatus && (
+        <div className="fixed bottom-8 right-8 z-50 animate-fade-in">
+          <div className={`px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 ${
+            simplifyStatus.includes('✓') 
+              ? 'bg-green-500 text-white' 
+              : simplifyStatus.includes('✗')
+              ? 'bg-red-500 text-white'
+              : 'bg-blue-500 text-white'
+          }`}>
+            {isSimplifying && (
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+            )}
+            <span className="font-medium">{simplifyStatus}</span>
+          </div>
+        </div>
+      )}
+
+      <style jsx>{`
+        @keyframes fade-in {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.3s ease-out;
+        }
+      `}</style>
     </div>
   );
 }

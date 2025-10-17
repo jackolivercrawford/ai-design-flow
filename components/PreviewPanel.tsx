@@ -42,6 +42,8 @@ interface PreviewPanelProps {
   suggestedAnswer: { text: string; confidence: 'high' | 'medium' | 'low'; sourceReferences: number[]; } | null;
   settings: QASettings;
   onVersionRestore?: (version: MockupVersion) => void;
+  onSimplify?: () => void;
+  isSimplifying?: boolean;
 }
 
 // Helper function to ensure complete color scheme
@@ -109,7 +111,9 @@ export default function PreviewPanel({
   currentNode,
   suggestedAnswer,
   settings,
-  onVersionRestore
+  onVersionRestore,
+  onSimplify,
+  isSimplifying
 }: PreviewPanelProps) {
   const [activeTab, setActiveTab] = useState<'mockup' | 'specs' | 'requirements'>('mockup');
   const [mockupData, setMockupData] = useState<MockupData | null>(null);
@@ -145,6 +149,22 @@ export default function PreviewPanel({
     }
   }, []);
 
+  // Keyboard shortcut: Option+Cmd+G to simplify
+  useEffect(() => {
+    if (!isOpen || !onSimplify) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check for Option (Alt) + Command (Meta) + G
+      if (event.altKey && event.metaKey && event.key.toLowerCase() === 'g') {
+        event.preventDefault();
+        onSimplify();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onSimplify]);
+
   // Store the current requirements for comparison
   useEffect(() => {
     prevRequirementsRef.current = requirementsDoc;
@@ -153,8 +173,9 @@ export default function PreviewPanel({
   const generateMockup = async (saveCurrentVersion: boolean = false) => {
     setIsMockupLoading(true);
     setError(null);
-    // Clear current mockup data immediately when regenerating
+    // Clear current mockup data and active version to force re-render
     setMockupData(null);
+    setActiveVersion(null);
 
     // If requested, save current version before generating new one
     if (saveCurrentVersion && mockupData) {
@@ -200,13 +221,9 @@ export default function PreviewPanel({
         throw new Error('Invalid mockup data received');
       }
 
-      setMockupData(data);
-      // Save current mockup state
-      localStorage.setItem('currentMockup', JSON.stringify(data));
-
-      // Create new version
+      // Create new version with unique ID
       const newVersion: MockupVersion = {
-        id: uuidv4(),
+        id: `${uuidv4()}-${Date.now()}`, // Extra uniqueness to force React remount
         timestamp: new Date().toISOString(),
         qaTree: JSON.parse(JSON.stringify(qaTree)),
         requirementsDoc: JSON.parse(JSON.stringify(requirementsDoc)),
@@ -222,8 +239,10 @@ export default function PreviewPanel({
       setVersions(updatedVersions);
       localStorage.setItem('mockupVersions', JSON.stringify(updatedVersions));
 
-      // Set as active version only
+      // Set mockup data and active version
+      setMockupData(data);
       setActiveVersion(newVersion);
+      localStorage.setItem('currentMockup', JSON.stringify(data));
     } catch (error) {
       // console.error('Error generating mockup:', error);
       setError(error instanceof Error ? error.message : 'Failed to generate mockup');
@@ -502,6 +521,7 @@ export default function PreviewPanel({
                   {activeTab === 'mockup' && (
                     <div className="h-full">
                       <LivePreview 
+                        key={(selectedVersion || activeVersion)!.id}
                         code={(selectedVersion || activeVersion)!.mockupData.code} 
                         colorScheme={(selectedVersion || activeVersion)!.mockupData.colorScheme} 
                       />
