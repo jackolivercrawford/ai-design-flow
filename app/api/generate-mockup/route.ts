@@ -119,8 +119,8 @@ REQUIRED DAISYUI COMPONENTS:
 6. Disclosure Patterns:
    - \`collapse\` for hide/reveal sections
    - \`tabs\` for switching subsections
-   - \`modal\` for secondary flows
-   - \`drawer\` for supplemental navigation/tools
+   - \`modal\` for secondary flows (CRITICAL: modals MUST be CLOSED by default, never render with open state)
+   - \`drawer\` for supplemental navigation/tools (CRITICAL: drawers MUST be CLOSED by default, never render with open state)
 
 CRITICAL COMPONENT STRUCTURE REQUIREMENTS:
 1. The component MUST be named with an uppercase first letter (e.g., 'MainInterface', 'ControlPanel')
@@ -147,6 +147,7 @@ Guidelines:
 8. Include hover states and proper spacing.
 9. Keep the design monochromatic using only base classes.
 10. Include TypeScript types as comments only (avoid inline type assertions).
+11. CRITICAL: All modals, drawers, and overlays MUST be CLOSED/HIDDEN by default. Never render them in an open/visible state.
 
 CRITICAL REQUIREMENTS FOR DAISYUI USAGE:
 1. ALL buttons MUST use DaisyUI button classes:

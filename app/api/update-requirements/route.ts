@@ -155,7 +155,15 @@ CRITICAL INSTRUCTIONS:
 Latest Q&A: ${qaContext}
 Knowledge Base: ${knowledgeBaseContext}
 
-Update the requirements document with any new information from the Q&A and knowledge base, ensuring all requirements are expressed in terms of their UI/UX implications. Return ONLY the updated document as a JSON object.`,
+CRITICAL INSTRUCTIONS:
+1. ONLY add or update requirements that are EXPLICITLY mentioned in the latest Q&A answer.
+2. DO NOT infer, extrapolate, or add "obvious" requirements that weren't directly stated.
+3. DO NOT add requirements solely from the knowledge base unless they appear in the Q&A answer.
+4. If the latest Q&A answer is "No answer", make NO changes to the document.
+5. Transform the requirements into UI/UX implications, but ONLY for explicitly stated requirements.
+6. If no new information is present, return the existing document unchanged.
+
+Update the requirements document ONLY with explicitly stated information from the Q&A answer. Return ONLY the updated document as a JSON object.`,
         },
       ]
     });
