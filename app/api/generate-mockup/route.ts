@@ -90,6 +90,24 @@ AESTHETIC & INTERACTION PRINCIPLES (MANDATORY):
 6. Limit surface complexity: max 2–3 primary sections and 1–2 primary CTAs per view.
 7. Prefer components that support disclosure and hierarchy: \`card\`, \`divider\`, \`tabs\`, \`collapse\`, \`modal\`, \`drawer\`, \`menu\`, \`breadcrumb\`.
 
+UX BEST PRACTICES (CRITICAL - MUST FOLLOW):
+1. **Visual Hierarchy**: Use size, weight, and spacing to establish clear importance. Most important elements should be largest/boldest.
+2. **Consistency**: Maintain consistent spacing (use multiples of 4px), button styles, and interaction patterns throughout.
+3. **Feedback**: All interactive elements must provide visual feedback (hover states, loading states, success/error messages).
+4. **Accessibility**:
+   - Proper heading hierarchy (h1 → h2 → h3)
+   - Sufficient contrast for text readability
+   - Clear focus states for keyboard navigation
+   - Descriptive labels for all inputs
+5. **Error Prevention**: Use constraints (dropdowns vs free text), clear labels, and helper text to prevent user errors.
+6. **Recognition over Recall**: Make options visible rather than requiring users to remember them. Use icons with labels.
+7. **Responsive Design**: Ensure layout works on different screen sizes using Tailwind's responsive utilities.
+8. **Cognitive Load**: Group related items, use clear categorization, limit choices per screen (7±2 items).
+9. **User Control**: Provide clear "back" or "cancel" options. Allow users to undo actions when possible.
+10. **Scannability**: Use headings, bullet points, and whitespace to make content scannable. Left-align text for easy reading.
+11. **Call-to-Action Clarity**: Primary actions should be obvious and use action verbs ("Save Changes", not "OK").
+12. **Progressive Enhancement**: Start with essential features visible, hide advanced features behind secondary actions.
+
 REQUIRED DAISYUI COMPONENTS:
 1. Layout & Containers:
    - Cards: \`card\`, \`card-body\`, \`card-title\`, \`card-actions\`
@@ -203,7 +221,22 @@ ${formattedRequirements}
 
 Generate a complete React/Tailwind mockup that satisfies ALL these requirements. The mockup should be immediately usable and include all necessary types and styling. Each requirement should be reflected in the implementation.
 
-Design must be a grayscale wireframe, clean and elegant, using progressive disclosure (tabs/collapse/modal/drawer). Keep copy succinct.`
+CRITICAL DESIGN REQUIREMENTS:
+1. Design must be a grayscale wireframe, clean and elegant
+2. Use progressive disclosure (tabs/collapse/modal/drawer)
+3. Keep copy succinct
+4. Follow ALL UX best practices outlined above:
+   - Clear visual hierarchy with proper heading structure
+   - Consistent spacing and button styles
+   - Visual feedback for all interactions (hover, loading, success/error states)
+   - Accessible with proper contrast and focus states
+   - Error prevention through constraints and clear labels
+   - Recognition over recall (visible options)
+   - Low cognitive load (grouped items, limited choices)
+   - Clear CTAs with action verbs
+   - Scannable content with whitespace and structure
+
+The mockup should demonstrate professional UX quality that would pass a design review.`
         }
       ]
     });

@@ -1138,12 +1138,16 @@ export default function QnAPage() {
       // Check for Option (Alt) + Command (Meta) + G
       if (event.altKey && event.metaKey && event.key.toLowerCase() === 'g') {
         event.preventDefault();
-        handleSimplifyRequirements();
+        // Only trigger if we have requirements and aren't already simplifying
+        if (requirementsDoc && !isSimplifying) {
+          handleSimplifyRequirements();
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requirementsDoc, isSimplifying]);
 
   // -------------------- On Mount: Load or Start a New Session --------------------
@@ -1416,7 +1420,10 @@ export default function QnAPage() {
   };
 
   const handleSimplifyRequirements = async () => {
-    if (!requirementsDoc || isSimplifying) return;
+    if (!requirementsDoc || isSimplifying) {
+      console.log('Cannot simplify: requirementsDoc is null or already simplifying');
+      return;
+    }
 
     setIsSimplifying(true);
     setSimplifyStatus('Simplifying requirements...');
@@ -1429,10 +1436,17 @@ export default function QnAPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to simplify requirements');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || 'Failed to simplify requirements');
       }
 
       const simplifiedDoc = await response.json();
+      
+      // Validate response
+      if (!simplifiedDoc || !simplifiedDoc.categories) {
+        throw new Error('Invalid response from server');
+      }
+      
       setRequirementsDoc(simplifiedDoc);
       saveProgress();
       setSimplifyStatus('✓ Requirements simplified successfully!');
@@ -1441,8 +1455,9 @@ export default function QnAPage() {
       setTimeout(() => setSimplifyStatus(null), 3000);
     } catch (error) {
       console.error('Error simplifying requirements:', error);
-      setSimplifyStatus('✗ Failed to simplify requirements');
-      setTimeout(() => setSimplifyStatus(null), 3000);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to simplify requirements';
+      setSimplifyStatus(`✗ ${errorMessage}`);
+      setTimeout(() => setSimplifyStatus(null), 5000);
     } finally {
       setIsSimplifying(false);
     }
