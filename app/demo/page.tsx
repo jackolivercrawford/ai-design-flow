@@ -44,8 +44,7 @@ export default function Demo() {
           </h1>
           <p className="mt-3 max-w-2xl text-gray-600">
             A daily planning concept, from the first question to a working
-            prototype. This example was prepared for exploration. It is not live
-            generation or a recovered historical session.
+            prototype.
           </p>
         </header>
         <section className="mb-7 rounded-xl border border-emerald-100 bg-emerald-50 p-5">
@@ -196,8 +195,8 @@ export default function Demo() {
                 </div>
               </div>
               <p className="mb-4 text-sm text-gray-500">
-                {version.mockupData.features.join(" · ")}. Changes stay in this
-                preview. HTML previews use public CDN resources.
+                {version.mockupData.features.join(" · ")}. Downloaded previews
+                need an internet connection.
               </p>
               {tab === "Prototype" ? (
                 <div className="h-[780px] overflow-hidden rounded-xl border border-gray-200 bg-white">
@@ -212,8 +211,7 @@ export default function Demo() {
           )}
         </section>
         <p className="py-8 text-sm text-gray-500">
-          Sample interactions run in memory. Exploring this example does not
-          read or change your saved sessions.
+          Exploring this example won’t change your saved sessions.
         </p>
       </div>
     </main>
