@@ -1,6 +1,7 @@
 // /app/api/generate-questions/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import { requireAccess } from '@/lib/access';
+import { createProvider, MODEL, generationError } from '@/lib/provider';
 import { KnowledgeBaseSource } from '@/types/settings';
 
 // A helper to extract subtopics from a parent's answer (basic version).
@@ -25,9 +26,8 @@ function extractSubtopicsFromAnswer(answer: string): string[] {
   return subtopics;
 }
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 /**
  * BFS_RULES and DFS_RULES are appended conditionally inside the system prompt.
@@ -265,6 +265,8 @@ CRITICAL SIBLING DEDUPLICATION (MANDATORY):
 `;
 
 export async function POST(request: NextRequest) {
+  const denied = requireAccess(request);
+  if (denied) return denied;
   try {
     const {
       prompt,
@@ -276,6 +278,9 @@ export async function POST(request: NextRequest) {
       depth,
       parentContext,
     } = await request.json();
+    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 10000 || !Array.isArray(previousQuestions)) {
+      return NextResponse.json({ error: 'Provide a design prompt under 10,000 characters and a question history.' }, { status: 400 });
+    }
     // console.log('API received knowledge base:', knowledgeBase);
 
     // Calculate current depth by counting parents in previousQuestions
@@ -540,8 +545,8 @@ Topics already covered (DO NOT repeat these or related topics):
 - The previousQuestions list is ONLY for avoiding duplicates - do not use it for context or inspiration.`;
 
     // Call Claude with the system + user prompts
-    const completion = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+    const completion = await createProvider().messages.create({
+      model: MODEL,
       max_tokens: 4000,
       temperature: 0.3,
       system: systemPrompt,
@@ -650,6 +655,6 @@ Topics already covered (DO NOT repeat these or related topics):
     }
   } catch (error) {
     // console.error('Error in route:', error);
-    return NextResponse.json({ error: 'Failed to generate questions' }, { status: 500 });
+    return generationError(error);
   }
 }

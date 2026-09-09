@@ -6,29 +6,35 @@
     "dev": "next dev -p 5000",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint app components lib tests",
+    "typecheck": "tsc --noEmit",
+    "test": "NODE_OPTIONS=--conditions=react-server tsx --test tests/*.test.ts",
+    "test:browser": "playwright test"
+  },
+  "overrides": {
+    "next": { "postcss": "$postcss" }
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.0",
-    "@langchain/community": "^0.3.29",
-    "@langchain/openai": "^0.4.2",
     "daisyui": "^4.12.23",
-    "langchain": "^0.3.15",
-    "next": "^15.1.9",
+    "next": "^15.5.25",
     "pdf-parse": "^1.1.1",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "uuid": "^11.0.5"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "server-only": "^0.0.1",
+    "uuid": "^11.1.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.1.6",
-    "postcss": "^8",
+    "eslint-config-next": "^15.5.25",
+    "postcss": "^8.5.28",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.23.13",
     "typescript": "^5"
   }
 }

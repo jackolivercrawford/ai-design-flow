@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import { requireAccess } from '@/lib/access';
+import { createProvider, MODEL, generationError } from '@/lib/provider';
 import { RequirementsDocument, RequirementCategory } from '@/types';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
+  const denied = requireAccess(request);
+  if (denied) return denied;
   try {
     const { requirementsDoc } = await request.json();
     
@@ -37,8 +39,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const completion = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+    const completion = await createProvider().messages.create({
+      model: MODEL,
       max_tokens: 25000,
       temperature: 0.7,  // Add controlled creativity (0.7 = some variation)
       system: `You are an expert UI developer specializing in industrial and control system interfaces. Your task is to generate a complete, production-ready React component mockup based on the provided requirements. You MUST use React with Tailwind CSS and DaisyUI for styling. DaisyUI is already included via CDN in the preview environment.
@@ -296,14 +298,6 @@ The mockup should demonstrate professional UX quality that would pass a design r
       );
     }
   } catch (error) {
-    console.error('Error generating mockup:', error);
-    if (error instanceof Error) {
-      console.error('Error details:', error.message, error.stack);
-    }
-    const errorMessage = error instanceof Error ? error.message : 'Failed to generate mockup';
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    );
+    return generationError(error);
   }
 }

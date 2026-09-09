@@ -1,7 +1,9 @@
 // components/PromptInput.tsx
 import React, { useState, ChangeEvent } from 'react';
+import { apiFetch } from '@/lib/api-client';
 import { QASettings, KnowledgeBaseSource } from '@/types/settings';
 import { v4 as uuidv4 } from 'uuid';
+import { fileError, textError } from '@/lib/upload';
 
 interface PromptInputProps {
   onSubmit: (prompt: string, settings: QASettings) => void;
@@ -16,6 +18,7 @@ const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
   });
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [pastedContent, setPastedContent] = useState('');
+  const [uploadError, setUploadError] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,6 +33,9 @@ const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
 
   const processKnowledgeBase = async (type: 'file' | 'text', data: File | string, name: string) => {
     try {
+      const invalid = type === 'file' ? fileError(data as File) : textError(data as string);
+      if (invalid) throw new Error(invalid);
+      setUploadError('');
       setIsProcessingFile(true);
       const formData = new FormData();
       formData.append('type', type);
@@ -40,7 +46,7 @@ const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
         formData.append('content', data as string);
       }
 
-      const response = await fetch('/api/process-knowledge-base', {
+      const response = await apiFetch('/api/process-knowledge-base', {
         method: 'POST',
         body: formData,
       });
@@ -65,7 +71,7 @@ const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
       }));
     } catch (error) {
       // console.error('Error processing knowledge base:', error);
-      // You might want to show an error message to the user here
+      setUploadError(error instanceof Error && error.message !== 'ACCESS_REQUIRED' ? error.message : 'Unlock live generation to process this document.');
     } finally {
       setIsProcessingFile(false);
     }
@@ -153,7 +159,7 @@ const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
                 <input
                   type="file"
                   className="w-full text-gray-900 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                  accept=".pdf,.doc,.docx,.txt"
+                  accept=".pdf,.txt"
                   onChange={(e: ChangeEvent<HTMLInputElement>) => {
                     const file = e.target.files?.[0];
                     if (file) {
@@ -163,7 +169,7 @@ const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
                   disabled={isProcessingFile}
                 />
                 <p className="text-xs text-gray-500">
-                  Supported formats: PDF, DOC, DOCX, TXT
+                  PDF or TXT, up to 4 MB. Extracted text must be under 100,000 characters.
                 </p>
               </div>
 
@@ -185,6 +191,7 @@ const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
                 </button>
               </div>
 
+              {uploadError && <p role="alert" className="text-sm text-red-700">{uploadError}</p>}
               {/* Processing Indicator */}
               {isProcessingFile && (
                 <div className="flex items-center space-x-2 text-sm text-gray-600">
@@ -242,6 +249,7 @@ const PromptInput: React.FC<PromptInputProps> = ({ onSubmit }) => {
         </label>
         <textarea
           id="prompt"
+          maxLength={10000}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder="Design the interface for a 1000-floor elevator"

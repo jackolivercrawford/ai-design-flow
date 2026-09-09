@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { requireAccess } from '@/lib/access';
+import { createProvider, MODEL, generationError } from '@/lib/provider';
 import { RequirementsDocument, QANode, RequirementCategory } from "@/types";
 import { KnowledgeBaseSource } from "@/types/settings";
 import { v4 as uuidv4 } from "uuid";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 function findNodeById(root: QANode | null, id: string): QANode | null {
   if (!root) return null;
@@ -19,6 +19,8 @@ function findNodeById(root: QANode | null, id: string): QANode | null {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = requireAccess(request);
+  if (denied) return denied;
   try {
     const body = await request.json();
     // console.log("Received update request:", body);
@@ -69,8 +71,8 @@ export async function POST(request: NextRequest) {
     //   knowledgeBaseContext: knowledgeBaseContext.substring(0, 100) + '...'
     // });
 
-    const completion = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+    const completion = await createProvider().messages.create({
+      model: MODEL,
       max_tokens: 16000,
       temperature: 0.3,
       system: `You are a UI/UX-focused requirements document updater. Your task is to update a requirements document based on Q&A session information and knowledge base data, translating all requirements into their UI/UX implications.
@@ -429,12 +431,6 @@ Update the requirements document ONLY with explicitly stated information from th
     }
   } catch (error) {
     // console.error("Error updating requirements:", error);
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Unknown error occurred",
-      },
-      { status: 500 },
-    );
+    return generationError(error);
   }
 }

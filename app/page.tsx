@@ -1,118 +1,74 @@
-// app/page.tsx
-"use client";
+import Link from "next/link";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import PromptInput from "@/components/PromptInput";
-import { QASettings } from "@/types/settings";
-
-interface SavedProgress {
-  qaTree: any;
-  currentNodeId: string | null;
-  questionCount: number;
-  prompt: string;
-  settings: QASettings;
-}
-
-export default function PromptPage() {
-  const router = useRouter();
-  const [savedSession, setSavedSession] = useState<SavedProgress | null>(null);
-
-  useEffect(() => {
-    const savedProgress = localStorage.getItem("qaProgress");
-    if (savedProgress) {
-      try {
-        const progress = JSON.parse(savedProgress);
-        setSavedSession(progress);
-      } catch (error) {
-        console.error("Error loading saved session:", error);
-      }
-    }
-  }, []);
-
-  const handlePromptSubmit = (prompt: string, settings: QASettings) => {
-    console.log("User prompt:", prompt);
-    console.log("Settings:", settings);
-
-    // Clear any existing progress and versions
-    localStorage.removeItem("qaProgress");
-    localStorage.removeItem("mockupVersions");
-    localStorage.removeItem("currentMockup");
-
-    // Save new prompt and settings
-    localStorage.setItem("designPrompt", prompt);
-    localStorage.setItem("qaSettings", JSON.stringify(settings));
-    router.push("/qna");
-  };
-
-  const handleContinueSession = () => {
-    router.push("/qna");
-  };
-
+export default function Home() {
   return (
-    <div className="min-h-screen flex flex-col justify-center items-center bg-gray-50 px-4">
-      {/* Header */}
-      <header className="mb-8 text-center relative">
-        <h1 className="text-5xl font-bold bg-gradient-to-r from-emerald-600 to-emerald-400 bg-clip-text text-transparent drop-shadow-sm relative">
-          Proto
-          <span className="bg-gradient-to-r from-emerald-500 to-emerald-300 bg-clip-text text-transparent">
-            synthetic
-          </span>
-          <div className="absolute -top-4 -right-4 w-8 h-8 border-2 border-emerald-200 rounded-full opacity-50"></div>
-          <div className="absolute -bottom-2 -left-4 w-6 h-6 border-2 border-emerald-300 rounded-full opacity-40"></div>
-        </h1>
-        <p className="mt-6 text-lg text-gray-600 font-light tracking-wide">
-          Enter your design prompt to kick off your interactive design journey.
+    <main className="flex min-h-screen items-center justify-center bg-gray-50 px-6 py-16 text-gray-900">
+      <div className="w-full max-w-3xl">
+        <p className="mb-10 text-xl font-bold tracking-tight text-emerald-700">
+          Protosynthetic
         </p>
-      </header>
-
-      {/* Saved Session */}
-      {savedSession && (
-        <div className="w-full max-w-2xl mb-8">
-          <div className="bg-white rounded-lg shadow-lg p-6 border border-gray-200">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">
-              Continue Previous Session
-            </h2>
-            <div className="space-y-2 mb-4">
-              <p className="text-gray-700">
-                <span className="font-medium">Prompt:</span>{" "}
-                {savedSession.prompt}
-              </p>
-              <p className="text-gray-700">
-                <span className="font-medium">Progress:</span>{" "}
-                {savedSession.questionCount} questions answered
-              </p>
-              <p className="text-gray-700">
-                <span className="font-medium">Mode:</span>{" "}
-                {savedSession.settings.traversalMode === "dfs"
-                  ? "Depth-First"
-                  : "Breadth-First"}
+        <p className="text-sm font-semibold uppercase tracking-widest text-emerald-700">
+          From questions to a working idea
+        </p>
+        <h1 className="mt-5 max-w-2xl text-4xl font-semibold leading-tight tracking-tight sm:text-6xl">
+          Make the thinking behind a prototype visible.
+        </h1>
+        <p className="mt-6 max-w-xl text-lg leading-relaxed text-gray-600">
+          Follow one idea from a design prompt through questions, clear
+          requirements, and two interactive prototype versions.
+        </p>
+        <div className="mt-9 flex flex-wrap gap-4">
+          <Link
+            href="/demo"
+            className="rounded-xl bg-emerald-700 px-6 py-4 font-medium text-white hover:bg-emerald-800"
+          >
+            Explore an example
+          </Link>
+          <Link
+            href="/create"
+            className="rounded-xl border border-gray-300 bg-white px-6 py-4 font-medium hover:border-emerald-600"
+          >
+            Create your own
+          </Link>
+        </div>
+        <p className="mt-4 text-sm text-gray-500">
+          The prepared example is open to everyone. Live AI generation requires
+          an access code.
+        </p>
+        <div className="mt-14 grid gap-6 border-t border-gray-200 pt-8 sm:grid-cols-3">
+          {[
+            [
+              "01",
+              "Ask better questions",
+              "Explore the choices that shape an interface.",
+            ],
+            [
+              "02",
+              "Connect the requirements",
+              "See how each answer becomes a design decision.",
+            ],
+            [
+              "03",
+              "Try the prototype",
+              "Compare versions and take the code with you.",
+            ],
+          ].map(([number, title, detail]) => (
+            <div key={number}>
+              <p className="text-sm font-medium text-emerald-700">{number}</p>
+              <h2 className="mt-2 font-semibold">{title}</h2>
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                {detail}
               </p>
             </div>
-            <div className="flex gap-4">
-              <button
-                onClick={handleContinueSession}
-                className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
-              >
-                Continue Session
-              </button>
-              <button
-                onClick={() => setSavedSession(null)}
-                className="flex-1 bg-gray-100 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-200 transition-colors font-medium"
-              >
-                Start New Session
-              </button>
-            </div>
-          </div>
+          ))}
         </div>
-      )}
-
-      {/* Prompt Input */}
-      {!savedSession && (
-        <div className="w-full max-w-2xl">
-          <PromptInput onSubmit={handlePromptSubmit} />
-        </div>
-      )}
-    </div>
+        <Link
+          href="/qna"
+          className="mt-8 inline-block text-sm text-emerald-700 underline"
+        >
+          Continue previous session
+        </Link>
+      </div>
+    </main>
   );
 }

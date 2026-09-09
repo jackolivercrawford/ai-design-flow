@@ -1,3 +1,4 @@
+import { apiFetch } from '@/lib/api-client';
 import { RequirementsDocument, MockupVersion, QANode } from '@/types';
 import { QASettings } from '@/types/settings';
 import { useState, useEffect, useRef } from 'react';
@@ -197,7 +198,7 @@ export default function PreviewPanel({
     }
 
     try {
-      const response = await fetch('/api/generate-mockup', {
+      const response = await apiFetch('/api/generate-mockup', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -678,4 +679,4 @@ export default function PreviewPanel({
       </div>
     </div>
   );
-} 
+}

@@ -1,132 +1,83 @@
-import { NextRequest } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
-import pdfParse from 'pdf-parse';
+import { NextRequest, NextResponse } from "next/server";
+import pdfParse from "pdf-parse";
+import { requireAccess } from "@/lib/access";
+import { createProvider, MODEL, generationError } from "@/lib/provider";
+import { fileError, textError, MAX_FILE_BYTES } from "@/lib/upload";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
-async function extractTextFromPDF(buffer: Buffer): Promise<string> {
-  try {
-    const data = await pdfParse(buffer);
-    return data.text;
-  } catch (error) {
-    // console.error('Error extracting text from PDF:', error);
-    throw new Error('Failed to extract text from PDF');
-  }
-}
-
-async function processContent(content: string) {
-  try {
-    // console.log('Starting content processing...');
-    const completion = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4000,
-      system: `You are a knowledge base processor. Extract key information from the provided document and return it as a JSON object. Focus on:
-1. Requirements and constraints
-2. Technical specifications
-3. Design guidelines
-4. User preferences or patterns
-5. Industry standards or best practices
-
-IMPORTANT: You must return ONLY valid JSON with no additional text before or after the JSON object. Return your response in this exact JSON format:
-{
-  "requirements": [],
-  "technicalSpecifications": [],
-  "designGuidelines": [],
-  "userPreferences": [],
-  "industryStandards": []
-}`,
-      messages: [
-        {
-          role: "user",
-          content
-        }
-      ]
-    });
-
-    // console.log('Claude response received');
-    const responseContent = completion.content[0].type === 'text' ? completion.content[0].text : null;
-    if (!responseContent) {
-      // console.error('Empty response content from Claude');
-      throw new Error('Empty response from Claude');
-    }
-
-    try {
-      const parsedContent = JSON.parse(responseContent);
-      // console.log('Successfully parsed Claude response');
-      return parsedContent;
-    } catch (parseError) {
-      // console.error('Error parsing Claude response:', parseError, '\nResponse content:', responseContent);
-      throw new Error('Failed to parse Claude response');
-    }
-  } catch (error) {
-    // console.error('Error in processContent:', error);
-    if (error instanceof Error) {
-      throw new Error(`Failed to process content: ${error.message}`);
-    }
-    throw new Error('Failed to process content: Unknown error');
-  }
-}
+export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
+  const denied = requireAccess(request);
+  if (denied) return denied;
   try {
-    const formData = await request.formData();
-    const sourceType = formData.get('type');
-    const file = formData.get('file');
-    const textContent = formData.get('content');
-
-    if (!sourceType) {
-      return new Response(JSON.stringify({ error: 'Source type is required' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
+    // Permit multipart headers while bounding the file itself separately.
+    if (
+      Number(request.headers.get("content-length")) >
+      MAX_FILE_BYTES + 64 * 1024
+    )
+      return NextResponse.json(
+        { error: "Files must be 4 MB or smaller." },
+        { status: 413 },
+      );
+    const form = await request.formData();
     let content: string;
-
-    if (sourceType === 'file' && file) {
-      // Check if the file has arrayBuffer method (indicating it's a File or Blob)
-      const fileObject = file as { arrayBuffer(): Promise<ArrayBuffer>; type?: string; name?: string };
-      
-      if ('arrayBuffer' in fileObject && typeof fileObject.arrayBuffer === 'function') {
-        const buffer = Buffer.from(await fileObject.arrayBuffer());
-        
-        // Check file type using the file's type property or name
-        const fileType = fileObject.type || '';
-        const fileName = fileObject.name || '';
-        
-        if (fileType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf')) {
-          content = await extractTextFromPDF(buffer);
-        } else {
-          // For text files, convert buffer to string
-          content = buffer.toString('utf-8');
+    const file = form.get("file");
+    if (form.get("type") === "file" && file instanceof File) {
+      const invalid = fileError(file);
+      if (invalid)
+        return NextResponse.json(
+          { error: invalid },
+          { status: file.size > MAX_FILE_BYTES ? 413 : 400 },
+        );
+      const buffer = Buffer.from(await file.arrayBuffer());
+      if (/\.pdf$/i.test(file.name)) {
+        if (!buffer.subarray(0, 5).equals(Buffer.from("%PDF-")))
+          return NextResponse.json(
+            { error: "This file is not a valid PDF." },
+            { status: 400 },
+          );
+        try {
+          content = (await pdfParse(buffer)).text;
+        } catch {
+          return NextResponse.json(
+            {
+              error:
+                "This PDF could not be read. Try a text PDF or paste its text.",
+            },
+            { status: 400 },
+          );
         }
       } else {
-        throw new Error('Invalid file format');
+        content = buffer.toString("utf8");
       }
-    } else if (sourceType === 'text' && typeof textContent === 'string') {
-      content = textContent;
+    } else if (
+      form.get("type") === "text" &&
+      typeof form.get("content") === "string"
+    ) {
+      content = form.get("content") as string;
     } else {
-      return new Response(JSON.stringify({ error: 'Invalid input' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return NextResponse.json(
+        { error: "Upload a PDF or TXT file, or paste text." },
+        { status: 400 },
+      );
     }
-
-    const processedContent = await processContent(content);
-
-    return new Response(JSON.stringify({ success: true, processedContent }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
+    const invalid = textError(content);
+    if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
+    const completion = await createProvider().messages.create({
+      model: MODEL,
+      max_tokens: 4000,
+      system:
+        "Extract requirements, technical specifications, design guidelines, user preferences and industry standards. Return only a JSON object with arrays named requirements, technicalSpecifications, designGuidelines, userPreferences, industryStandards.",
+      messages: [{ role: "user", content }],
     });
-
-  } catch (error: unknown) {
-    // console.error('Error in API route:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    return new Response(JSON.stringify({ error: 'Internal server error', details: errorMessage }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
+    const result = completion.content[0];
+    if (result?.type !== "text") throw new Error("No document response");
+    return NextResponse.json({
+      success: true,
+      processedContent: JSON.parse(result.text),
     });
+  } catch (error) {
+    return generationError(error);
   }
-} 
+}

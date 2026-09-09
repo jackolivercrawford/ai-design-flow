@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import { requireAccess } from '@/lib/access';
+import { createProvider, MODEL, generationError } from '@/lib/provider';
 import { RequirementsDocument } from '@/types';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
+  const denied = requireAccess(request);
+  if (denied) return denied;
   try {
     const body = await request.json();
     console.log('Simplify API called, body keys:', Object.keys(body));
@@ -31,8 +33,8 @@ export async function POST(request: NextRequest) {
 
     console.log('Starting simplification...');
 
-    const completion = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+    const completion = await createProvider().messages.create({
+      model: MODEL,
       max_tokens: 16000,
       temperature: 0.3,
       system: `You are a requirements document simplification expert. Your task is to:
@@ -107,12 +109,6 @@ Return the simplified document as a JSON object with the exact same structure.`
       );
     }
   } catch (error) {
-    console.error('Error in simplify-requirements API:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to simplify requirements';
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    );
+    return generationError(error);
   }
 }
-
